@@ -1,0 +1,59 @@
+# Skill taxonomy — derived from the skills actually present, not a generic list.
+#
+# Rule: a category earns its place only if at least one registered skill sits in
+# it. Empty categories are routing noise, so health-check fails on them.
+
+version: 1
+
+categories:
+  session:
+    label: Session Management
+    description: Context recovery and skill discovery. Meta-work, not product work.
+    phase: 0
+  planning:
+    label: Planning & Architecture
+    description: Work before code exists — module design, phased build plans, upgrade impact.
+    phase: 1
+  data-model:
+    label: Data Model
+    description: DocTypes, child tables, fields, fixtures. The schema layer.
+    phase: 2
+  server:
+    label: Server-side Logic
+    description: APIs, whitelisted methods, Server Scripts, hooks, scheduler events, workflows.
+    phase: 2
+  interface:
+    label: Interface
+    description: Desk pages, portal pages, web forms, admin panels.
+    phase: 3
+  reporting:
+    label: Reporting & Analytics
+    description: Script Reports, Query Reports, dashboards, print formats.
+    phase: 3
+  comms:
+    label: Communications
+    description: Newsletters, email templates, bulk sends.
+    phase: 3
+  deployment:
+    label: Deployment
+    description: Getting change onto a site. On Frappe Cloud that is System Console, not bench.
+    phase: 4
+  quality:
+    label: Testing & Quality
+    description: Unit and integration tests, verification evidence.
+    phase: 5
+  documentation:
+    label: Documentation
+    description: SOPs, handover docs, end-user guides.
+    phase: 6
+
+# Execution phases. Lower runs first; equal phase numbers may run in parallel (§11, §12).
+# The router derives ordering from these rather than hardcoding skill pairs.
+phases:
+  0: { label: Orient,        parallel: false }
+  1: { label: Plan,          parallel: false, gate: sign-off }
+  2: { label: Build core,    parallel: true }
+  3: { label: Build surface, parallel: true }
+  4: { label: Deploy,        parallel: false }
+  5: { label: Verify,        parallel: false, gate: evidence }
+  6: { label: Document,      parallel: true }

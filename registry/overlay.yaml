@@ -1,0 +1,199 @@
+# Orchestration overlay — the ONE place orchestration metadata is authored.
+#
+# Why an overlay rather than inline frontmatter: a skill's own SKILL.md carries
+# its identity and triggers. It cannot carry orchestration facts — category,
+# execution mode, dependencies, conflicts — because third-party skills are not
+# ours to edit. Keeping them here gives the registry a single source of truth
+# (§4) while upstream skills stay untouched.
+#
+# build-registry.mjs merges SKILL.md frontmatter (identity) with this file
+# (orchestration) into registry.generated.json. Never hand-edit the generated file.
+#
+# YAML subset in use: 2-space nested maps, "- " lists, plain scalars, [a, b]
+# inline lists, > folded blocks. health-check validates conformance.
+
+version: 1
+
+# ---------------------------------------------------------------- modes (§8)
+# mandatory   — must run when its category is in scope; skipping is an error
+# active      — run when routed
+# conditional — only when a stated condition holds
+# validation  — runs in the verify phase, produces evidence
+# passive     — informs reasoning, never announces itself
+modes: [mandatory, active, conditional, validation, passive]
+
+skills:
+  find-skills:
+    category: session
+    mode: conditional
+    condition: no registered skill covers the request
+    priority: 10
+    triggers: [unfamiliar technology, is there a skill for, how do I]
+
+  context-keeper:
+    category: session
+    mode: conditional
+    condition: resuming work on an existing module
+    priority: 20
+    triggers: [resume, where were we, catch me up]
+    recommended_before: [module-planner]
+
+  module-planner:
+    category: planning
+    mode: mandatory
+    priority: 100
+    triggers: [new module, design module, plan the build]
+    recommended_before: [frappe-doctype, frappe-workflow, frappe-api]
+
+  upgrade-checker:
+    category: planning
+    mode: active
+    priority: 90
+    triggers: [upgrade, breaking change, migrate site]
+
+  frappe-doctype:
+    category: data-model
+    mode: active
+    priority: 90
+    triggers: [doctype, add field, data model, child table]
+    recommended_after: [module-planner]
+    recommended_before: [frappe-workflow, frappe-api]
+
+  frappe-fixtures:
+    category: deployment
+    mode: active
+    priority: 60
+    triggers: [fixtures, export config, property setter]
+    requires: [frappe-doctype]
+
+  frappe-api:
+    category: server
+    mode: active
+    priority: 85
+    triggers: [api endpoint, whitelisted, server script, rest]
+
+  frappe-hooks:
+    category: server
+    mode: active
+    priority: 80
+    triggers: [hooks.py, doc_events, scheduler, override]
+
+  frappe-workflow:
+    category: server
+    mode: active
+    priority: 85
+    triggers: [approval flow, workflow, state machine]
+    requires: [frappe-doctype]
+
+  frappe-app-dev:
+    category: server
+    mode: active
+    priority: 75
+    triggers: [custom app, controller, background job, bench site]
+
+  frappe-report:
+    category: reporting
+    mode: active
+    priority: 80
+    triggers: [script report, query report, dashboard data]
+
+  frappe-print-format:
+    category: reporting
+    mode: active
+    priority: 70
+    triggers: [print format, pdf, invoice template, letterhead]
+
+  frappe-ui-page:
+    category: interface
+    mode: active
+    priority: 80
+    triggers: [desk page, admin panel, custom page, dashboard]
+
+  frappe-web-page:
+    category: interface
+    mode: active
+    priority: 75
+    triggers: [portal page, web page, customer portal, public page]
+
+  newsletter-builder:
+    category: comms
+    mode: active
+    priority: 50
+    triggers: [newsletter, email campaign, bulk email]
+
+  console-automation-engine:
+    category: deployment
+    mode: mandatory
+    priority: 100
+    triggers: [system console, console installer, deploy via console, console script]
+    conflicts_with: [console-report-engineer]
+    conflict_rule: >
+      Both build System Console installers. Script Reports go to
+      console-report-engineer; everything else to console-automation-engine.
+      Never both for one artifact.
+
+  console-report-engineer:
+    category: deployment
+    mode: mandatory
+    priority: 100
+    triggers: [script report via console, console report, report builder script]
+    conflicts_with: [console-automation-engine]
+
+  frappe-testing:
+    category: quality
+    mode: validation
+    priority: 95
+    triggers: [test, unit test, FrappeTestCase, coverage]
+
+  business-process-doc:
+    category: documentation
+    mode: active
+    priority: 40
+    triggers: [sop, handover, document the process]
+
+  gdoc-user-guide:
+    category: documentation
+    mode: active
+    priority: 40
+    triggers: [user guide, user manual, end user doc, training guide]
+
+# ------------------------------------------------- third-party skills (§15)
+# NOT vendored. These are other people's work under their own licences; the
+# installer resolves them from source so upstream fixes reach you and the
+# redistribution question never arises. All optional — the orchestrator degrades
+# to its in-tree set when they are absent.
+external:
+  frappe-skills:
+    repo: https://github.com/lubusIN/frappe-skills
+    provides_dir: .
+    optional: true
+    note: >
+      Generic Frappe knowledge. Overlaps the in-tree set; in-tree wins any
+      duplicate because only it encodes safe_exec and no-bench constraints.
+    exclude: [frappe-router, frappe-testing]
+    exclude_reason: >
+      frappe-router is a competing entry-point router; frappe-testing would
+      shadow the in-tree version.
+
+  ponytail:
+    repo: https://github.com/DietrichGebert/ponytail
+    provides_dir: skills
+    optional: true
+    licence: MIT
+    role: modifier
+    note: >
+      Governs how much gets built. Never trims installer idempotency,
+      dependency order, or safe_exec-mandated forms.
+
+  caveman:
+    repo: https://github.com/juliusbrussee/caveman
+    provides_dir: skills
+    optional: true
+    licence: MIT
+    role: modifier
+    note: >
+      Governs how output reads. Never compresses a blueprint awaiting sign-off,
+      a safe_exec violation report, or the routing declaration.
+    exclude: [caveman-compress]
+    exclude_reason: >
+      Overwrites its target and names CLAUDE.md as a use case. Opt in knowingly.

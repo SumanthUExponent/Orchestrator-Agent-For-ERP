@@ -1,0 +1,567 @@
+{
+  "generatedAt": "2026-08-10T05:07:52.663Z",
+  "registryVersion": 1,
+  "counts": {
+    "discovered": 20,
+    "registered": 20,
+    "external": 3
+  },
+  "categories": {
+    "session": {
+      "label": "Session Management",
+      "description": "Context recovery and skill discovery. Meta-work, not product work.",
+      "phase": 0
+    },
+    "planning": {
+      "label": "Planning & Architecture",
+      "description": "Work before code exists — module design, phased build plans, upgrade impact.",
+      "phase": 1
+    },
+    "data-model": {
+      "label": "Data Model",
+      "description": "DocTypes, child tables, fields, fixtures. The schema layer.",
+      "phase": 2
+    },
+    "server": {
+      "label": "Server-side Logic",
+      "description": "APIs, whitelisted methods, Server Scripts, hooks, scheduler events, workflows.",
+      "phase": 2
+    },
+    "interface": {
+      "label": "Interface",
+      "description": "Desk pages, portal pages, web forms, admin panels.",
+      "phase": 3
+    },
+    "reporting": {
+      "label": "Reporting & Analytics",
+      "description": "Script Reports, Query Reports, dashboards, print formats.",
+      "phase": 3
+    },
+    "comms": {
+      "label": "Communications",
+      "description": "Newsletters, email templates, bulk sends.",
+      "phase": 3
+    },
+    "deployment": {
+      "label": "Deployment",
+      "description": "Getting change onto a site. On Frappe Cloud that is System Console, not bench.",
+      "phase": 4
+    },
+    "quality": {
+      "label": "Testing & Quality",
+      "description": "Unit and integration tests, verification evidence.",
+      "phase": 5
+    },
+    "documentation": {
+      "label": "Documentation",
+      "description": "SOPs, handover docs, end-user guides.",
+      "phase": 6
+    }
+  },
+  "phases": {
+    "0": {
+      "label": "Orient",
+      "parallel": false
+    },
+    "1": {
+      "label": "Plan",
+      "parallel": false,
+      "gate": "sign-off"
+    },
+    "2": {
+      "label": "Build core",
+      "parallel": true
+    },
+    "3": {
+      "label": "Build surface",
+      "parallel": true
+    },
+    "4": {
+      "label": "Deploy",
+      "parallel": false
+    },
+    "5": {
+      "label": "Verify",
+      "parallel": false,
+      "gate": "evidence"
+    },
+    "6": {
+      "label": "Document",
+      "parallel": true
+    }
+  },
+  "modes": [
+    "mandatory",
+    "active",
+    "conditional",
+    "validation",
+    "passive"
+  ],
+  "skills": [
+    {
+      "id": "business-process-doc",
+      "name": "business-process-doc",
+      "description": "Use when documenting a business process, creating SOPs, mapping workflows, or writing handover documentation for Frappe/ERPNext configurations. Produces structured markdown docs.",
+      "category": "documentation",
+      "mode": "active",
+      "priority": 40,
+      "phase": 6,
+      "triggers": [
+        "sop",
+        "handover",
+        "document the process"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "console-automation-engine",
+      "name": "console-automation-engine",
+      "description": "ERPNext Solution Deployment Architect — generates production-grade, idempotent Python installers for Desk → System Console (Frappe Cloud v15, no bench). Covers DocTypes, child tables, Singles, Custom Fields, Property Setters, Workflows, Server Scripts, API endpoints, Client Scripts, Notifications, Workspaces, dashboards, mobile UX. Triggers - \"console script\", \"System Console installer\", \"deploy via console\", \"custom module installer\", \"workflow installer\", \"ERPNext automation\", \"Python script for System Console\".",
+      "category": "deployment",
+      "mode": "mandatory",
+      "priority": 100,
+      "phase": 4,
+      "triggers": [
+        "system console",
+        "console installer",
+        "deploy via console",
+        "console script"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [
+        "console-report-engineer"
+      ],
+      "conflict_rule": "Both build System Console installers. Script Reports go to console-report-engineer; everything else to console-automation-engine. Never both for one artifact.",
+      "condition": null
+    },
+    {
+      "id": "console-report-engineer",
+      "name": "console-report-engineer",
+      "description": "ERPNext Script Report Architect — generates production-grade System Console Python builders that create or update Script Reports on Frappe Cloud v15 (no bench, no files). Ledger-grade SQL over Stock Ledger Entry / GL Entry, inventory, procurement, manufacturing and sales analytics, filters, charts, summaries. Triggers - \"Script Report via console\", \"console report\", \"report builder script\", \"stock ledger report\", \"GL report\", \"inventory analytics\", \"SQL report\".",
+      "category": "deployment",
+      "mode": "mandatory",
+      "priority": 100,
+      "phase": 4,
+      "triggers": [
+        "script report via console",
+        "console report",
+        "report builder script"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [
+        "console-automation-engine"
+      ],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "context-keeper",
+      "name": "context-keeper",
+      "description": "Use when starting a new Claude session on an existing project, when context has been lost, or when you need to brief Claude on the current state of a Frappe module before continuing work.",
+      "category": "session",
+      "mode": "conditional",
+      "priority": 20,
+      "phase": 0,
+      "triggers": [
+        "resume",
+        "where were we",
+        "catch me up"
+      ],
+      "requires": [],
+      "recommended_before": [
+        "module-planner"
+      ],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": "resuming work on an existing module"
+    },
+    {
+      "id": "find-skills",
+      "name": "find-skills",
+      "description": "Helps users discover and install agent skills when they ask questions like \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.",
+      "category": "session",
+      "mode": "conditional",
+      "priority": 10,
+      "phase": 0,
+      "triggers": [
+        "unfamiliar technology",
+        "is there a skill for",
+        "how do I"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": "no registered skill covers the request"
+    },
+    {
+      "id": "frappe-api",
+      "name": "frappe-api",
+      "description": "Use when creating API endpoints, whitelisted Python methods, or Server Scripts (DocEvent, API, Scheduler). Covers security, error handling, and response formatting.",
+      "category": "server",
+      "mode": "active",
+      "priority": 85,
+      "phase": 2,
+      "triggers": [
+        "api endpoint",
+        "whitelisted",
+        "server script",
+        "rest"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "frappe-app-dev",
+      "name": "frappe-app-dev",
+      "description": "-",
+      "category": "server",
+      "mode": "active",
+      "priority": 75,
+      "phase": 2,
+      "triggers": [
+        "custom app",
+        "controller",
+        "background job",
+        "bench site"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "frappe-doctype",
+      "name": "frappe-doctype",
+      "description": "Use when creating a new DocType, adding fields to an existing DocType, or modeling a data entity. Scaffolds JSON, Python controller, permissions, and fixtures.",
+      "category": "data-model",
+      "mode": "active",
+      "priority": 90,
+      "phase": 2,
+      "triggers": [
+        "doctype",
+        "add field",
+        "data model",
+        "child table"
+      ],
+      "requires": [],
+      "recommended_before": [
+        "frappe-workflow",
+        "frappe-api"
+      ],
+      "recommended_after": [
+        "module-planner"
+      ],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "frappe-fixtures",
+      "name": "frappe-fixtures",
+      "description": "Use when managing fixtures, exporting default data, migrating config records, setting up property setters, or packaging default roles and workflows for deployment.",
+      "category": "deployment",
+      "mode": "active",
+      "priority": 60,
+      "phase": 4,
+      "triggers": [
+        "fixtures",
+        "export config",
+        "property setter"
+      ],
+      "requires": [
+        "frappe-doctype"
+      ],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "frappe-hooks",
+      "name": "frappe-hooks",
+      "description": "Use when modifying hooks.py, adding scheduler events, overriding ERPNext methods, extending boot session, or registering fixtures and jinja globals.",
+      "category": "server",
+      "mode": "active",
+      "priority": 80,
+      "phase": 2,
+      "triggers": [
+        "hooks.py",
+        "doc_events",
+        "scheduler",
+        "override"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "frappe-print-format",
+      "name": "frappe-print-format",
+      "description": "Use when creating PDF templates, invoice layouts, delivery notes, or any Jinja2 print format in Frappe. Generates clean HTML/CSS with print media rules.",
+      "category": "reporting",
+      "mode": "active",
+      "priority": 70,
+      "phase": 3,
+      "triggers": [
+        "print format",
+        "pdf",
+        "invoice template",
+        "letterhead"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "frappe-report",
+      "name": "frappe-report",
+      "description": "Use when creating Script Reports, Query Reports, or report builders in Frappe. Covers columns, filters, charts, frappe.qb queries, and permissions.",
+      "category": "reporting",
+      "mode": "active",
+      "priority": 80,
+      "phase": 3,
+      "triggers": [
+        "script report",
+        "query report",
+        "dashboard data"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "frappe-testing",
+      "name": "frappe-testing",
+      "description": "Use when writing unit tests, integration tests, or test fixtures for Frappe/ERPNext custom apps. Covers frappe.tests.utils, TestCase patterns, test data factories, and CI configuration.",
+      "category": "quality",
+      "mode": "validation",
+      "priority": 95,
+      "phase": 5,
+      "triggers": [
+        "test",
+        "unit test",
+        "FrappeTestCase",
+        "coverage"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "frappe-ui-page",
+      "name": "frappe-ui-page",
+      "description": "Use when building custom desk pages, dashboards, admin panels, or single-page apps in Frappe. Covers Page boilerplate, DataTable, frappe.Chart, realtime, and sidebar navigation.",
+      "category": "interface",
+      "mode": "active",
+      "priority": 80,
+      "phase": 3,
+      "triggers": [
+        "desk page",
+        "admin panel",
+        "custom page",
+        "dashboard"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "frappe-web-page",
+      "name": "frappe-web-page",
+      "description": "Use when building portal pages, website routes, customer-facing pages, or public/authenticated web interfaces in Frappe. Covers portal pattern and JS interactivity.",
+      "category": "interface",
+      "mode": "active",
+      "priority": 75,
+      "phase": 3,
+      "triggers": [
+        "portal page",
+        "web page",
+        "customer portal",
+        "public page"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "frappe-workflow",
+      "name": "frappe-workflow",
+      "description": "Use when designing approval flows, state machines, or multi-step processes with role-based transitions in Frappe. Generates Workflow JSON and supporting code.",
+      "category": "server",
+      "mode": "active",
+      "priority": 85,
+      "phase": 2,
+      "triggers": [
+        "approval flow",
+        "workflow",
+        "state machine"
+      ],
+      "requires": [
+        "frappe-doctype"
+      ],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "gdoc-user-guide",
+      "name": "gdoc-user-guide",
+      "description": "Use when creating a user guide, end-user manual, training document, or how-to guide for a Frappe/ERPNext custom app or module — delivered as a Google Doc via the Google Drive MCP. Reads the codebase directly to derive workflow states, action buttons, fields, and validation rules. Triggers on \"user guide\", \"user manual\", \"end user doc\", \"training guide\", \"how to use\", \"google doc guide\", \"operator guide\".",
+      "category": "documentation",
+      "mode": "active",
+      "priority": 40,
+      "phase": 6,
+      "triggers": [
+        "user guide",
+        "user manual",
+        "end user doc",
+        "training guide"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "module-planner",
+      "name": "module-planner",
+      "description": "Use when designing a new Frappe/ERPNext custom module, planning DocType architecture, mapping field dependencies, or creating a phased build plan before writing any code.",
+      "category": "planning",
+      "mode": "mandatory",
+      "priority": 100,
+      "phase": 1,
+      "triggers": [
+        "new module",
+        "design module",
+        "plan the build"
+      ],
+      "requires": [],
+      "recommended_before": [
+        "frappe-doctype",
+        "frappe-workflow",
+        "frappe-api"
+      ],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "newsletter-builder",
+      "name": "newsletter-builder",
+      "description": "Use when creating email newsletters, HTML email templates, or mass email campaigns in Frappe. Covers Newsletter DocType, Jinja templates, subscription management, and send mechanics.",
+      "category": "comms",
+      "mode": "active",
+      "priority": 50,
+      "phase": 3,
+      "triggers": [
+        "newsletter",
+        "email campaign",
+        "bulk email"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    },
+    {
+      "id": "upgrade-checker",
+      "name": "upgrade-checker",
+      "description": "Use when planning a Frappe/ERPNext version upgrade, reviewing breaking changes, or auditing custom scripts for compatibility before a site upgrade. Covers v13→v14→v15 migration paths.",
+      "category": "planning",
+      "mode": "active",
+      "priority": 90,
+      "phase": 1,
+      "triggers": [
+        "upgrade",
+        "breaking change",
+        "migrate site"
+      ],
+      "requires": [],
+      "recommended_before": [],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": null
+    }
+  ],
+  "external": [
+    {
+      "id": "frappe-skills",
+      "repo": "https://github.com/lubusIN/frappe-skills",
+      "provides_dir": ".",
+      "optional": true,
+      "note": "Generic Frappe knowledge. Overlaps the in-tree set; in-tree wins any duplicate because only it encodes safe_exec and no-bench constraints.",
+      "exclude": [
+        "frappe-router",
+        "frappe-testing"
+      ],
+      "exclude_reason": "frappe-router is a competing entry-point router; frappe-testing would shadow the in-tree version."
+    },
+    {
+      "id": "ponytail",
+      "repo": "https://github.com/DietrichGebert/ponytail",
+      "provides_dir": "skills",
+      "optional": true,
+      "licence": "MIT",
+      "role": "modifier",
+      "note": "Governs how much gets built. Never trims installer idempotency, dependency order, or safe_exec-mandated forms."
+    },
+    {
+      "id": "caveman",
+      "repo": "https://github.com/juliusbrussee/caveman",
+      "provides_dir": "skills",
+      "optional": true,
+      "licence": "MIT",
+      "role": "modifier",
+      "note": "Governs how output reads. Never compresses a blueprint awaiting sign-off, a safe_exec violation report, or the routing declaration.",
+      "exclude": [
+        "caveman-compress"
+      ],
+      "exclude_reason": "Overwrites its target and names CLAUDE.md as a use case. Opt in knowingly."
+    }
+  ]
+}

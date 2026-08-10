@@ -1,0 +1,215 @@
+# Routing policy — decision table first, scorer only on ambiguity.
+#
+# Architecture (§9 vs §33): a deterministic table handles the cases with one
+# obvious answer, because a table is inspectable, testable and cannot drift. The
+# scorer exists only for genuine ambiguity — zero rules matched, or two matched
+# with equal specificity. Scoring everything would make every routing decision a
+# floating-point argument; scoring nothing would leave novel requests unrouted.
+#
+# Rules are ordered. First match wins. Specificity is the author's job: put the
+# narrow rule above the broad one.
+
+version: 1
+
+# ------------------------------------------------------------- effort (§24)
+# Selected from complexity signals; always overridable by the user (§23).
+effort_modes:
+  minimal:
+    max_skills: 2
+    gates: []
+    note: Typos, labels, a single field. Routing overhead must not exceed the task.
+  standard:
+    max_skills: 4
+    gates: [verify]
+    note: Normal development. Default when no complexity signal fires.
+  full:
+    max_skills: 8
+    gates: [sign-off, verify]
+    note: New modules, migrations, platform work. The plan gate is mandatory.
+
+complexity:
+  minimal:
+    signals: [typo, rename, label, tooltip, one-line, quick fix, wording]
+  full:
+    signals:
+      - new module
+      - end-to-end
+      - platform
+      - architecture
+      - migration
+      - redesign
+      - from scratch
+      - multi-phase
+      - production release
+
+# --------------------------------------------------------- thresholds (§10)
+# Applied to scorer output only. Chosen so one strong trigger match (0.45) plus
+# category agreement (0.25) clears "recommended" but not "mandatory" — mandatory
+# should require corroboration from more than one signal.
+thresholds:
+  mandatory: 0.90
+  recommended: 0.75
+  conditional: 0.60
+  passive: 0.40
+
+# ------------------------------------------------------------- signals (§9)
+# Weights sum to 1.0. Each contributes 0..1, multiplied by its weight.
+signals:
+  trigger_match:
+    weight: 0.45
+    note: A literal trigger phrase from overlay.yaml appears in the request.
+  category_intent:
+    weight: 0.25
+    note: Request verbs and nouns map to the skill category vocabulary.
+  repo_context:
+    weight: 0.20
+    note: Files present in the working tree corroborate the category.
+  priority_bias:
+    weight: 0.10
+    note: overlay priority, normalised. Breaks ties; never decides alone.
+
+# --------------------------------------------------- repository context (§7D)
+# Glob -> categories whose confidence rises when such files exist. This is what
+# makes "add a field" route differently in a Frappe app than in a React repo.
+repo_context:
+  "**/hooks.py": [server]
+  "**/doctype/**": [data-model]
+  "**/report/**": [reporting]
+  "**/page/**": [interface]
+  "**/www/**": [interface]
+  "**/workspace/**": [interface]
+  "**/patches.txt": [deployment]
+  "**/fixtures/**": [deployment]
+  "**/test_*.py": [quality]
+
+# ------------------------------------------------------- decision table (§7)
+# when_all: every phrase must appear. when_any: at least one. unless: none may.
+rules:
+  - id: console-script-report
+    when_all: [console]
+    when_any: [report, script report, query report]
+    skills: [console-report-engineer]
+    note: Narrower than console-installer, so it must sit above it.
+
+  - id: console-installer
+    when_any: [system console, console script, console installer, deploy via console, paste into console]
+    skills: [console-automation-engine]
+    note: >
+      Anything deployed through Desk to System Console. Mandatory before code:
+      on Frappe Cloud this is the deployment path, because bench is unavailable.
+
+  - id: new-module
+    # "a new Asset Handover module" does not contain the contiguous phrase
+    # "new module", so match the head and the noun separately.
+    when_all: [new]
+    when_any: [module, app]
+    skills: [module-planner]
+    categories: [data-model, server, quality]
+    effort: full
+
+  - id: new-module-explicit
+    when_any: [design module, plan the build, build a module, scaffold a module]
+    skills: [module-planner]
+    categories: [data-model, server, quality]
+    effort: full
+
+  - id: data-model
+    when_any: [doctype, child table, add field, data model, schema]
+    skills: [frappe-doctype]
+    note: frappe-workflow joins automatically when the request also names states.
+
+  - id: workflow
+    when_any: [approval, workflow, state machine, submit for approval]
+    skills: [frappe-workflow]
+
+  - id: api
+    when_any: [api, endpoint, whitelisted, rest, webhook, integration]
+    skills: [frappe-api]
+
+  - id: hooks
+    when_any: [hooks.py, doc_events, scheduler, cron, override method]
+    skills: [frappe-hooks]
+
+  - id: report
+    when_any: [report, dashboard data, analytics, query report]
+    unless: [console]
+    skills: [frappe-report]
+
+  - id: print-format
+    when_any: [print format, pdf, invoice template, letterhead, voucher]
+    skills: [frappe-print-format]
+
+  - id: desk-ui
+    when_any: [desk page, admin panel, custom page, dashboard page]
+    skills: [frappe-ui-page]
+
+  - id: portal
+    when_any: [portal, web page, customer facing, public page, web form]
+    skills: [frappe-web-page]
+
+  - id: newsletter
+    when_any: [newsletter, email campaign, bulk email, mass email]
+    skills: [newsletter-builder]
+
+  - id: fixtures
+    when_any: [fixtures, export config, property setter, migrate config]
+    skills: [frappe-fixtures]
+
+  - id: testing
+    when_any: [test, unit test, coverage, frappetestcase]
+    skills: [frappe-testing]
+
+  - id: upgrade
+    when_any: [upgrade, breaking change, version bump, migrate site]
+    skills: [upgrade-checker]
+    effort: full
+
+  - id: user-guide
+    when_any: [user guide, user manual, end user doc, training guide, how to use]
+    skills: [gdoc-user-guide]
+
+  - id: process-doc
+    # "handover" alone is too greedy — it matched the module name in
+    # "Asset Handover module". Require the document sense explicitly.
+    when_any: [sop, handover doc, handover documentation, document the process, runbook]
+    skills: [business-process-doc]
+
+  - id: resume
+    when_any: [resume, where were we, catch me up, continue from]
+    skills: [context-keeper]
+    effort: minimal
+
+  - id: skill-discovery
+    when_any: [is there a skill, find a skill]
+    skills: [find-skills]
+    effort: minimal
+
+# ----------------------------------------------------- composite flows (§20)
+# Policies, not task-specific hacks: they add categories, and the resolver turns
+# categories into skills via the registry. Adding a skill to a category enrols it
+# in every composite naming that category, with no edit here.
+composites:
+  major-feature:
+    trigger_effort: full
+    categories: [planning, data-model, server, interface, quality]
+    gates: [sign-off, verify]
+  production-fix:
+    # Real reports rarely say "bug". They say what stopped happening.
+    when_any:
+      - bug
+      - broken
+      - failing
+      - regression
+      - not working
+      - error
+      - stopped
+      - no longer
+      - used to work
+      - suddenly
+    categories: [server, quality]
+    gates: [verify]
+    note: Verification is non-negotiable — a fix asserted without evidence is a guess.
+  deployment:
+    when_any: [deploy, release, ship to production, go live]
+    categories: [deployment, quality]
+    gates: [verify]
