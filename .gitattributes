@@ -1,0 +1,9 @@
+# Normalise line endings to LF in the repository.
+#
+# Without this, the generated registry reads as permanently modified on Windows:
+# Node writes LF, git's autocrlf wants CRLF, and `git status` never comes clean
+# even though the content is identical. That would follow every contributor.
+* text=auto eol=lf
+
+# Generated — review it in diffs, but do not let it drive merge conflicts.
+registry/registry.generated.json linguist-generated=true
