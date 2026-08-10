@@ -312,8 +312,21 @@ try {
       });
       break;
     }
+    case 'install': {
+      const { install, render } = await import('./install.mjs');
+      render(
+        install({
+          root: ROOT,
+          readYaml,
+          apply: rest.includes('--apply'),
+          external: rest.includes('--external'),
+          force: rest.includes('--force'),
+        })
+      );
+      break;
+    }
     default:
-      console.log('usage: orchestrator.mjs build | health | route "<request>"');
+      console.log('usage: orchestrator.mjs build | health | route "<request>" | install [--apply] [--external] [--force]');
       process.exit(2);
   }
 } catch (e) {

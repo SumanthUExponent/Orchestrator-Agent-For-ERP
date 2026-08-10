@@ -1,0 +1,25 @@
+{
+  "name": "orchestrator-skill-for-erp",
+  "version": "1.0.0",
+  "description": "Skill orchestration for Claude Code, tuned for Frappe/ERPNext development: registry-driven routing, dependency-aware execution plans, and gates that survive long sessions.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "node scripts/orchestrator.mjs build",
+    "health": "node scripts/orchestrator.mjs health",
+    "route": "node scripts/orchestrator.mjs route",
+    "install:skills": "node scripts/orchestrator.mjs install",
+    "test": "node --test tests/routing.test.mjs"
+  },
+  "comment": "No dependencies, deliberately. A tool that verifies a skill ecosystem should not require an npm install before it can run a security check.",
+  "keywords": [
+    "claude-code",
+    "skills",
+    "orchestration",
+    "frappe",
+    "erpnext"
+  ]
+}
