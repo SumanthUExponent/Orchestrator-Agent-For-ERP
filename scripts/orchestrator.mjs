@@ -167,8 +167,11 @@ export function build({ quiet = false } = {}) {
     };
   });
   const external = Object.entries(ov.external || {}).map(([id, e]) => ({ id, ...e }));
+  // No timestamp. The registry is committed so it can be reviewed in a diff; a
+  // generatedAt field would dirty the working tree on every build and health
+  // run, turning "is the registry current?" into noise. Deterministic output
+  // means an unchanged file genuinely proves an unchanged registry.
   const out = {
-    generatedAt: new Date().toISOString(),
     registryVersion: ov.version ?? 1,
     counts: {
       discovered: found.length,
