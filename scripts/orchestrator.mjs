@@ -144,6 +144,16 @@ function discover() {
 
 /* --------------------------------------------------------------- build */
 export function build({ quiet = false } = {}) {
+  // Installed copies ship the prebuilt registry but not the source skills/ tree
+  // (the skills live in ~/.claude/skills, not inside this one skill). Rescanning
+  // there would find zero skills and report a healthy-looking empty ecosystem.
+  // Use the shipped registry instead — and say so, so nobody mistakes a read for
+  // a rebuild.
+  if (!fs.existsSync(P.skills) && fs.existsSync(P.generated)) {
+    const pre = JSON.parse(fs.readFileSync(P.generated, 'utf8'));
+    if (!quiet) console.log(`registry loaded from ${path.basename(P.generated)} (installed copy — no source tree to scan)`);
+    return pre;
+  }
   const tax = readYaml(P.taxonomy);
   const ov = readYaml(P.overlay);
   const found = discover();
@@ -291,7 +301,18 @@ function health() {
 // Run the CLI only when this file IS the process entry point. route.mjs imports
 // this module for readYaml/ROOT; without the guard that import re-executes the
 // switch against the same argv and recurses.
-const IS_ENTRY = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
+// argv[1] is the path as typed; import.meta.url is resolved through symlinks by
+// Node. Comparing them raw fails wherever a symlink is in the path — on macOS
+// /tmp is a link to /private/tmp, so the CLI silently did nothing and exited 0.
+// realpath both sides before comparing.
+const IS_ENTRY = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    return pathToFileURL(fs.realpathSync(process.argv[1])).href === pathToFileURL(fs.realpathSync(fileURLToPath(import.meta.url))).href;
+  } catch {
+    return pathToFileURL(process.argv[1]).href === import.meta.url;
+  }
+})();
 if (IS_ENTRY) {
 const [, , cmd, ...rest] = process.argv;
 try {

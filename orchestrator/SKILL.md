@@ -19,10 +19,19 @@ Nothing precedes it. Omit it only for a lookup, a direct question, or a single-f
 
 Do not memorise a skill list — it goes stale the moment someone adds a skill. The registry is generated from what is actually installed:
 
+The installer ships the CLI and a prebuilt registry inside this skill directory, so these run wherever the skill is installed:
+
 ```bash
-node scripts/orchestrator.mjs route "<the user's request>"   # explain a routing decision
-node scripts/orchestrator.mjs health                          # validate the ecosystem
-node scripts/orchestrator.mjs build                           # regenerate after adding a skill
+ORCH=~/.claude/skills/orchestrator          # or the repo root, if working from a clone
+
+node $ORCH/scripts/orchestrator.mjs route "<the user's request>"   # explain a routing decision
+node $ORCH/scripts/orchestrator.mjs health                         # validate the ecosystem
+```
+
+`build` regenerates the registry after adding a skill, and must run **from a clone of the repository** — it scans the source `skills/` tree, which the installed copy does not carry:
+
+```bash
+node scripts/orchestrator.mjs build     # from the repo root
 ```
 
 `route` returns the plan: effort mode, matched rules, phases with parallelism and gates, what was dropped and why, and the runners-up with scores. Use it when the right answer is not obvious, when the user asks why a skill was chosen, or after any registry change. For familiar requests, route directly — shelling out for "add a field to a DocType" is overhead.

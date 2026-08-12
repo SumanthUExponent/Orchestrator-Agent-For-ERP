@@ -120,6 +120,7 @@ export function install({ root, readYaml, apply = false, external = false, force
 
   // 3. apply
   let written = 0;
+  let selfContained = false;
   if (apply) {
     fs.mkdirSync(target, { recursive: true });
     for (const p of planned) {
@@ -128,9 +129,26 @@ export function install({ root, readYaml, apply = false, external = false, force
       copyTree(p.from, p.to);
       written++;
     }
+    // Make the installed orchestrator self-contained.
+    //
+    // SKILL.md documents `node scripts/orchestrator.mjs route "..."`. Installed
+    // into ~/.claude/skills/orchestrator/ there is no scripts/ directory there,
+    // so the skill would instruct a command that cannot run — the worst kind of
+    // defect, because the skill still looks correct. Ship the CLI and the
+    // prebuilt registry alongside it. `route` and `health` then work from the
+    // installed location; `build` stays a repo-side operation because it has to
+    // scan the source tree.
+    const orchDest = path.join(target, 'orchestrator');
+    if (fs.existsSync(orchDest)) {
+      for (const dir of ['scripts', 'registry']) {
+        const src = path.join(root, dir);
+        if (fs.existsSync(src)) copyTree(src, path.join(orchDest, dir));
+      }
+      selfContained = true;
+    }
   }
 
-  return { target, planned, skipped, written, applied: apply };
+  return { target, planned, skipped, written, applied: apply, selfContained };
 }
 
 export function render(result) {
