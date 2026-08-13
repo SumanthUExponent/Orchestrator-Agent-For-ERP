@@ -156,7 +156,23 @@ export function buildAgents({ root, readYaml, apply = false }) {
     if (apply) fs.writeFileSync(file, body);
     written.push({ id: a.id, mode: a.mode, model: a.model, bytes: body.length });
   }
-  return { dir, written, applied: apply };
+
+  // Remove ghosts. Renaming an agent used to leave its old file behind, and a stale
+  // agent still installs and can still be dispatched — a definition nobody maintains,
+  // silently in the roster. Only delete files WE generated (marker present) that the
+  // registry no longer declares; anything hand-written is left alone.
+  const removed = [];
+  if (fs.existsSync(dir)) {
+    const live = new Set(agents.map((a) => `${a.id}.md`));
+    for (const f of fs.readdirSync(dir).filter((f) => f.endsWith('.md'))) {
+      if (live.has(f)) continue;
+      const body = fs.readFileSync(path.join(dir, f), 'utf8');
+      if (!body.includes('GENERATED from registry/agents.yaml')) continue; // not ours
+      if (apply) fs.rmSync(path.join(dir, f));
+      removed.push(f.replace(/\.md$/, ''));
+    }
+  }
+  return { dir, written, removed, applied: apply };
 }
 
 /* ------------------------------------------------------------- doctor (§6) */
@@ -265,6 +281,9 @@ export function show({ root, readYaml, id }) {
 export function render(result) {
   console.log(result.applied ? `agents written -> ${result.dir}` : 'DRY RUN — nothing written. Add --apply.');
   for (const w of result.written) console.log(`  ${w.id.padEnd(22)} ${w.mode.padEnd(11)} model:${String(w.model).padEnd(8)} ${w.bytes}B`);
+  if (result.removed && result.removed.length) {
+    console.log(`\nRemoved ${result.removed.length} stale generated agent(s): ${result.removed.join(', ')}`);
+  }
   console.log(`\n${result.written.length} agents`);
   return 0;
 }
