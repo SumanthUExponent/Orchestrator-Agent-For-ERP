@@ -349,8 +349,35 @@ try {
       );
       break;
     }
+    case 'agents': {
+      const { buildAgents, render } = await import('./swarm.mjs');
+      render(buildAgents({ root: ROOT, readYaml, apply: rest.includes('--apply') }));
+      break;
+    }
+    case 'doctor': {
+      const { doctor } = await import('./swarm.mjs');
+      process.exit(doctor({ root: ROOT, readYaml, registry: build({ quiet: true }) }));
+      break;
+    }
+    case 'show-agent': {
+      const { show } = await import('./swarm.mjs');
+      process.exit(show({ root: ROOT, readYaml, id: rest[0] }));
+      break;
+    }
     default:
-      console.log('usage: orchestrator.mjs build | health | route "<request>" | install [--apply] [--external] [--force]');
+      console.log(
+        [
+          'usage: orchestrator.mjs <command>',
+          '',
+          '  build                      regenerate the skill registry',
+          '  health                     validate the skill ecosystem (§17)',
+          '  route "<request>"          explain a routing decision',
+          '  install [--apply] [--external] [--force]',
+          '  agents [--apply]           generate agents/*.md from registry/agents.yaml',
+          '  doctor                     audit the agent roster (§6)',
+          '  show-agent <id>            print one resolved agent definition',
+        ].join('\n')
+      );
       process.exit(2);
   }
 } catch (e) {

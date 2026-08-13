@@ -31,6 +31,11 @@ export function skillsDir() {
   return process.env.CLAUDE_SKILLS_DIR || path.join(os.homedir(), '.claude', 'skills');
 }
 
+/** Where Claude Code looks for sub-agent definitions. Agents are inert until they land here. */
+export function agentsDir() {
+  return process.env.CLAUDE_AGENTS_DIR || path.join(os.homedir(), '.claude', 'agents');
+}
+
 function assertSafeName(name) {
   if (name === '.' || name === '..' || !SAFE_NAME.test(name)) {
     throw new Error(`unsafe skill name rejected: ${JSON.stringify(name)}`);
@@ -148,12 +153,38 @@ export function install({ root, readYaml, apply = false, external = false, force
     }
   }
 
-  return { target, planned, skipped, written, applied: apply, selfContained };
+  // 4. agents — inert until they reach the agents dir, which is separate from skills
+  const agentsSrc = path.join(root, 'agents');
+  const agentsTo = agentsDir();
+  let agentsWritten = 0;
+  const agentFiles = fs.existsSync(agentsSrc) ? fs.readdirSync(agentsSrc).filter((f) => f.endsWith('.md')) : [];
+  if (apply && agentFiles.length) {
+    fs.mkdirSync(agentsTo, { recursive: true });
+    for (const f of agentFiles) {
+      assertSafeName(f.replace(/\.md$/, ''));
+      const dest = path.join(agentsTo, f);
+      if (fs.existsSync(dest) && !force) {
+        skipped.push({ name: f, source: 'agent', reason: 'agent already installed (use --force to replace)' });
+        continue;
+      }
+      fs.copyFileSync(path.join(agentsSrc, f), dest);
+      agentsWritten++;
+    }
+  } else if (agentFiles.length) {
+    for (const f of agentFiles) planned.push({ name: f.replace(/\.md$/, ''), source: 'agent', to: path.join(agentsTo, f) });
+  }
+
+  return { target, agentsTarget: agentsTo, planned, skipped, written, agentsWritten, applied: apply, selfContained };
 }
 
 export function render(result) {
-  console.log(`Target: ${result.target}`);
-  console.log(result.applied ? `Mode: APPLY (${result.written} written)` : 'Mode: DRY RUN — nothing written. Add --apply to install.');
+  console.log(`Skills -> ${result.target}`);
+  console.log(`Agents -> ${result.agentsTarget}`);
+  console.log(
+    result.applied
+      ? `Mode: APPLY (${result.written} skills, ${result.agentsWritten} agents written)`
+      : 'Mode: DRY RUN — nothing written. Add --apply to install.'
+  );
   console.log(`\nWould install (${result.planned.length})`);
   for (const p of result.planned) console.log(`  + ${p.name.padEnd(28)} ${p.source}`);
   if (result.skipped.length) {
