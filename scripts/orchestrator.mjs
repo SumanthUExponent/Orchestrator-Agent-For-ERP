@@ -104,7 +104,12 @@ function parseYaml(src, file) {
       const { text, n } = lines[pos];
       const m = text.match(/^([^:]+):\s*(.*)$/);
       if (!m) throw new Error(`${file}:${n} not a key: "${text}"`);
-      const key = m[1].trim();
+      // Unquote KEYS as well as values. routing.yaml's repo_context keys are
+      // quoted globs ("**/hooks.py"); leaving the quotes on produced a regex no
+      // path could ever match, so the repo-context signal — a fifth of the
+      // scorer — never fired once. Silent, and invisible to the tests because
+      // they pin cwd to the repo root, which contains no Frappe files.
+      const key = m[1].trim().replace(/^["']|["']$/g, '');
       const rest = m[2].trim();
       pos++;
       if (rest === '>' || rest === '|') map[key] = folded(indent + 2);
