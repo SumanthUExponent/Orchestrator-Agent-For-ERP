@@ -1,6 +1,8 @@
-# Orchestrator Skill for ERP
+# Orchestrator Agent for ERP
 
-Skill orchestration for [Claude Code](https://claude.com/claude-code), tuned for Frappe/ERPNext development.
+A sub-agent swarm for [Claude Code](https://claude.com/claude-code), tuned for Frappe/ERPNext development.
+
+39 specialist agents across 8 divisions, coordinated by an orchestrator and policed by passive governance agents that audit the swarm itself.
 
 You describe the work. The orchestrator decides which specialist skills apply, what order they run in, what can run in parallel, and which gates the work must clear before it can be called done.
 
@@ -54,16 +56,53 @@ request → effort mode → decision table ─┬─ matched → skills
 
 **Phases, not hardcoded pairs.** Every category carries a phase number. Ordering, parallelism and gates fall out of the phase table, so adding a skill never means editing a sequence by hand.
 
+## The swarm
+
+39 agents, generated from `registry/agents.yaml` — `agents/*.md` is build output, so adding an agent is a registry edit rather than 39 files to keep in sync.
+
+| Division | Agents |
+|---|---|
+| Orchestration | `orchestrator-deep`, `delivery-orchestrator`, `research-orchestrator` |
+| Planning | `requirements-analyst`, `business-analyst`, `frappe-architect`, `data-model-architect`, `impact-analyst` |
+| Development | `frappe-data`, `frappe-backend`, `frappe-frontend`, `integration-developer`, `console-deployer`, `reporting-developer` |
+| UI/UX | `ux-researcher`, `ui-designer`, `interaction-designer`, `mobile-ux`, `accessibility` |
+| Data | `data-analyst`, `data-scientist`, `dataviz-specialist` |
+| Quality | `test-engineer`, `uat-coordinator`, `qa-engineer`, `code-reviewer`, `performance-analyst` |
+| Demo & docs | `demo-builder`, `user-guide-writer`, `process-documenter`, `knowledge-curator` |
+| Ops | `git-safety`, `deployment-safety`, `migration-analyst` |
+| Passive governance | `skill-guardian`, `agent-guardian`, `routing-auditor`, `knowledge-guardian`, `swarm-evolution` |
+
+**Where the orchestrator lives, and why it matters.** A Claude Code sub-agent cannot address the user — only the main thread can. So human-approval gates, live observability and conflict escalation stay in the orchestrator **skill** running in the main thread; that is the only surface which can both dispatch agents and talk to you. The three orchestrator *sub-agents* exist for delegated work needing no mid-flight decision, and they are mute by design: they return a question in `handoff` rather than guess.
+
+**Every agent returns fields, not prose** — `summary`, `files_changed`, `decisions`, `findings`, `risks`, `testing`, `remaining`, `handoff`. An agent that finishes with "done" has failed the protocol.
+
+**Seven gates require a human.** Destructive database changes, production deployment, destructive git operations, deleting a skill or agent, changing the swarm architecture, generating a new agent, security-sensitive changes. Agents refuse and escalate rather than cross them.
+
+### Governance that audits its own author
+
+```bash
+node scripts/orchestrator.mjs doctor
+```
+
+Fails on agent theatre (an agent with no measurable responsibility), duplicate responsibilities, asymmetric conflicts, broken dependencies and missing protocol fields. It caught three defects in this repository's own registry during the build — including three ghost agents left by renames, since a stale agent still installs and can still be dispatched.
+
+Note what it deliberately does *not* flag: two agents sharing a skill. That is the design working — a skill is reusable expertise, an agent is an identity that consumes it.
+
 ## Install
 
 ```bash
-git clone https://github.com/SumanthUExponent/Orchestrator-Skill-For-ERP.git
-cd Orchestrator-Skill-For-ERP
+git clone https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP.git
+cd Orchestrator-Agent-For-ERP
 
 node scripts/orchestrator.mjs install              # dry run — shows the plan, writes nothing
-node scripts/orchestrator.mjs install --apply      # install the in-tree skills
-node scripts/orchestrator.mjs health               # verify
+node scripts/orchestrator.mjs install --apply      # install skills AND the 39 agents
+node scripts/orchestrator.mjs health               # verify skills
+node scripts/orchestrator.mjs doctor               # verify the swarm
 ```
+
+Skills land in `~/.claude/skills`, agents in `~/.claude/agents` (override with `CLAUDE_SKILLS_DIR` / `CLAUDE_AGENTS_DIR`).
+
+**Restart Claude Code after installing.** Agent definitions are read at session start — until then they are on disk and invisible.
 
 Skills land in `~/.claude/skills` (override with `CLAUDE_SKILLS_DIR`). Nothing to install first; Node 18+ is all you need.
 

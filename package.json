@@ -1,7 +1,7 @@
 {
-  "name": "orchestrator-skill-for-erp",
+  "name": "orchestrator-agent-for-erp",
   "version": "1.0.0",
-  "description": "Skill orchestration for Claude Code, tuned for Frappe/ERPNext development: registry-driven routing, dependency-aware execution plans, and gates that survive long sessions.",
+  "description": "Agent-swarm orchestration for Claude Code, tuned for Frappe/ERPNext development: registry-driven routing, dependency-aware execution plans, and gates that survive long sessions.",
   "type": "module",
   "license": "MIT",
   "engines": {
