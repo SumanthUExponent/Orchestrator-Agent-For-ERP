@@ -172,11 +172,13 @@ export function install({ root, readYaml, apply = false, external = false, force
         skipped.push({ name: f, source: 'agent', reason: 'agent already installed (use --force to replace)' });
         continue;
       }
+      // `planned` is the record of what this run acts on, in BOTH modes — it is what
+      // render() lists, so leaving agents out of it under --apply printed a skills-only
+      // list under a header claiming 45 agents were written.
+      planned.push({ name: f.replace(/\.md$/, ''), source: 'agent', to: dest });
       if (apply) {
         fs.copyFileSync(path.join(agentsSrc, f), dest);
         agentsWritten++;
-      } else {
-        planned.push({ name: f.replace(/\.md$/, ''), source: 'agent', to: dest });
       }
     }
   }
@@ -192,7 +194,7 @@ export function render(result) {
       ? `Mode: APPLY (${result.written} skills, ${result.agentsWritten} agents written)`
       : 'Mode: DRY RUN — nothing written. Add --apply to install.'
   );
-  console.log(`\nWould install (${result.planned.length})`);
+  console.log(`\n${result.applied ? 'Installed' : 'Would install'} (${result.planned.length})`);
   for (const p of result.planned) console.log(`  + ${p.name.padEnd(28)} ${p.source}`);
   if (result.skipped.length) {
     console.log(`\nSkipped (${result.skipped.length})`);
