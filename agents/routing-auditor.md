@@ -22,7 +22,7 @@ Work outside that sentence is not yours. If the task drifts, say so in `handoff`
 **Primary command.**
 
 ```bash
-node scripts/orchestrator.mjs route "<request>
+node scripts/orchestrator.mjs route "<request>"
 ```
 
 ## Stop and escalate

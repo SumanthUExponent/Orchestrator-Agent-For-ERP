@@ -30,6 +30,21 @@ const P = {
  * "- " lists, [a, b] inline lists, > folded scalars, # comments, plain scalars.
  * Anything else throws — a silently mis-parsed registry is worse than a crash.
  */
+/**
+ * Strip quotes only when they are a MATCHED PAIR wrapping the whole value.
+ *
+ * The old form was `.replace(/^["']|["']$/g, '')`, which strips a leading or a
+ * trailing quote independently. Any value merely ENDING in a quote lost it:
+ *   runs: node scripts/orchestrator.mjs route "<request>"
+ * became `... route "<request>` — an unterminated quote, shipped into the generated
+ * agent as its primary command. Silent, and only visible if you ran the command.
+ */
+function unquote(v) {
+  const q = v[0];
+  if ((q === '"' || q === "'") && v.length > 1 && v[v.length - 1] === q) return v.slice(1, -1);
+  return v;
+}
+
 function parseYaml(src, file) {
   const lines = [];
   src.split(/\r?\n/).forEach((raw, i) => {
@@ -64,7 +79,7 @@ function parseYaml(src, file) {
       }
       return obj;
     }
-    return v.replace(/^["']|["']$/g, '');
+    return unquote(v);
   };
 
   function folded(minIndent) {
@@ -109,7 +124,7 @@ function parseYaml(src, file) {
       // path could ever match, so the repo-context signal — a fifth of the
       // scorer — never fired once. Silent, and invisible to the tests because
       // they pin cwd to the repo root, which contains no Frappe files.
-      const key = m[1].trim().replace(/^["']|["']$/g, '');
+      const key = unquote(m[1].trim());
       const rest = m[2].trim();
       pos++;
       if (rest === '>' || rest === '|') map[key] = folded(indent + 2);

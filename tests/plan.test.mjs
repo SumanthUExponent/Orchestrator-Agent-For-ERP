@@ -131,6 +131,25 @@ describe('cost accounting', () => {
   });
 });
 
+describe('yaml scalar quoting', () => {
+  test('a value ending in a quote keeps it', () => {
+    // Regression: unquoting stripped a leading OR trailing quote independently, so
+    // `runs: ... route "<request>"` shipped into the generated agent as an
+    // unterminated `route "<request>` — a primary command that cannot run.
+    for (const a of agents.filter((x) => x.runs && x.runs.includes('"'))) {
+      const quotes = (a.runs.match(/"/g) || []).length;
+      assert.equal(quotes % 2, 0, `${a.id} runs has an unbalanced quote: ${a.runs}`);
+    }
+  });
+  test('repo_context glob keys are still unquoted', () => {
+    // The same helper unquotes keys; a matched-pair rule must not regress this.
+    const routing = readYaml(`${ROOT}/registry/routing.yaml`);
+    for (const k of Object.keys(routing.repo_context)) {
+      assert.ok(!k.startsWith('"'), `glob key kept its quotes: ${k}`);
+    }
+  });
+});
+
 describe('efficiency benchmark', () => {
   test('the corpus costs less than its all-opus baseline', () => {
     const { totals } = bench(reg, { readYaml, root: ROOT, cwd: ROOT, routeModule, swarmModule, planModule });

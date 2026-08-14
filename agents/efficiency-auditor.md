@@ -28,7 +28,7 @@ Reports after the fact; never interrupts a live run. Evidence over assumption â€
 **Primary command.**
 
 ```bash
-node scripts/orchestrator.mjs plan "<request>
+node scripts/orchestrator.mjs plan "<request>"
 ```
 
 ## Stop and escalate
