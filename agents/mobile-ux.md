@@ -2,7 +2,7 @@
 name: mobile-ux
 description: Field and mobile workflows. Interfaces used one-handed, outdoors, on a phone — tap targets, offline tolerance, camera and scanner flows, and minimising taps for a technician in the field.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: opus
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

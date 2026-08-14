@@ -2,7 +2,7 @@
 name: integration-developer
 description: Traffic across the system boundary. Connections to systems outside this one — outbound calls, inbound webhooks, auth, retry and failure handling at the boundary.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: inherit
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

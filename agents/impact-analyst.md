@@ -2,7 +2,7 @@
 name: impact-analyst
 description: Blast radius before a change lands. Identifying everything that depends on the code being changed — callers, hooks, client scripts, reports, permissions, integrations — and what could break. Writes nothing.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

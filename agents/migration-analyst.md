@@ -2,7 +2,7 @@
 name: migration-analyst
 description: Safety of schema and version change. Whether a migration or version upgrade is safe — data loss risk, irreversible steps, patch ordering, and what existing customisations it would break.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

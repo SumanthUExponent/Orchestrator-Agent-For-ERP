@@ -30,6 +30,21 @@ const P = {
  * "- " lists, [a, b] inline lists, > folded scalars, # comments, plain scalars.
  * Anything else throws — a silently mis-parsed registry is worse than a crash.
  */
+/**
+ * Strip quotes only when they are a MATCHED PAIR wrapping the whole value.
+ *
+ * The old form was `.replace(/^["']|["']$/g, '')`, which strips a leading or a
+ * trailing quote independently. Any value merely ENDING in a quote lost it:
+ *   runs: node scripts/orchestrator.mjs route "<request>"
+ * became `... route "<request>` — an unterminated quote, shipped into the generated
+ * agent as its primary command. Silent, and only visible if you ran the command.
+ */
+function unquote(v) {
+  const q = v[0];
+  if ((q === '"' || q === "'") && v.length > 1 && v[v.length - 1] === q) return v.slice(1, -1);
+  return v;
+}
+
 function parseYaml(src, file) {
   const lines = [];
   src.split(/\r?\n/).forEach((raw, i) => {
@@ -64,7 +79,7 @@ function parseYaml(src, file) {
       }
       return obj;
     }
-    return v.replace(/^["']|["']$/g, '');
+    return unquote(v);
   };
 
   function folded(minIndent) {
@@ -109,7 +124,7 @@ function parseYaml(src, file) {
       // path could ever match, so the repo-context signal — a fifth of the
       // scorer — never fired once. Silent, and invisible to the tests because
       // they pin cwd to the repo root, which contains no Frappe files.
-      const key = m[1].trim().replace(/^["']|["']$/g, '');
+      const key = unquote(m[1].trim());
       const rest = m[2].trim();
       pos++;
       if (rest === '>' || rest === '|') map[key] = folded(indent + 2);
@@ -341,6 +356,48 @@ try {
       });
       break;
     }
+    case 'plan': {
+      // Same acyclic-import discipline as route: both modules are handed in rather
+      // than imported by plan.mjs, so nothing points back at this file.
+      const routeModule = await import('./route.mjs');
+      const swarmModule = await import('./swarm.mjs');
+      const { render } = await import('./plan.mjs');
+      const args = rest.filter((a) => !a.startsWith('--'));
+      const effortFlag = rest.find((a) => a.startsWith('--effort='));
+      process.exit(
+        render(build({ quiet: true }), args.join(' '), {
+          readYaml,
+          root: ROOT,
+          routeModule,
+          swarmModule,
+          effort: effortFlag ? effortFlag.split('=')[1] : undefined,
+        })
+      );
+      break;
+    }
+    case 'bench': {
+      const routeModule = await import('./route.mjs');
+      const swarmModule = await import('./swarm.mjs');
+      const planModule = await import('./plan.mjs');
+      const { render } = await import('./bench.mjs');
+      process.exit(
+        render(build({ quiet: true }), {
+          readYaml,
+          root: ROOT,
+          cwd: ROOT,
+          routeModule,
+          swarmModule,
+          planModule,
+          loadAgents: swarmModule.loadAgents,
+        })
+      );
+      break;
+    }
+    case 'pack': {
+      const { render } = await import('./pack.mjs');
+      process.exit(render(rest.find((a) => !a.startsWith('--')) || process.cwd()));
+      break;
+    }
     case 'install': {
       const { install, render } = await import('./install.mjs');
       render(
@@ -376,7 +433,10 @@ try {
           '',
           '  build                      regenerate the skill registry',
           '  health                     validate the skill ecosystem (§17)',
-          '  route "<request>"          explain a routing decision',
+          '  route "<request>"          explain a routing decision (which skills)',
+          '  plan "<request>"           execution plan: agents, parallel batches, model tier',
+          '  pack [dir]                 deterministic Context Pack — zero tokens, share it',
+          '  bench                      before/after efficiency benchmark over a fixed corpus',
           '  install [--apply] [--external] [--force]',
           '  agents [--apply]           generate agents/*.md from registry/agents.yaml',
           '  doctor                     audit the agent roster (§6)',

@@ -2,7 +2,7 @@
 name: frappe-data
 description: Schema implementation. Building the DocTypes, child tables, fields and fixtures the data model specifies.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: inherit
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

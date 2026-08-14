@@ -2,7 +2,7 @@
 name: test-engineer
 description: Automated tests and evidence. Producing evidence a change works. Runs tests, reports real output. A failure is reported as a failure.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: inherit
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

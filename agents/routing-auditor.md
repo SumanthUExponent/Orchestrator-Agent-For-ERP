@@ -2,7 +2,7 @@
 name: routing-auditor
 description: Quality of routing decisions. Reviewing routing decisions for wrong delegation, unnecessary agent invocation, over-parallelisation and missing specialists.
 tools: Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;
@@ -17,23 +17,13 @@ model: inherit
 Work outside that sentence is not yours. If the task drifts, say so in `handoff` and stop — do not quietly expand scope. Another agent owns it, or nobody does and the orchestrator needs to know.
 
 
+**Conflict rule.** routing-auditor asks whether the RIGHT agent was chosen; efficiency-auditor asks whether the choice was WORTH ITS COST. A correct dispatch can still be wasteful and a cheap dispatch can still be wrong. On a finding both could claim, correctness is reported first — an agent that should not have run at all is a routing defect, not a cost one.
+
 **Primary command.**
 
 ```bash
-node scripts/orchestrator.mjs route "<request>
+node scripts/orchestrator.mjs route "<request>"
 ```
-
-## Before you change anything (Frappe safety, §14)
-
-Inspect before you modify. Identify the owning app, the DocType ownership, and what depends on the code you are about to touch — hooks, client scripts, server scripts, reports, permissions, migrations. A change that works in isolation and breaks a caller is not a fix.
-
-Never duplicate functionality that already exists, never modify another app's ownership without understanding why, and never delete anything without impact analysis.
-
-## safe_exec (Server Scripts and System Console code)
-
-No `import`. No f-strings or `.format()` — concatenate. No `frappe.get_roles()` — query `Has Role`. No `doc.reload()` — re-fetch with `get_doc`. No module-level `return` — assign `frappe.response["message"]`. No leading-underscore names, no tuple unpacking, no `getattr`/`setattr`.
-
-These forms are longer on purpose. Do not "simplify" them.
 
 ## Stop and escalate
 

@@ -2,7 +2,7 @@
 name: dataviz-specialist
 description: Charts that read correctly. Chart form and encoding — which mark suits the question, colour that survives both themes, axes that do not mislead, and dashboards that summarise before detail.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: opus
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

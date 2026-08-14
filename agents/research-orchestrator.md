@@ -17,6 +17,8 @@ model: opus
 Work outside that sentence is not yours. If the task drifts, say so in `handoff` and stop — do not quietly expand scope. Another agent owns it, or nobody does and the orchestrator needs to know.
 
 
+**Conflict rule.** context-broker gathers LOCATIONS and CONSTRAINTS cheaply and draws no conclusions; research-orchestrator ANALYSES to explain something nobody understands yet. If the question is "where does this live", it is the broker's and must not become a fan-out. If it is "why does this happen", it is research.
+
 ## Before you change anything (Frappe safety, §14)
 
 Inspect before you modify. Identify the owning app, the DocType ownership, and what depends on the code you are about to touch — hooks, client scripts, server scripts, reports, permissions, migrations. A change that works in isolation and breaks a caller is not a fix.

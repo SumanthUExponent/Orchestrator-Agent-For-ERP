@@ -2,7 +2,7 @@
 name: ux-researcher
 description: Understanding the user before designing for them. The current user journey and where it costs people time — click paths, dead ends, repeated work. Produces evidence about behaviour; proposes no visuals.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

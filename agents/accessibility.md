@@ -2,7 +2,7 @@
 name: accessibility
 description: Usable by everyone. Contrast, keyboard reachability, focus visibility, semantic structure and screen reader behaviour. Reports violations; does not redesign.
 tools: Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

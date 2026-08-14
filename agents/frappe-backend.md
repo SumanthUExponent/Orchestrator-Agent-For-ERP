@@ -2,7 +2,7 @@
 name: frappe-backend
 description: Server-side logic. Whitelisted methods, doc events, scheduler entries and workflow state machines.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: inherit
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

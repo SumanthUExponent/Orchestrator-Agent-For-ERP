@@ -2,7 +2,7 @@
 name: uat-coordinator
 description: Acceptance by the people who asked for it. Turning acceptance criteria into a UAT script a non-technical user can follow — steps, expected results, test data, and a record of what passed and what did not.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: opus
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

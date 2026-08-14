@@ -2,7 +2,7 @@
 name: demo-builder
 description: Making the work demonstrable. Realistic demo data and a walkthrough that shows the feature working end to end, including the failure case. Owns "can we show this to someone on Monday?"
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: opus
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

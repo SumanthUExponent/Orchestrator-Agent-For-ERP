@@ -2,7 +2,7 @@
 name: performance-analyst
 description: Speed and cost of the change. Query counts, N+1 patterns, unbounded result sets, missing indexes, and anything that degrades as data grows. Reports; does not rewrite.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;
