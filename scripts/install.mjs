@@ -158,8 +158,13 @@ export function install({ root, readYaml, apply = false, external = false, force
   const agentsTo = agentsDir();
   let agentsWritten = 0;
   const agentFiles = fs.existsSync(agentsSrc) ? fs.readdirSync(agentsSrc).filter((f) => f.endsWith('.md')) : [];
-  if (apply && agentFiles.length) {
-    fs.mkdirSync(agentsTo, { recursive: true });
+  // The skip decision is made in BOTH modes, deliberately. It used to be computed
+  // only under `apply`, so a dry run listed all 45 agents as writes while the real
+  // run skipped every one that already existed — the preview reported the opposite
+  // of what would happen, which is worse than having no preview. It mattered here:
+  // an upgrade that re-tiers existing agents looks like it applied and does nothing.
+  if (agentFiles.length) {
+    if (apply) fs.mkdirSync(agentsTo, { recursive: true });
     for (const f of agentFiles) {
       assertSafeName(f.replace(/\.md$/, ''));
       const dest = path.join(agentsTo, f);
@@ -167,11 +172,13 @@ export function install({ root, readYaml, apply = false, external = false, force
         skipped.push({ name: f, source: 'agent', reason: 'agent already installed (use --force to replace)' });
         continue;
       }
-      fs.copyFileSync(path.join(agentsSrc, f), dest);
-      agentsWritten++;
+      if (apply) {
+        fs.copyFileSync(path.join(agentsSrc, f), dest);
+        agentsWritten++;
+      } else {
+        planned.push({ name: f.replace(/\.md$/, ''), source: 'agent', to: dest });
+      }
     }
-  } else if (agentFiles.length) {
-    for (const f of agentFiles) planned.push({ name: f.replace(/\.md$/, ''), source: 'agent', to: path.join(agentsTo, f) });
   }
 
   return { target, agentsTarget: agentsTo, planned, skipped, written, agentsWritten, applied: apply, selfContained };
