@@ -2,7 +2,7 @@
 name: frappe-frontend
 description: Desk and portal surfaces. Implementing interfaces inside Frappe — desk pages, portal pages, web forms, client scripts. Owns HOW an interface is built; ui-designer owns what it should be.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: inherit
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

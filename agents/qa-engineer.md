@@ -2,7 +2,7 @@
 name: qa-engineer
 description: Exploratory testing against the real system. Finding what automated tests miss — walking the real journey, the unhappy paths, permissions as a different role, and boundaries nobody specified.
 tools: Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

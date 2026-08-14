@@ -17,6 +17,8 @@ model: opus
 Work outside that sentence is not yours. If the task drifts, say so in `handoff` and stop — do not quietly expand scope. Another agent owns it, or nobody does and the orchestrator needs to know.
 
 
+**Conflict rule.** delivery-orchestrator decides WHAT work happens in which phase — the semantics of the feature. swarm-dispatcher decides HOW that phase list is executed — batching, model tier, budget. Semantics beat mechanics: if batching would reorder work the delivery plan says must be sequential, the delivery plan wins.
+
 ## Before you change anything (Frappe safety, §14)
 
 Inspect before you modify. Identify the owning app, the DocType ownership, and what depends on the code you are about to touch — hooks, client scripts, server scripts, reports, permissions, migrations. A change that works in isolation and breaks a caller is not a fix.

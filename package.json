@@ -11,8 +11,11 @@
     "build": "node scripts/orchestrator.mjs build",
     "health": "node scripts/orchestrator.mjs health",
     "route": "node scripts/orchestrator.mjs route",
+    "plan": "node scripts/orchestrator.mjs plan",
+    "pack": "node scripts/orchestrator.mjs pack",
+    "doctor": "node scripts/orchestrator.mjs doctor",
     "install:skills": "node scripts/orchestrator.mjs install",
-    "test": "node --test tests/routing.test.mjs"
+    "test": "node --test tests/"
   },
   "comment": "No dependencies, deliberately. A tool that verifies a skill ecosystem should not require an npm install before it can run a security check.",
   "keywords": [

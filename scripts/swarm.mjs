@@ -20,6 +20,9 @@ import path from 'node:path';
 const ACTIVE = 'active';
 const PASSIVE = 'passive';
 const VALIDATION = 'validation';
+const CONTROL = 'control';
+const MODES = [ACTIVE, VALIDATION, PASSIVE, CONTROL];
+const TIERS = ['haiku', 'sonnet', 'opus', 'inherit'];
 
 /** Resolve the agent set with defaults applied. */
 export function loadAgents({ root, readYaml }) {
@@ -46,6 +49,11 @@ export function loadAgents({ root, readYaml }) {
     // generalists legitimately declare no skills; that is not unreachability.
     selected_by: a.selected_by || (a.skills && a.skills.length ? 'skill' : 'orchestrator'),
     uses_design_system: a.uses_design_system === true,
+    // Frappe safety + safe_exec are emitted by default; an agent whose subject is
+    // the swarm or the repo opts out. That boilerplate is ~1.1KB re-read on every
+    // single dispatch, and in a git or governance agent it is answering a question
+    // nobody asked.
+    frappe: a.frappe === undefined ? (d.frappe === undefined ? true : d.frappe !== false) : a.frappe !== false,
     runs: a.runs || null,
     handoff: a.handoff || (spec.protocol && spec.protocol.required) || ['summary', 'handoff'],
   }));
@@ -88,6 +96,27 @@ inventing a visual language is the failure this section exists to prevent.
 `;
 }
 
+/**
+ * Emitted only for agents that can actually touch Frappe code (`frappe: true`).
+ * A git-safety or routing-auditor agent carrying safe_exec rules is answering a
+ * question it will never be asked, on every dispatch, forever.
+ */
+function frappeSafetySection() {
+  return `
+## Before you change anything (Frappe safety, §14)
+
+Inspect before you modify. Identify the owning app, the DocType ownership, and what depends on the code you are about to touch — hooks, client scripts, server scripts, reports, permissions, migrations. A change that works in isolation and breaks a caller is not a fix.
+
+Never duplicate functionality that already exists, never modify another app's ownership without understanding why, and never delete anything without impact analysis.
+
+## safe_exec (Server Scripts and System Console code)
+
+No \`import\`. No f-strings or \`.format()\` — concatenate. No \`frappe.get_roles()\` — query \`Has Role\`. No \`doc.reload()\` — re-fetch with \`get_doc\`. No module-level \`return\` — assign \`frappe.response["message"]\`. No leading-underscore names, no tuple unpacking, no \`getattr\`/\`setattr\`.
+
+These forms are longer on purpose. Do not "simplify" them.
+`;
+}
+
 function agentMarkdown(a, protocol, gates, resources) {
   const fields = protocol.fields || {};
   const handoffDoc = a.handoff.map((f) => `- **${f}** — ${fields[f] || 'see registry/agents.yaml'}`).join('\n');
@@ -114,19 +143,7 @@ function agentMarkdown(a, protocol, gates, resources) {
 
 Work outside that sentence is not yours. If the task drifts, say so in \`handoff\` and stop — do not quietly expand scope. Another agent owns it, or nobody does and the orchestrator needs to know.
 ${a.skills.length ? `\n**Skills to load first.** ${a.skills.map((s) => `\`${s}\``).join(' · ')}\n\nThese carry the actual expertise. Load them before reasoning about the task; do not reconstruct their content from memory.` : ''}
-${a.constraints ? `\n**Constraints.**\n\n${a.constraints}\n` : ''}${a.conflict_rule ? `\n**Conflict rule.** ${a.conflict_rule}\n` : ''}${a.governance ? `\n**Governance.** ${a.governance}\n` : ''}${a.runs ? `\n**Primary command.**\n\n\`\`\`bash\n${a.runs}\n\`\`\`\n` : ''}${a.uses_design_system ? designSystemSection(resources) : ''}
-## Before you change anything (Frappe safety, §14)
-
-Inspect before you modify. Identify the owning app, the DocType ownership, and what depends on the code you are about to touch — hooks, client scripts, server scripts, reports, permissions, migrations. A change that works in isolation and breaks a caller is not a fix.
-
-Never duplicate functionality that already exists, never modify another app's ownership without understanding why, and never delete anything without impact analysis.
-
-## safe_exec (Server Scripts and System Console code)
-
-No \`import\`. No f-strings or \`.format()\` — concatenate. No \`frappe.get_roles()\` — query \`Has Role\`. No \`doc.reload()\` — re-fetch with \`get_doc\`. No module-level \`return\` — assign \`frappe.response["message"]\`. No leading-underscore names, no tuple unpacking, no \`getattr\`/\`setattr\`.
-
-These forms are longer on purpose. Do not "simplify" them.
-
+${a.constraints ? `\n**Constraints.**\n\n${a.constraints}\n` : ''}${a.conflict_rule ? `\n**Conflict rule.** ${a.conflict_rule}\n` : ''}${a.governance ? `\n**Governance.** ${a.governance}\n` : ''}${a.runs ? `\n**Primary command.**\n\n\`\`\`bash\n${a.runs}\n\`\`\`\n` : ''}${a.uses_design_system ? designSystemSection(resources) : ''}${a.frappe ? frappeSafetySection() : ''}
 ## Stop and escalate
 
 Return the question in \`handoff\` rather than deciding, if the task would require any of:
@@ -188,6 +205,18 @@ export function doctor({ root, readYaml, registry }) {
     if (!a.role) fail.push(`invalid: "${a.id}" has no role`);
     if (!a.tools.length) fail.push(`least privilege: "${a.id}" has no tools — it can do nothing`);
     if (!a.handoff.includes('handoff')) fail.push(`protocol: "${a.id}" omits the handoff field`);
+    if (!MODES.includes(a.mode)) fail.push(`invalid mode: "${a.id}" declares "${a.mode}", not one of ${MODES.join('|')}`);
+    if (!TIERS.includes(a.model)) fail.push(`invalid tier: "${a.id}" declares model "${a.model}", not one of ${TIERS.join('|')}`);
+    // `inherit` makes an agent silently as expensive as whatever model the session
+    // happens to run. That is how all 39 agents ended up on opus: nobody chose it.
+    if (a.model === 'inherit') warn.push(`untiered: "${a.id}" inherits the session model — cost is whatever the session costs`);
+    // A control agent exists to decide how much work happens, not to do it. Give it
+    // Write and it stops being cheaper than the specialist it was meant to replace.
+    if (a.mode === CONTROL) {
+      const writes = a.tools.filter((t) => t === 'Write' || t === 'Edit');
+      if (writes.length) fail.push(`control plane: "${a.id}" holds ${writes.join('/')} — a control agent decides, it does not build`);
+      if (a.skills.length) warn.push(`control plane: "${a.id}" loads skills (${a.skills.join(', ')}) — control agents should carry no domain expertise`);
+    }
 
     // skills an agent claims must exist somewhere we can see
     for (const s of a.skills) {
@@ -241,9 +270,12 @@ export function doctor({ root, readYaml, registry }) {
   if (!passive.length) warn.push('no passive governance agents — the swarm cannot audit itself (§6)');
 
   const byMode = agents.reduce((m, a) => ((m[a.mode] = (m[a.mode] || 0) + 1), m), {});
+  const byTier = agents.reduce((m, a) => ((m[a.model] = (m[a.model] || 0) + 1), m), {});
   const mark = (b, s) => `${b ? '✓' : '✗'} ${s}`;
   console.log('SWARM DOCTOR\n');
   console.log(mark(true, `Agents defined: ${agents.length}  (${Object.entries(byMode).map(([k, v]) => `${k} ${v}`).join(', ')})`));
+  console.log(mark(!byTier.inherit, `Model tiers: ${TIERS.filter((t) => byTier[t]).map((t) => `${t} ${byTier[t]}`).join(', ')}`));
+  console.log(`  Frappe boilerplate suppressed on: ${agents.filter((a) => !a.frappe).length} agent(s) whose subject is not the ERP`);
   console.log(mark(!fail.some((f) => f.startsWith('agent theatre')), `Agents with a measurable responsibility: ${agents.filter((a) => a.owns).length}/${agents.length}`));
   console.log(mark(!fail.some((f) => f.startsWith('broken')), `Broken agent dependencies: ${fail.filter((f) => f.startsWith('broken')).length}`));
   console.log(mark(!fail.some((f) => f.includes('conflict')), `Unresolved conflicts: ${fail.filter((f) => f.includes('conflict')).length}`));

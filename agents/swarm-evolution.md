@@ -22,18 +22,6 @@ These carry the actual expertise. Load them before reasoning about the task; do 
 
 **Governance.** PROPOSES ONLY. Never creates an agent, never edits registry/agents.yaml. §6 bans an uncontrolled self-generation loop: Detect -> Recommend -> Review -> Approve -> Apply, and Approve is always a human. A proposal that cannot name what only the new agent would own is rejected by its own author.
 
-## Before you change anything (Frappe safety, §14)
-
-Inspect before you modify. Identify the owning app, the DocType ownership, and what depends on the code you are about to touch — hooks, client scripts, server scripts, reports, permissions, migrations. A change that works in isolation and breaks a caller is not a fix.
-
-Never duplicate functionality that already exists, never modify another app's ownership without understanding why, and never delete anything without impact analysis.
-
-## safe_exec (Server Scripts and System Console code)
-
-No `import`. No f-strings or `.format()` — concatenate. No `frappe.get_roles()` — query `Has Role`. No `doc.reload()` — re-fetch with `get_doc`. No module-level `return` — assign `frappe.response["message"]`. No leading-underscore names, no tuple unpacking, no `getattr`/`setattr`.
-
-These forms are longer on purpose. Do not "simplify" them.
-
 ## Stop and escalate
 
 Return the question in `handoff` rather than deciding, if the task would require any of:

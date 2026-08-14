@@ -2,28 +2,40 @@
 
 A sub-agent swarm for [Claude Code](https://claude.com/claude-code), tuned for Frappe/ERPNext development.
 
-39 specialist agents across 8 divisions, coordinated by an orchestrator and policed by passive governance agents that audit the swarm itself.
+45 specialist agents across 9 divisions, coordinated by an orchestrator, policed by passive governance agents that audit the swarm itself, and paced by a control plane whose entire job is to convene less of it.
 
 You describe the work. The orchestrator decides which specialist skills apply, what order they run in, what can run in parallel, and which gates the work must clear before it can be called done.
 
 ```
-$ node scripts/orchestrator.mjs route "System Console installer for a Vendor Audit DocType with approval workflow"
+$ node scripts/orchestrator.mjs plan "System Console installer for a Vendor Audit DocType with approval workflow"
 
-Effort: standard  ·  Decision: table (console-installer, data-model, workflow)
-Gates: verify
+Effort: standard  ·  Gates: verify
+Skills routed: console-automation-engine, frappe-doctype, frappe-workflow
 
-Plan
-  1. Plan
-       - module-planner
-  2. Build core [parallel]
-       - frappe-doctype
-       - frappe-workflow
-  4. Deploy
-       - console-automation-engine
+Execution plan
+  Batch 1  (phase 2)
+       - requirements-analyst   sonnet  required by frappe-architect
+  Batch 2  (phase 2)
+       - frappe-architect       opus    required by data-model-architect
+  Batch 3  (phase 2)
+       - data-model-architect   opus    via frappe-doctype
+  Batch 4  (phase 2)
+       - frappe-data            sonnet  required by frappe-backend
+  Batch 5  (phase 2)
+       - frappe-backend         sonnet  via frappe-workflow
+  Batch 6  (phase 4)
+       - console-deployer       opus    via console-automation-engine
 
 Dropped
-  - console-report-engineer: conflicts with console-automation-engine
+  - demo-builder (contested): contested console-automation-engine;
+    console-deployer matched the request more closely (2 vs 0)
+
+Cost
+  Dispatches: 6  ·  serial steps 6 -> batched 6
+  Relative cost index: 54 vs 90 all-opus baseline (40% lower)
 ```
+
+`route` answers *which skills*. `plan` answers *which agents, in what batches, at which tier* — and tells you what the run cost.
 
 ## Why this exists
 
@@ -56,9 +68,23 @@ request → effort mode → decision table ─┬─ matched → skills
 
 **Phases, not hardcoded pairs.** Every category carries a phase number. Ordering, parallelism and gates fall out of the phase table, so adding a skill never means editing a sequence by hand.
 
+## Speed is a design problem, not a model problem
+
+A swarm gets slow in ways that never show up as an error. Four of them, and what the repository does about each:
+
+**Everything ran on the biggest model.** Agents that said `model: inherit` silently cost whatever the session cost, so all 39 ran on Opus — nobody chose that, it was the default leaking through. Tiers are now explicit and `inherit` is gone: **12 opus, 31 sonnet, 2 haiku**. Opus is reserved for output that is a design decision with blast radius — a schema, an architecture, a review that gates a deploy. `doctor` fails an unknown tier and warns on any agent that goes back to inheriting.
+
+**Every agent rediscovered the same repository.** Five dispatches meant five identical scans for the same `hooks.py` and the same DocType list. `orchestrator.mjs pack` answers that once with commands rather than a model, so the shared context costs **zero tokens**; `context-broker` adds only the judgement a command cannot have — which of those files matter here.
+
+**The parallelism was theoretical.** The phase table said what could run concurrently and nothing acted on it. `plan` emits actual batches, guaranteeing no agent shares a batch with something it `requires`, capped at four abreast.
+
+**Shared skills quietly doubled the bill.** Two agents legitimately declaring one skill is the design working — dispatching both when the request wanted one is not. `plan` settles it on request affinity and records the loser with the margin that decided it. Nothing is dropped silently.
+
+The cheapest fix is upstream of all four: **most requests should never reach the swarm at all.** That is what the `fast` effort mode and `fast-path-triage` are for.
+
 ## The swarm
 
-39 agents, generated from `registry/agents.yaml` — `agents/*.md` is build output, so adding an agent is a registry edit rather than 39 files to keep in sync.
+45 agents, generated from `registry/agents.yaml` — `agents/*.md` is build output, so adding an agent is a registry edit rather than 45 files to keep in sync.
 
 | Division | Agents |
 |---|---|
@@ -70,7 +96,12 @@ request → effort mode → decision table ─┬─ matched → skills
 | Quality | `test-engineer`, `uat-coordinator`, `qa-engineer`, `code-reviewer`, `performance-analyst` |
 | Demo & docs | `demo-builder`, `user-guide-writer`, `process-documenter`, `knowledge-curator` |
 | Ops | `git-safety`, `deployment-safety`, `migration-analyst` |
-| Passive governance | `skill-guardian`, `agent-guardian`, `routing-auditor`, `knowledge-guardian`, `swarm-evolution` |
+| Passive governance | `skill-guardian`, `agent-guardian`, `routing-auditor`, `knowledge-guardian`, `swarm-evolution`, `efficiency-auditor` |
+| Control plane | `fast-path-triage`, `context-broker`, `swarm-dispatcher`, `result-synthesizer`, `quality-sentinel` |
+
+**The control plane exists to prevent dispatches, not to add them.** An extra agent is a full round trip, so one that does not pay for its own latency is agent theatre with better vocabulary. Each is named for the specific waste it removes: triage decides how much swarm a request deserves → broker maps the ground once → dispatcher batches the run → *[specialists]* → synthesizer collapses the returns → sentinel decides what actually needs reviewing → auditor scores the run afterwards.
+
+They are constrained accordingly. A control agent holds no `Write` or `Edit` tool and `doctor` fails the build if one appears — the moment it can build, it stops being cheaper than the specialist it was meant to replace. `quality-sentinel` may reduce review effort but never to zero on schema, deployment, security, or anything a specialist flagged as risky in its own handoff. `result-synthesizer` may merge a duplicate finding but may never drop one for brevity, and surfaces contradictions as contradictions rather than averaging them into a position no agent held.
 
 **Where the orchestrator lives, and why it matters.** A Claude Code sub-agent cannot address the user — only the main thread can. So human-approval gates, live observability and conflict escalation stay in the orchestrator **skill** running in the main thread; that is the only surface which can both dispatch agents and talk to you. The three orchestrator *sub-agents* exist for delegated work needing no mid-flight decision, and they are mute by design: they return a question in `handoff` rather than guess.
 
@@ -95,7 +126,7 @@ git clone https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP.git
 cd Orchestrator-Agent-For-ERP
 
 node scripts/orchestrator.mjs install              # dry run — shows the plan, writes nothing
-node scripts/orchestrator.mjs install --apply      # install skills AND the 39 agents
+node scripts/orchestrator.mjs install --apply      # install skills AND the 45 agents
 node scripts/orchestrator.mjs health               # verify skills
 node scripts/orchestrator.mjs doctor               # verify the swarm
 ```
@@ -104,7 +135,7 @@ Skills land in `~/.claude/skills`, agents in `~/.claude/agents` (override with `
 
 **Restart Claude Code after installing.** Agent definitions are read at session start — until then they are on disk and invisible.
 
-Skills land in `~/.claude/skills` (override with `CLAUDE_SKILLS_DIR`). Nothing to install first; Node 18+ is all you need.
+Nothing to install first; Node 18+ is all you need.
 
 Optional third-party skill packs are declared in `registry/overlay.yaml` and fetched only when asked:
 
@@ -121,8 +152,12 @@ Those are **not vendored** — they are other people's work under their own lice
 | `install [--apply] [--external] [--force]` | Resolve and place skills. Dry run by default. |
 | `build` | Regenerate `registry/registry.generated.json` from disk. |
 | `health` | Validate the ecosystem: missing, orphan, cycles, conflicts. |
-| `route "<request>"` | Explain a routing decision. |
-| `npm test` | Run the routing regression suite. |
+| `route "<request>"` | Explain a routing decision — which skills, which phases. |
+| `plan "<request>"` | Execution plan — which agents, parallel batches, model tier, relative cost. |
+| `pack [dir]` | Deterministic Context Pack. No model involved, so it costs nothing to regenerate. |
+| `agents [--apply]` | Generate `agents/*.md` from the registry. |
+| `doctor` | Audit the agent roster. |
+| `npm test` | Run the routing and execution-plan regression suites (40 tests). |
 
 ## Health check
 
@@ -166,19 +201,26 @@ orchestrator/SKILL.md      the skill Claude Code loads
 registry/taxonomy.yaml     categories and execution phases
 registry/overlay.yaml      per-skill orchestration metadata + external manifest
 registry/routing.yaml      decision table, composites, scorer weights, thresholds
-scripts/orchestrator.mjs   CLI: build, health, route, install
-scripts/route.mjs          routing engine
+registry/agents.yaml       the 45 agents: mode, model tier, ownership, conflicts
+scripts/orchestrator.mjs   CLI: build, health, route, plan, pack, install, agents, doctor
+scripts/route.mjs          routing engine — request to skills
+scripts/plan.mjs           execution planner — skills to agents, batches, tiers, cost
+scripts/pack.mjs           deterministic context pack
+scripts/swarm.mjs          agent generation and roster audit
 scripts/install.mjs        installer
 skills/                    in-tree skills
-tests/                     routing regression suite
+tests/                     routing and execution-plan regression suites
 ```
 
 ## Status and limits
 
-Working: registry, auto-discovery, health checks, hybrid routing, dependency resolution, conflict handling, effort modes, user overrides, installer with dry-run and traversal defence, 22 passing regression tests.
+Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, 40 passing regression tests.
 
 Known gaps, stated plainly:
 
+- **The cost index is a ratio, not a measurement.** `plan` reports relative cost from the tier weights in `scripts/plan.mjs`. It is honest about direction and magnitude; it is not a bill, and nothing here has been benchmarked against wall-clock.
+- **Contest resolution is lexical.** When two agents claim one skill, the tiebreak is word overlap between the request and what the agent says it owns. It is inspectable and it beats dispatching both, but it will lose to phrasing that shares no vocabulary with the agent's `owns` sentence.
+- **The seven human gates have never been exercised end to end.** They are declared and every agent is generated with the refusal text; no run has yet crossed one and been stopped.
 - **No debugging skill in-tree.** A bug report routes toward the server and quality categories, but there is no investigation specialist to route *to*. The taxonomy will not invent a category with no member.
 - **Version compatibility is declared, not enforced.** `package.json` carries a version; per-skill compatibility ranges are not yet checked at install time.
 - **The scorer is untuned.** Weights and thresholds are reasoned defaults, not fitted to a corpus. They live in `routing.yaml` precisely so they can be adjusted without touching the engine.

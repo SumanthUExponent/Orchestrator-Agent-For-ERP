@@ -2,7 +2,7 @@
 name: interaction-designer
 description: Flow, state and feedback. What happens between screens — step sequences, empty/loading/error states, confirmations, and what the interface says when something goes wrong.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: opus
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

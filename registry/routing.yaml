@@ -14,6 +14,15 @@ version: 1
 # ------------------------------------------------------------- effort (§24)
 # Selected from complexity signals; always overridable by the user (§23).
 effort_modes:
+  fast:
+    max_skills: 1
+    gates: []
+    note: >
+      Answer it directly. One skill at most, no phases, no agent dispatch. This mode
+      exists because the expensive failure is not choosing the wrong specialist — it
+      is convening five of them for a question one could answer. fast-path-triage
+      selects this; anything touching schema, deployment or security must never land
+      here regardless of how small the wording sounds.
   minimal:
     max_skills: 2
     gates: []
@@ -28,6 +37,9 @@ effort_modes:
     note: New modules, migrations, platform work. The plan gate is mandatory.
 
 complexity:
+  fast:
+    # Questions, not work. "What does X do" needs no plan and no swarm.
+    signals: [what is, what does, where is, how do i, explain, remind me, which file, is there a]
   minimal:
     signals: [typo, rename, label, tooltip, one-line, quick fix, wording]
   full:

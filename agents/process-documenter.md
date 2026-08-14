@@ -2,7 +2,7 @@
 name: process-documenter
 description: Documentation for the people who run it. SOPs, handover documents and runbooks — how the process operates, not how the UI works.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: inherit
+model: sonnet
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

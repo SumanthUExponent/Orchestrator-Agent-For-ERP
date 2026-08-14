@@ -2,7 +2,7 @@
 name: git-safety
 description: Protecting work in the repository. Knowing the branch, the base, what is uncommitted and what is unrelated to the task — so no one else's work is discarded. Destructive git operations require human approval, always.
 tools: Read, Grep, Glob, Bash
-model: inherit
+model: haiku
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;
@@ -20,18 +20,6 @@ Work outside that sentence is not yours. If the task drifts, say so in `handoff`
 **Constraints.**
 
 Never force-push, rewrite history or delete a branch without explicit human approval.
-
-## Before you change anything (Frappe safety, §14)
-
-Inspect before you modify. Identify the owning app, the DocType ownership, and what depends on the code you are about to touch — hooks, client scripts, server scripts, reports, permissions, migrations. A change that works in isolation and breaks a caller is not a fix.
-
-Never duplicate functionality that already exists, never modify another app's ownership without understanding why, and never delete anything without impact analysis.
-
-## safe_exec (Server Scripts and System Console code)
-
-No `import`. No f-strings or `.format()` — concatenate. No `frappe.get_roles()` — query `Has Role`. No `doc.reload()` — re-fetch with `get_doc`. No module-level `return` — assign `frappe.response["message"]`. No leading-underscore names, no tuple unpacking, no `getattr`/`setattr`.
-
-These forms are longer on purpose. Do not "simplify" them.
 
 ## Stop and escalate
 

@@ -341,6 +341,30 @@ try {
       });
       break;
     }
+    case 'plan': {
+      // Same acyclic-import discipline as route: both modules are handed in rather
+      // than imported by plan.mjs, so nothing points back at this file.
+      const routeModule = await import('./route.mjs');
+      const swarmModule = await import('./swarm.mjs');
+      const { render } = await import('./plan.mjs');
+      const args = rest.filter((a) => !a.startsWith('--'));
+      const effortFlag = rest.find((a) => a.startsWith('--effort='));
+      process.exit(
+        render(build({ quiet: true }), args.join(' '), {
+          readYaml,
+          root: ROOT,
+          routeModule,
+          swarmModule,
+          effort: effortFlag ? effortFlag.split('=')[1] : undefined,
+        })
+      );
+      break;
+    }
+    case 'pack': {
+      const { render } = await import('./pack.mjs');
+      process.exit(render(rest.find((a) => !a.startsWith('--')) || process.cwd()));
+      break;
+    }
     case 'install': {
       const { install, render } = await import('./install.mjs');
       render(
@@ -376,7 +400,9 @@ try {
           '',
           '  build                      regenerate the skill registry',
           '  health                     validate the skill ecosystem (§17)',
-          '  route "<request>"          explain a routing decision',
+          '  route "<request>"          explain a routing decision (which skills)',
+          '  plan "<request>"           execution plan: agents, parallel batches, model tier',
+          '  pack [dir]                 deterministic Context Pack — zero tokens, share it',
           '  install [--apply] [--external] [--force]',
           '  agents [--apply]           generate agents/*.md from registry/agents.yaml',
           '  doctor                     audit the agent roster (§6)',
