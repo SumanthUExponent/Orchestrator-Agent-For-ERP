@@ -360,6 +360,24 @@ try {
       );
       break;
     }
+    case 'bench': {
+      const routeModule = await import('./route.mjs');
+      const swarmModule = await import('./swarm.mjs');
+      const planModule = await import('./plan.mjs');
+      const { render } = await import('./bench.mjs');
+      process.exit(
+        render(build({ quiet: true }), {
+          readYaml,
+          root: ROOT,
+          cwd: ROOT,
+          routeModule,
+          swarmModule,
+          planModule,
+          loadAgents: swarmModule.loadAgents,
+        })
+      );
+      break;
+    }
     case 'pack': {
       const { render } = await import('./pack.mjs');
       process.exit(render(rest.find((a) => !a.startsWith('--')) || process.cwd()));
@@ -403,6 +421,7 @@ try {
           '  route "<request>"          explain a routing decision (which skills)',
           '  plan "<request>"           execution plan: agents, parallel batches, model tier',
           '  pack [dir]                 deterministic Context Pack — zero tokens, share it',
+          '  bench                      before/after efficiency benchmark over a fixed corpus',
           '  install [--apply] [--external] [--force]',
           '  agents [--apply]           generate agents/*.md from registry/agents.yaml',
           '  doctor                     audit the agent roster (§6)',

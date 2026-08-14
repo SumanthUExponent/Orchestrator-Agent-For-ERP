@@ -14,8 +14,10 @@ import assert from 'node:assert/strict';
 import { build, readYaml, ROOT } from '../scripts/orchestrator.mjs';
 import * as routeModule from '../scripts/route.mjs';
 import * as swarmModule from '../scripts/swarm.mjs';
+import * as planModule from '../scripts/plan.mjs';
 import { executionPlan } from '../scripts/plan.mjs';
 import { collect } from '../scripts/pack.mjs';
+import { bench } from '../scripts/bench.mjs';
 
 const reg = build({ quiet: true });
 const X = (request, opts = {}) => executionPlan(reg, request, { readYaml, root: ROOT, cwd: ROOT, routeModule, swarmModule, ...opts });
@@ -126,6 +128,24 @@ describe('cost accounting', () => {
   test('baseline is proportional to the dispatch count', () => {
     const p = X('Design a new Asset Handover module end-to-end');
     assert.equal(p.baseline, p.agentCount * 15);
+  });
+});
+
+describe('efficiency benchmark', () => {
+  test('the corpus costs less than its all-opus baseline', () => {
+    const { totals } = bench(reg, { readYaml, root: ROOT, cwd: ROOT, routeModule, swarmModule, planModule });
+    assert.ok(totals.after.cost < totals.before.cost, `${totals.after.cost} vs ${totals.before.cost}`);
+    assert.ok(totals.after.dispatches <= totals.before.dispatches, 'contest resolution added dispatches');
+    assert.ok(totals.after.steps <= totals.before.steps, 'batching added steps');
+  });
+  test('cheap requests stay cheap — the control plane leaves them alone', () => {
+    // If this fails the layer has started convening a swarm for a typo, which is
+    // the exact failure it was built to prevent.
+    const { rows } = bench(reg, { readYaml, root: ROOT, cwd: ROOT, routeModule, swarmModule, planModule });
+    for (const label of ['what does the routing table do', 'fix the typo in the submit button label']) {
+      const r = rows.find((x) => x.request === label);
+      assert.equal(r.after.dispatches, 0, `"${label}" dispatched ${r.after.dispatches} agent(s)`);
+    }
   });
 });
 
