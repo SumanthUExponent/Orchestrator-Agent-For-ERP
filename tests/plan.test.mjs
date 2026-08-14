@@ -174,6 +174,14 @@ describe('context pack', () => {
     assert.ok(c.fileCount > 0);
     assert.ok(Array.isArray(c.doctypes));
   });
+  test('an empty list means absent only when the scan completed', () => {
+    // Regression: a truncated walk rendered "DocTypes: none found" at a bench root
+    // holding thousands. The pack is the trusted shared context — a confident wrong
+    // answer here is worse than no pack.
+    const c = collect(ROOT);
+    assert.equal(typeof c.truncated, 'boolean');
+    assert.equal(c.truncated, false, 'this repo is small enough to scan fully');
+  });
   test('reports bench availability, because managed hosting has none', () => {
     // An agent that recommends `bench migrate` on Frappe Cloud has wasted the turn.
     // Regression: this searched downward only, so scanning apps/<app> answered "no
