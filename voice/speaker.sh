@@ -28,7 +28,16 @@ SIR="${JARVIS_ADDRESS:-sir}"; [ -n "$SIR" ] && SIR=", $SIR"
 # `say -v '?'` listing — and validating matters: `say` falls back to the US default for
 # a name it does not have, silently, so an uninstalled voice would give session 2 an
 # American accent with nothing anywhere to explain it.
-JV_V1=""; JV_V2=""; JV_V3=""; JV_V4=""
+# Read through indirection in voice_for(), which is what lets a slot be looked up by
+# number instead of by four branches. A static checker cannot see that.
+# shellcheck disable=SC2034
+JV_V1=""
+# shellcheck disable=SC2034
+JV_V2=""
+# shellcheck disable=SC2034
+JV_V3=""
+# shellcheck disable=SC2034
+JV_V4=""
 resolve_voices() {
   local want="${JARVIS_VOICES:-}" i=1 v
   # Nothing configured: every slot uses the single voice, and there is nothing to
@@ -36,7 +45,14 @@ resolve_voices() {
   # daemon start to answer a question whose answer is already known, and it made the
   # daemon a second slower to reach its first announcement.
   if [ -z "$want" ]; then
-    JV_V1="${JARVIS_VOICE:-}"; JV_V2="$JV_V1"; JV_V3="$JV_V1"; JV_V4="$JV_V1"
+    # All four are read by indirection in voice_for(); a static checker cannot see it.
+    JV_V1="${JARVIS_VOICE:-}"
+    # shellcheck disable=SC2034
+    JV_V2="$JV_V1"
+    # shellcheck disable=SC2034
+    JV_V3="$JV_V1"
+    # shellcheck disable=SC2034
+    JV_V4="$JV_V1"
     return 0
   fi
   local rest="$want"
@@ -196,7 +212,7 @@ render() {
       # the only thing in the announcement that distinguishes them.
       local crew=""
       [ "$subs" -ge 2 ] && crew=" $subs specialists,"
-      motif done "$ord"
+      motif 'done' "$ord"
       if [ "$solo" = 1 ]; then
         speak "$(pick "Done$SIR.$crew $(dur "$el")." \
                       "Finished$SIR.$crew $(dur "$el")." \
@@ -344,7 +360,16 @@ while :; do
   # orphan left behind by `jarvisctl reset` cleans itself up.
   [ "$(cat "$J/run/lock/pid" 2>/dev/null)" = "$$" ] || exit 0
 
-  f=$(ls "$Q" 2>/dev/null | grep -v '^\.' | sort | head -1)
+  # Lowest-sorting queue entry, by glob rather than by `ls | grep`. Queue names begin
+  # with the priority digit and claims begin with a dot, so the pattern excludes claims
+  # by construction — and glob expansion is already sorted, which is what puts urgent
+  # items first.
+  f=""
+  for g in "$Q"/[0-9]*; do
+    [ -e "$g" ] || continue
+    f=${g##*/}
+    break
+  done
   if [ -z "$f" ]; then
     idle_ticks=$(( idle_ticks + 1 ))
     [ $(( idle_ticks % 20 )) -eq 0 ] && check_nags
@@ -358,7 +383,7 @@ while :; do
   # daemon generates itself from its idle loop and which therefore never pass through
   # a hook at all. Muting for fifteen minutes did not stop it nagging.
   if [ -f "$S/muted" ] && [ "$(cat "$S/muted" 2>/dev/null)" -gt "$(date +%s)" ] 2>/dev/null; then
-    ls "$Q" 2>/dev/null | grep -v '^\.' | while read -r stale; do rm -f "$Q/$stale"; done
+    rm -f "$Q"/[0-9]* 2>/dev/null
     sleep 0.5; continue
   fi
 
@@ -368,6 +393,9 @@ while :; do
   mv "$Q/$f" "$claim" 2>/dev/null || continue
   line=$(cat "$claim" 2>/dev/null); rm -f "$claim"
   [ -z "$line" ] && continue
+  # `key` is unused but must be read: without it the trailing field would be appended
+  # to `ord`, and the chime would land on the wrong session.
+  # shellcheck disable=SC2034
   IFS='|' read -r mode name extra born ord key <<< "$line"
 
   pri=${f%%-*}
@@ -404,6 +432,7 @@ while :; do
       done
       if [ -n "$nline" ]; then
         line="$nline"
+        # shellcheck disable=SC2034
         IFS='|' read -r mode name extra born ord key <<< "$line"
       fi
       absorbed=$(( absorbed + 1 ))

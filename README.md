@@ -123,31 +123,69 @@ Note what it deliberately does *not* flag: two agents sharing a skill. That is t
 
 ## Install
 
+**Requirements:** Node 18 or newer, and git. Nothing else — no `npm install`, no
+dependencies. On Windows you also need a bash: [Git for
+Windows](https://gitforwindows.org) or WSL. Claude Code itself is assumed.
+
 ```bash
 git clone https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP.git
 cd Orchestrator-Agent-For-ERP
 
 node scripts/orchestrator.mjs install              # dry run — shows the plan, writes nothing
-node scripts/orchestrator.mjs install --apply      # install skills AND the 45 agents
-node scripts/orchestrator.mjs health               # verify skills
+node scripts/orchestrator.mjs install --apply      # install the skills AND the 45 agents
+node scripts/orchestrator.mjs health               # verify the skills
 node scripts/orchestrator.mjs doctor               # verify the swarm
-
-node scripts/orchestrator.mjs voice --apply        # optional: give every session a voice
 ```
 
-Skills land in `~/.claude/skills`, agents in `~/.claude/agents` (override with `CLAUDE_SKILLS_DIR` / `CLAUDE_AGENTS_DIR`).
+Skills land in `~/.claude/skills`, agents in `~/.claude/agents` (override with
+`CLAUDE_SKILLS_DIR` / `CLAUDE_AGENTS_DIR`).
 
-**Restart Claude Code after installing.** Agent definitions are read at session start — until then they are on disk and invisible.
+**Restart Claude Code afterwards.** Agent definitions are read at session start — until
+then they are on disk and invisible.
 
-Nothing to install first; Node 18+ is all you need.
+**Upgrading?** Existing agents are skipped by name, so a plain `--apply` over an
+existing install writes nothing and any re-tiering silently never lands. Use `--force`.
 
-Optional third-party skill packs are declared in `registry/overlay.yaml` and fetched only when asked:
+Optional third-party skill packs are declared in `registry/overlay.yaml` and fetched
+only when asked:
 
 ```bash
 node scripts/orchestrator.mjs install --apply --external
 ```
 
-Those are **not vendored** — they are other people's work under their own licences, resolved from source so upstream fixes reach you.
+Those are **not vendored** — they are other people's work under their own licences,
+resolved from source so upstream fixes reach you.
+
+### Adding the voice layer
+
+```bash
+node scripts/orchestrator.mjs voice               # dry run — shows every hook it will register
+node scripts/orchestrator.mjs voice --apply
+jarvisctl doctor                                  # names the backends it found on your machine
+```
+
+It runs on macOS, Linux and Windows and needs one speech engine and one audio player.
+macOS and Windows already have both. On Linux, install them:
+
+| | Debian / Ubuntu | Fedora | Arch |
+|---|---|---|---|
+| speech | `apt install espeak-ng` | `dnf install espeak-ng` | `pacman -S espeak-ng` |
+| audio | `apt install pulseaudio-utils` *or* `alsa-utils` | `dnf install pulseaudio-utils` | `pacman -S libpulse` |
+| banners *(optional)* | `apt install libnotify-bin` | `dnf install libnotify` | `pacman -S libnotify` |
+
+For a voice that does not sound like 1994, install [Piper](https://github.com/rhasspy/piper),
+download a voice, and set `JARVIS_PIPER_MODEL` in `~/.claude/jarvis/config.sh`. It is a
+local neural model — still no network, still no account.
+
+`jarvisctl doctor` tells you exactly what it found and what to install if it found
+nothing. Nothing here talks to a server: the speech is your operating system's, and the
+chimes are synthesised on your machine at install time.
+
+**Windows notes.** Run the installer from any shell, but the hooks are written to
+invoke `bash`, so Git Bash or WSL must be on your PATH. `jarvisctl` is not symlinked
+onto PATH there — call it as `~/.claude/jarvis/jarvisctl`. Desktop banners need the
+[BurntToast](https://github.com/Windos/BurntToast) module; without it the speech still
+works and the banner is skipped.
 
 ## The voice layer
 

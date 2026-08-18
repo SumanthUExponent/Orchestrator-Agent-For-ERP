@@ -194,7 +194,11 @@ describe('config.sh is the user\'s file', () => {
     assert.ok(!fs.readFileSync(cfg, 'utf8').includes('Oliver'));
   });
 
-  test('the scripts land executable', () => {
+  test('the scripts land executable', (t) => {
+    // Windows has no execute bit — the mode is always 0o666 — and the hooks there
+    // invoke `bash <script>` rather than executing it directly, so there is nothing
+    // to assert. Skipping is honest; asserting would fail for a working install.
+    if (process.platform === 'win32') return t.skip('no execute bit on Windows');
     run({ apply: true });
     for (const f of ['jarvis.sh', 'speaker.sh', 'jarvisctl']) {
       assert.ok(fs.statSync(path.join(TARGET(), f)).mode & 0o111, `${f} is not executable`);

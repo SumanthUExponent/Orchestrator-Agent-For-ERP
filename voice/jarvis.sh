@@ -105,6 +105,7 @@ enqueue() {
 
 wake_speaker() {
   if mkdir "$J/run/lock" 2>/dev/null; then
+    echo "$NOW" > "$J/run/lock/born" 2>/dev/null
     nohup "$J/speaker.sh" >/dev/null 2>&1 &
     return
   fi
@@ -116,13 +117,27 @@ wake_speaker() {
     kill -0 "$p" 2>/dev/null && return
   else
     # No pid yet. Give a genuine startup 30s before assuming the spawn failed,
-    # otherwise a speaker.sh that cannot execute holds the lock forever and the
-    # whole system goes quiet with no error anywhere.
-    local age; age=$(( NOW - $(stat -f %m "$J/run/lock" 2>/dev/null || stat -c %Y "$J/run/lock" 2>/dev/null || echo "$NOW") ))
+    # otherwise a speaker.sh that cannot execute holds the lock forever and the whole
+    # system goes quiet with no error anywhere.
+    #
+    # The age comes from a timestamp the lock carries, NOT from stat. `stat -f` exists
+    # on both platforms and means completely different things: a format string on BSD,
+    # `--file-system` on GNU — where it SUCCEEDS and prints filesystem information, so
+    # a `stat -f ... || stat -c ...` fallback never reaches the fallback. That fed
+    # filesystem text into an arithmetic expression, and the resulting syntax error
+    # meant the daemon was never spawned on Linux at all: everything went silent, with
+    # only a stray parse error to show for it.
+    local born age
+    born=$(cat "$J/run/lock/born" 2>/dev/null)
+    case "$born" in ''|*[!0-9]*) born=$NOW ;; esac
+    age=$(( NOW - born ))
     [ "$age" -lt 30 ] && return
   fi
   rm -rf "$J/run/lock" 2>/dev/null
-  mkdir "$J/run/lock" 2>/dev/null && nohup "$J/speaker.sh" >/dev/null 2>&1 &
+  if mkdir "$J/run/lock" 2>/dev/null; then
+    echo "$NOW" > "$J/run/lock/born" 2>/dev/null
+    nohup "$J/speaker.sh" >/dev/null 2>&1 &
+  fi
 }
 
 case "$MODE" in
@@ -153,7 +168,7 @@ case "$MODE" in
     [ -z "$subs" ] && subs=0
     rm -f "$S/subs/$KEY"
     if [ "$el" -lt "${JARVIS_MIN_SECONDS:-25}" ]; then enqueue 7 tick "$el"
-    else enqueue 5 done "$el:$subs"; fi ;;
+    else enqueue 5 'done' "$el:$subs"; fi ;;
 
   permission|approve)               # Notification / permission_prompt
     mark_active
