@@ -11,6 +11,8 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { build, readYaml, ROOT } from '../scripts/orchestrator.mjs';
 import * as routeModule from '../scripts/route.mjs';
 import * as swarmModule from '../scripts/swarm.mjs';
@@ -41,6 +43,30 @@ describe('agent registry integrity', () => {
   test('control agents cannot write', () => {
     for (const a of agents.filter((x) => x.mode === 'control')) {
       assert.ok(!a.tools.includes('Write') && !a.tools.includes('Edit'), `${a.id} can write — it is no longer a control agent`);
+    }
+  });
+});
+
+describe('the spoken-summary contract', () => {
+  test('every agent is required to return a voice clause', () => {
+    // Without it the announcement falls back to "task complete", which tells a listener
+    // only that time passed — and the listener is the whole point of the voice layer.
+    for (const a of agents) {
+      assert.ok(a.handoff.includes('voice'), `${a.id} does not have to return a voice clause`);
+    }
+  });
+
+  test('the generated agent file explains the format, not just the field name', () => {
+    // The field being declared is not enough: an agent that returns a paragraph, or a
+    // file path, produces something unintelligible when read aloud.
+    const dir = path.join(ROOT, 'agents');
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.md'));
+    assert.ok(files.length > 0, 'no agents generated');
+    for (const f of files) {
+      const body = fs.readFileSync(path.join(dir, f), 'utf8');
+      assert.match(body, /VOICE: <one clause>/, `${f} does not show the marker format`);
+      assert.match(body, /under ten words/, `${f} does not state the length limit`);
+      assert.match(body, /No paths, no identifiers/, `${f} does not warn against paths`);
     }
   });
 });

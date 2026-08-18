@@ -114,6 +114,8 @@ quiet() {
   return 1
 }
 # wait_for <pattern> <file> [secs] — poll for something to actually happen.
+# Fire a hook with a JSON payload, the way Claude Code delivers one.
+say_hook() { printf '%s' "$2" | JARVIS_SESSION_KEY=s1 JARVIS_SESSION_NAME=alpha "$J/jarvis.sh" "$1" >/dev/null 2>&1; }
 wait_for() {
   local pat="$1" f="$2" lim="${3:-25}" n=0
   while [ "$n" -lt "$lim" ]; do
@@ -357,6 +359,16 @@ for m in start begin 'done' permission idle subagent error end; do
   out=$(JARVIS_SESSION_KEY=q1 JARVIS_SESSION_NAME=quiet "$J/jarvis.sh" "$m" </dev/null 2>&1)
   if [ -n "$out" ]; then bad "$m produced output" "$out"; else ok "$m is silent"; fi
 done
+# And with a payload carrying a marker, which is the path that actually runs. Without a
+# marker the extraction bails early and never reaches the file it has to append to — so
+# the version of this test that passed no stdin missed a hook writing to stderr on the
+# FIRST note of every single turn.
+rm -f "$HOME/.claude/jarvis/state/notes/q2"
+for m in subagent 'done'; do
+  out=$(printf '%s' '{"last_assistant_message":"VOICE: something changed in the thing"}' \
+        | JARVIS_SESSION_KEY=q2 JARVIS_SESSION_NAME=quiet "$J/jarvis.sh" "$m" 2>&1)
+  if [ -n "$out" ]; then bad "$m with a marker produced output" "$out"; else ok "$m is silent with a marker"; fi
+done
 quiet 40
 
 # ---------------------------------------------------------------- T12
@@ -371,10 +383,14 @@ quiet 40
 # all of them and it said goodbye four times. No existing test could see this: each
 # behaviour is correct in isolation.
 for i in 1 2 3 4; do hook s$i proj$i end; done
-wait_for Goodbye "$AUDIT" 30
+# Match on the RENDER, not on the words. This asserted the literal "Goodbye" and broke
+# the moment the farewell gained a day digest — the third time a spoken-text grep in this
+# harness has quietly stopped testing what it claimed to.
+wait_for ' bye ' "$J/log" 40
 quiet 40
-n=$(grep -c 'Goodbye' "$AUDIT" 2>/dev/null); n=${n:-0}
-rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "exactly one goodbye spoken (got $n)" "$(grep SAY_START "$AUDIT")"
+n=$(grep -c ' bye ' "$J/log" 2>/dev/null); n=${n:-0}
+rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "exactly one farewell rendered (got $n)" "$(cat "$J/log")"
+u=$(says); rc=0; [ "$u" = 1 ] || rc=1; check "$rc" "and exactly one utterance (got $u)" "$(grep SAY_START "$AUDIT")"
 # The log must agree with what was actually said. Three suppressed byes were still
 # being logged, so `jarvisctl log` and the simulation both reported four farewells.
 b=$(grep -c ' bye ' "$J/log" 2>/dev/null); b=${b:-0}
@@ -384,11 +400,11 @@ echo
 echo "T13 a new session re-arms the farewell"
 hook s1 proj1 start
 quiet 40
-: > "$AUDIT"
+: > "$AUDIT"; : > "$J/log"
 hook s1 proj1 end
-wait_for Goodbye "$AUDIT" 30
-n=$(grep -c 'Goodbye' "$AUDIT" 2>/dev/null); n=${n:-0}
-rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "the next close says goodbye again (got $n)"
+wait_for ' bye ' "$J/log" 40
+n=$(grep -c ' bye ' "$J/log" 2>/dev/null); n=${n:-0}
+rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "the next close bids farewell again (got $n)"
 
 # ---------------------------------------------------------------- T14
 echo
@@ -472,6 +488,229 @@ rc=0; grep -q 'done alpha 300:4 1' "$SB/hookargs.log" || rc=1; check "$rc" "the 
 hook s1 alpha error
 rc=0; wait_for SAY_START "$AUDIT" 30 || rc=1; check "$rc" "a hanging extension does not stall the queue"
 rm -rf "$J/hooks.d"
+
+# ---------------------------------------------------------------- T17
+echo
+echo "T17 specialists' spoken summaries reach the announcement"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+# Every orchestrator agent is required to end with a VOICE: line. Stop and SubagentStop
+# both carry last_assistant_message, so the clause is picked up from the hook payload —
+# no transcript parsing, no model call, nothing leaving the machine.
+say_hook begin '{}'
+say_hook subagent '{"agent_type":"data-model-architect","last_assistant_message":"Long design text.\n\nVOICE: Vendor Audit schema is in\n"}'
+rc=0; grep -qF 'Vendor Audit schema is in' "$HOME/.claude/jarvis/state/notes/s1" || rc=1
+check "$rc" "a specialist's clause is captured" "$(cat "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null)"
+
+say_hook subagent '{"agent_type":"code-reviewer","last_assistant_message":"No marker at all in this reply."}'
+n=$(wc -l < "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null | tr -d ' ')
+rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "an agent that emits none adds nothing ($n note)"
+
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+rc=0; wait_for 'Vendor Audit schema is in' "$AUDIT" 40 || rc=1
+check "$rc" "and it is spoken on completion" "$(grep SAY_START "$AUDIT" | tail -1)"
+# The count only ever existed because there was nothing better to say.
+rc=0; grep -q 'specialists' "$AUDIT" && rc=1
+check "$rc" "the specialist count is dropped when there is a summary"
+quiet 40
+
+echo
+echo "T17f reset clears the notes too"
+# reset listed every other state directory but not notes/, so a reset left the previous
+# turn's clauses on disk for the next completion to announce.
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook subagent '{"last_assistant_message":"VOICE: a clause from before the reset"}'
+"$J/jarvisctl" reset >/dev/null
+rc=0; [ -s "$HOME/.claude/jarvis/state/notes/s1" ] && rc=1
+check "$rc" "no clause survives a reset" "$(cat "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null)"
+
+echo
+echo "T17b a new turn starts with no inherited summary"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook subagent '{"last_assistant_message":"VOICE: stale note from the previous turn"}'
+say_hook begin '{}'
+rc=0; [ -s "$HOME/.claude/jarvis/state/notes/s1" ] && rc=1
+check "$rc" "notes cleared on the next prompt" "$(cat "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null)"
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+quiet 40
+rc=0; grep -q 'stale note' "$AUDIT" && rc=1
+check "$rc" "and a stale clause is never spoken" "$(grep SAY_START "$AUDIT")"
+
+echo
+echo "T17c a turn with no summary still announces"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{"last_assistant_message":"I fixed it."}'
+rc=0; wait_for SAY_START "$AUDIT" 40 || rc=1
+check "$rc" "falls back to the short form rather than going silent"
+quiet 40
+
+echo
+echo "T17d agent output is not a trusted input"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: done | $(touch '"$SB"'/PWNED) and `id` \"q\" /etc/passwd"}'
+note=$(cat "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null)
+rc=0; [ -e "$SB/PWNED" ] && rc=1
+check "$rc" "a command substitution in a clause is not executed"
+case "$note" in *'|'*|*'$'*|*'`'*|*'"'*|*'/'*) bad "shell metacharacters are stripped" "kept: $note" ;;
+  *) ok "shell metacharacters are stripped (became: $note)" ;; esac
+
+echo
+echo "T17e a runaway clause cannot monopolise the speaker"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook begin '{}'
+long=$(node -e 'process.stdout.write("word ".repeat(200))')
+say_hook subagent "{\"last_assistant_message\":\"VOICE: $long\"}"
+note=$(cat "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null); len=${#note}
+rc=0; [ "$len" -le 140 ] || rc=1
+check "$rc" "capped at 140 characters (got $len)"
+
+# ---------------------------------------------------------------- T18
+echo
+echo "T18 the voice is not spent on completions with nothing to report"
+fresh
+# Running several sessions, Stop fires constantly and "Done, sir. Three minutes." carries
+# no information — it is the announcement that made the layer feel talkative.
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+printf 'bravo|2\n' > "$HOME/.claude/jarvis/state/active/s2"
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+quiet 40
+n=$(says); rc=0; [ "$n" = 0 ] || rc=1
+check "$rc" "two sessions live, nothing to say: ticks instead of speaking ($n utterances)"
+c=$(chimes); rc=0; [ "$c" -ge 1 ] || rc=1
+check "$rc" "but it still ticks, so the turn is not invisible ($c)"
+
+echo
+echo "T18b with something to say, it speaks — however many sessions are live"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+printf 'bravo|2\n' > "$HOME/.claude/jarvis/state/active/s2"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: nineteen tests pass"}'
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+rc=0; wait_for 'nineteen tests pass' "$AUDIT" 40 || rc=1
+check "$rc" "an informative completion is always spoken" "$(grep SAY_START "$AUDIT" | tail -1)"
+quiet 40
+
+echo
+echo "T18c alone, the short form is still spoken"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+rc=0; wait_for SAY_START "$AUDIT" 40 || rc=1
+check "$rc" "one session, nothing to say: still worth a sentence"
+quiet 40
+
+echo
+echo "T19 the farewell reports the whole day, once"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: schema is in"}'
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+quiet 40
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: four tests are failing on the refund path"}'
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+quiet 40
+: > "$AUDIT"
+say_hook end '{}'
+rc=0; wait_for 'All sessions closed' "$AUDIT" 40 || rc=1
+check "$rc" "the farewell speaks" "$(grep SAY_START "$AUDIT")"
+rc=0; grep -q '2 turns' "$AUDIT" || rc=1
+check "$rc" "and counts the turns across the day" "$(grep SAY_START "$AUDIT")"
+rc=0; grep -q '1 problem outstanding' "$AUDIT" || rc=1
+check "$rc" "and names that something is outstanding"
+rc=0; [ -e "$HOME/.claude/jarvis/state/day" ] && rc=1
+check "$rc" "and clears the tally, so tomorrow starts fresh"
+
+# ---------------------------------------------------------------- T20
+echo
+echo "T20 the end-of-session briefing"
+fresh
+rm -rf "$J/briefings"
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+ST="$HOME/.claude/jarvis/state"
+
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: schema is in\nHEADS-UP: the submit hook now fires on amend"}'
+say_hook subagent '{"last_assistant_message":"VOICE: fixtures exported\nPENDING: permissions matrix needs an Auditor role"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+quiet 40
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: all tests pass\nPENDING: the offline sync path is untested"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+quiet 40
+
+rc=0; grep -qF 'the submit hook now fires on amend' "$ST/heads/s1" || rc=1
+check "$rc" "a HEADS-UP is collected" "$(cat "$ST/heads/s1" 2>/dev/null)"
+n=$(grep -c '' "$ST/todo/s1" 2>/dev/null); n=${n:-0}
+rc=0; [ "$n" = 2 ] || rc=1; check "$rc" "PENDING accumulates ACROSS turns (got $n)" "$(cat "$ST/todo/s1" 2>/dev/null)"
+n=$(grep -c '' "$ST/done/s1" 2>/dev/null); n=${n:-0}
+rc=0; [ "$n" -ge 2 ] || rc=1; check "$rc" "and so does what was done (got $n)"
+
+: > "$AUDIT"; : > "$J/log"
+say_hook end '{}'
+rc=0; wait_for ' brief ' "$J/log" 40 || rc=1
+check "$rc" "closing the session speaks a briefing" "$(cat "$J/log")"
+# Poll for the speech, not for the log line: the log is written at the START of render,
+# so it is present a debounce and a chime before anything is spoken.
+rc=0; wait_for 'permissions matrix needs an Auditor role' "$AUDIT" 40 || rc=1
+check "$rc" "and it names what is still pending" "$(grep SAY_START "$AUDIT" | head -2)"
+# What was DONE is deliberately not spoken: it was already announced turn by turn, and
+# the person hearing this is closing a terminal.
+rc=0; grep -q 'fixtures exported' "$AUDIT" && rc=1
+check "$rc" "but not everything already announced turn by turn"
+quiet 40
+
+b=$(ls "$J/briefings" 2>/dev/null | wc -l | tr -d ' ')
+rc=0; [ "$b" -ge 1 ] || rc=1; check "$rc" "a full record is written to disk ($b file)"
+f=$(ls "$J/briefings"/* 2>/dev/null | head -1)
+for want in 'DONE' 'HEADS UP' 'PENDING' 'fixtures exported' 'offline sync path'; do
+  rc=0; grep -qF "$want" "$f" || rc=1
+  check "$rc" "the record contains \"$want\""
+done
+rc=0; "$J/jarvisctl" brief 2>/dev/null | grep -qF 'offline sync path' || rc=1
+check "$rc" "and jarvisctl brief prints it"
+
+echo
+echo "T20b a session that finished cleanly says nothing on the way out"
+fresh
+rm -rf "$J/briefings"
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: reviewed the hooks, nothing to change"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+quiet 40
+: > "$J/log"
+say_hook end '{}'
+quiet 40
+n=$(grep -c ' brief ' "$J/log" 2>/dev/null); n=${n:-0}
+rc=0; [ "$n" = 0 ] || rc=1; check "$rc" "nothing outstanding, so nothing spoken ($n)" "$(cat "$J/log")"
+rc=0; ls "$J/briefings"/* >/dev/null 2>&1 || rc=1
+check "$rc" "but the record is written anyway"
+
+echo
+echo "T20c the session's lists do not leak into the next one"
+rc=0; [ -e "$ST/todo/s1" ] && rc=1; check "$rc" "pending cleared on close"
+rc=0; [ -e "$ST/done/s1" ] && rc=1; check "$rc" "done cleared on close"
+rc=0; [ -e "$ST/heads/s1" ] && rc=1; check "$rc" "heads-up cleared on close"
 
 # ---------------------------------------------------------------- teardown
 echo

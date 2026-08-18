@@ -7,6 +7,7 @@
 #   chimes            audition every motif back to back, and the four session pitches
 #   demo              narrated simulation of four parallel sessions, end to end
 #   report            speak where every session stands right now
+#   brief [name]      the end-of-session record: done, heads up, pending
 #   log [n]           the last n announcements
 #   mute <minutes> / unmute
 #   reset             clear all state (orphan daemons stand down on their own)
@@ -120,6 +121,10 @@ case "${1:-status}" in
     fi
 
     if [ -n "${JARVIS_VOICES:-}" ]; then
+      adv "JARVIS_VOICES is set, so each session speaks in a different voice."
+      echo "          Four voices read as four different people, which is harder to follow"
+      echo "          than one assistant naming the session it is talking about. Clear it"
+      echo "          in config.sh unless you specifically want per-session speakers."
       ( export JARVIS_LIB=1; . "$J/speaker.sh"
         i=1; while [ "$i" -le 4 ]; do
           v="JV_V$i"; got="${!v-}"
@@ -227,6 +232,27 @@ case "${1:-status}" in
     echo "$msg"
     [ "${2:-}" = "--text" ] || jv_say "$msg" ;;
 
+  brief)
+    # The full record, which the spoken form deliberately does not cover: everything a
+    # session achieved, not only what is still outstanding.
+    d="$J/briefings"
+    if [ ! -d "$d" ] || [ -z "$(ls -A "$d" 2>/dev/null)" ]; then
+      echo "No briefings yet. One is written when a session closes."
+      exit 0
+    fi
+    if [ -n "${2:-}" ]; then
+      f=$(ls -t "$d"/*"$2"* 2>/dev/null | head -1)
+      [ -z "$f" ] && { echo "No briefing matching \"$2\"."; exit 1; }
+      echo "== $(basename "$f")"; cat "$f"
+    else
+      # Most recent first, capped — a briefing you have to scroll is one nobody reads.
+      for f in $(ls -t "$d" 2>/dev/null | head -3); do
+        echo "== $f"; sed 's/^/  /' "$d/$f"; echo
+      done
+      n=$(ls "$d" 2>/dev/null | wc -l | tr -d ' ')
+      [ "$n" -gt 3 ] && echo "($n briefings in $d)"
+    fi ;;
+
   log)
     tail -"${2:-25}" "$J/log" 2>/dev/null || echo "nothing announced yet" ;;
 
@@ -271,8 +297,12 @@ case "${1:-status}" in
   unmute) rm -f "$S/muted"; echo "Unmuted." ;;
 
   reset)
-    rm -rf "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs" "$J/run/lock" "$J/log" "$J/run/daemons.log" "$J/run/farewell"
-    mkdir -p "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs"
+    # notes/ must be in both lists. It was in neither, so a reset left the previous
+    # turn's spoken clauses on disk and the next completion announced them — the exact
+    # staleness the begin-hook cleanup exists to prevent.
+    rm -rf "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" "$S/day" \
+           "$J/run/lock" "$J/log" "$J/run/daemons.log" "$J/run/farewell"
+    mkdir -p "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes"
     echo "State cleared. Any live daemon stands down within a second." ;;
 
   test)
@@ -361,5 +391,5 @@ case "${1:-status}" in
       *) echo "Unsupported platform: $(uname -s)" ;;
     esac ;;
 
-  *) echo "usage: jarvisctl [status|doctor|report|test|chimes|demo|log [n]|mute <min>|unmute|reset|voices]"; exit 2 ;;
+  *) echo "usage: jarvisctl [status|doctor|report|brief [name]|test|chimes|demo|log [n]|mute <min>|unmute|reset|voices]"; exit 2 ;;
 esac

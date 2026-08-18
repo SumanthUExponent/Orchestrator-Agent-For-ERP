@@ -16,7 +16,8 @@ J="$HOME/.claude/jarvis"
 [ -f "$J/config.sh" ] && . "$J/config.sh"
 
 Q="$J/queue"; S="$J/state"
-mkdir -p "$Q" "$S/active" "$S/start" "$S/pending" "$S/subs" "$J/run" 2>/dev/null
+mkdir -p "$Q" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" \
+         "$S/done" "$S/todo" "$S/heads" "$J/briefings" "$J/run" 2>/dev/null
 
 MODE="$1"
 
@@ -34,6 +35,63 @@ case "$IN" in
     SID=${SID%%\"*}
     ;;
 esac
+
+# The spoken summary an agent left for us.
+#
+# Stop and SubagentStop both carry `last_assistant_message` — the agent's final text —
+# and the documentation is explicit that this is what hooks should read, because the
+# transcript file is written asynchronously and lags the conversation.
+#
+# Only the marker line is wanted, the marker is ASCII, and a newline inside a JSON
+# string is the two characters backslash-n. So the line is isolated by hand rather than
+# by parsing JSON: a `node` or `python3` spawn on a hook that fires after every turn and
+# every specialist is a cost paid constantly for a value already in reach.
+#
+# The result is filtered to an ALLOWLIST, not escaped. It is about to be handed to a
+# speech synthesiser and carried through a pipe-delimited queue line, and an agent's
+# output is not a trusted input — so anything that is not plain speech is dropped.
+# marker_note <MARKER>  — pull one clause out of the hook payload.
+#
+# VOICE is the outcome, spoken at the end of the turn. PENDING and HEADS-UP are
+# optional and are read back at the END OF THE SESSION, where the audience is someone
+# deciding whether they can walk away, or picking the work up tomorrow.
+marker_note() {
+  local marker="$1"
+  case "$IN" in *"$marker":*) ;; *) return 1 ;; esac
+  # One sed, because matching a literal backslash in a bash glob is ambiguous — `\\n`
+  # inside a pattern reads as an escaped `n`, so an earlier attempt truncated at the
+  # first letter n instead of at the encoded newline. sed's semantics here are exact.
+  #
+  # Then an ALLOWLIST, not an escape. This is about to be read aloud and carried through
+  # a pipe-delimited queue line, and an agent's output is not a trusted input, so
+  # anything that is not plain speech is dropped rather than quoted.
+  local v
+  v=$(printf '%s' "$IN" \
+      | sed -n "/$marker:/{ s/.*$marker:[[:space:]]*//; s/\\\\n.*//; s/\".*//; p; }" \
+      | tail -1 \
+      | tr -cd "A-Za-z0-9 .,;:'-" \
+      | tr -s ' ')
+  v="${v# }"; v="${v% }"
+  # A runaway line would otherwise be read out for a minute.
+  v="${v:0:140}"
+  [ ${#v} -ge 3 ] || return 1
+  printf '%s' "$v"
+}
+
+voice_note() { marker_note VOICE; }
+
+# Append a clause to a per-session list, without duplicates. The same PENDING item
+# repeated by three agents across four turns is one item, not twelve.
+remember() {
+  local file="$1" line="$2" n=0
+  [ -z "$line" ] && return 0
+  if [ -r "$file" ]; then
+    grep -qxF "$line" "$file" 2>/dev/null && return 0
+    n=$(grep -c '' "$file" 2>/dev/null); n=${n:-0}
+  fi
+  [ "$n" -lt 8 ] && printf '%s\n' "$line" >> "$file"
+  return 0
+}
 
 NAME="${JARVIS_SESSION_NAME:-$(basename "$PWD")}"
 if [ -n "${JARVIS_SESSION_KEY:-}" ]; then KEY="$JARVIS_SESSION_KEY"
@@ -99,7 +157,7 @@ ordinal() {
 # Priority leads the filename so `sort` orders the queue: 0 urgent, 1 nag, 4+
 # routine. The epoch is a fixed 10 digits, so lexical sort is chronological.
 enqueue() {
-  printf '%s|%s|%s|%s|%s|%s\n' "$2" "$NAME" "$3" "$NOW" "$(ordinal)" "$KEY" \
+  printf '%s|%s|%s|%s|%s|%s|%s\n' "$2" "$NAME" "$3" "$NOW" "$(ordinal)" "$KEY" "${4:-}" \
     > "$Q/$1-$NOW-$$-$RANDOM" 2>/dev/null
 }
 
@@ -153,7 +211,7 @@ case "$MODE" in
   begin)                            # UserPromptSubmit — restart the clock
     mark_active
     echo "$NOW" > "$S/start/$KEY"
-    rm -f "$S/pending/$KEY" "$S/subs/$KEY" ;;
+    rm -f "$S/pending/$KEY" "$S/subs/$KEY" "$S/notes/$KEY" ;;
 
   done)                             # Stop
     # No "permission granted" event exists in Claude Code, so pending state is
@@ -167,8 +225,74 @@ case "$MODE" in
     [ "${JARVIS_COUNT_SUBAGENTS:-1}" = "1" ] && subs=$(cat "$S/subs/$KEY" 2>/dev/null)
     [ -z "$subs" ] && subs=0
     rm -f "$S/subs/$KEY"
-    if [ "$el" -lt "${JARVIS_MIN_SECONDS:-25}" ]; then enqueue 7 tick "$el"
-    else enqueue 5 'done' "$el:$subs"; fi ;;
+
+    # What to actually say. Specialist notes first; failing that, a marker the main
+    # thread left in its own final message.
+    # The main thread can leave these too, not only the specialists.
+    remember "$S/todo/$KEY"  "$(marker_note 'PENDING' 2>/dev/null)"
+    remember "$S/heads/$KEY" "$(marker_note 'HEADS-UP' 2>/dev/null)"
+
+    SUMMARY=""
+    if [ "${JARVIS_SUMMARY:-1}" = "1" ]; then
+      if [ -s "$S/notes/$KEY" ]; then
+        # This fallback IS the effective default for anyone who already had a config.sh
+        # — it is deliberately preserved across upgrades, so a newly added setting never
+        # appears in theirs. It must therefore match what config.sh documents.
+        max=${JARVIS_SUMMARY_MAX:-1}
+
+        # WHICH clause, when several arrived, is the whole question.
+        #
+        # A problem wins outright. The agent contract already tells specialists to lead
+        # with one, and a problem is the only thing here genuinely worth interrupting
+        # someone for — announcing "schema is in" while a sibling agent reported a failing
+        # test would be actively misleading.
+        #
+        # Otherwise the LAST, not the first. In a requirements-design-build-test pipeline
+        # the earliest agent to finish is the least conclusive; taking the first meant a
+        # four-agent run announced its acceptance criteria and never mentioned that the
+        # tests passed.
+        SUMMARY=$(grep -inE '(^|[^a-z])(fail|failed|failing|error|errors|broken|blocked|cannot|missing|unsafe|conflict|conflicts|risk|risks)([^a-z]|$)' \
+                    "$S/notes/$KEY" 2>/dev/null | head -1 | cut -d: -f2-)
+        if [ -z "$SUMMARY" ]; then
+          SUMMARY=$(tail -"$max" "$S/notes/$KEY" 2>/dev/null | tr '\n' ';' | sed 's/;$//; s/;/; /g')
+        fi
+      else
+        SUMMARY=$(voice_note) || SUMMARY=""
+      fi
+    fi
+    [ -n "$SUMMARY" ] && remember "$S/done/$KEY" "$SUMMARY"
+    rm -f "$S/notes/$KEY"
+
+    # A completion with nothing to report is the announcement that makes this feel
+    # talkative. Running four sessions, `Stop` fires constantly and "Done, sir. Three
+    # minutes." carries no information — so by default the voice is saved for turns that
+    # actually have something to say, and the rest just tick.
+    speak_it=1
+    if [ -z "$SUMMARY" ]; then
+      case "${JARVIS_SPEAK_WITHOUT_SUMMARY:-auto}" in
+        0) speak_it=0 ;;
+        1) speak_it=1 ;;
+        *) live=$(ls "$S/active" 2>/dev/null | wc -l | tr -d ' ')
+           case "$live" in ''|*[!0-9]*) live=1 ;; esac
+           [ "$live" -gt 1 ] && speak_it=0 ;;
+      esac
+    fi
+
+    # The day's tally, for the single farewell. One line per completed turn across ALL
+    # sessions, which is the only place anything has a view of the whole day.
+    if [ "${JARVIS_DAY_DIGEST:-1}" = "1" ]; then
+      flag=ok
+      case "$SUMMARY" in
+        *fail*|*error*|*broken*|*blocked*|*cannot*|*missing*|*unsafe*|*conflict*|*risk*) flag=problem ;;
+      esac
+      printf '%s|%s|%s\n' "$NAME" "$flag" "$SUMMARY" >> "$S/day" 2>/dev/null
+    fi
+
+    if [ "$el" -lt "${JARVIS_MIN_SECONDS:-25}" ] || [ "$speak_it" = 0 ]; then
+      enqueue 7 tick "$el"
+    else
+      enqueue 5 'done' "$el:$subs" "$SUMMARY"
+    fi ;;
 
   permission|approve)               # Notification / permission_prompt
     mark_active
@@ -181,6 +305,22 @@ case "$MODE" in
   subagent|sub)                     # SubagentStop
     n=$(cat "$S/subs/$KEY" 2>/dev/null); [ -z "$n" ] && n=0
     echo $(( n + 1 )) > "$S/subs/$KEY"
+    # Whatever this specialist wanted said. Capped: a swarm run can dispatch a dozen,
+    # and a dozen clauses is a paragraph nobody asked to have read to them.
+    remember "$S/todo/$KEY"  "$(marker_note 'PENDING' 2>/dev/null)"
+    remember "$S/heads/$KEY" "$(marker_note 'HEADS-UP' 2>/dev/null)"
+    if note=$(voice_note); then
+      # Guard the file before redirecting into it. A redirect that cannot open its target
+      # is reported by the SHELL, so `2>/dev/null` on the command never suppresses it —
+      # and the very first note of every turn hits exactly that, printing an error from a
+      # hook. A hook that writes to stderr surfaces a notice in the transcript.
+      lines=0
+      if [ -r "$S/notes/$KEY" ]; then
+        lines=$(wc -l < "$S/notes/$KEY" 2>/dev/null | tr -d ' ')
+        case "$lines" in ''|*[!0-9]*) lines=0 ;; esac
+      fi
+      [ "$lines" -lt 8 ] && printf '%s\n' "$note" >> "$S/notes/$KEY"
+    fi
     case "${JARVIS_SUBAGENT:-chime}" in
       silent) exit 0 ;;
       speak)  enqueue 6 subspeak "$(( n + 1 ))" ;;
@@ -191,7 +331,38 @@ case "$MODE" in
     enqueue 0 err "" ;;
 
   end|bye)                          # SessionEnd
-    rm -f "$S/active/$KEY" "$S/start/$KEY" "$S/pending/$KEY" "$S/subs/$KEY"
+    # The briefing is written in full and spoken in part, deliberately. Everything the
+    # session achieved is worth having on record; only what is still outstanding is worth
+    # reading aloud to someone who is closing the terminal.
+    BRIEF="$J/briefings/$(date +%Y-%m-%d)-$NAME.txt"
+    {
+      printf '%s  %s\n\n' "$(date '+%Y-%m-%d %H:%M')" "$NAME"
+      if [ -s "$S/done/$KEY" ]; then
+        printf 'DONE\n'; sed 's/^/  - /' "$S/done/$KEY"; printf '\n'
+      fi
+      if [ -s "$S/heads/$KEY" ]; then
+        printf 'HEADS UP\n'; sed 's/^/  - /' "$S/heads/$KEY"; printf '\n'
+      fi
+      if [ -s "$S/todo/$KEY" ]; then
+        printf 'PENDING\n'; sed 's/^/  - /' "$S/todo/$KEY"; printf '\n'
+      fi
+    } >> "$BRIEF" 2>/dev/null
+
+    # Spoken form: pending first, because it is the only thing that can still be acted
+    # on; then one heads-up. A session that finished cleanly says nothing at all — the
+    # farewell already reports the day's totals.
+    SPOKEN=""
+    if [ "${JARVIS_BRIEF:-1}" = "1" ]; then
+      if [ -s "$S/todo/$KEY" ]; then
+        SPOKEN="Pending: $(head -2 "$S/todo/$KEY" 2>/dev/null | tr '\n' ';' | sed 's/;$//; s/;/. And /g')"
+      elif [ -s "$S/heads/$KEY" ]; then
+        SPOKEN="Heads up: $(head -1 "$S/heads/$KEY" 2>/dev/null)"
+      fi
+    fi
+    [ -n "$SPOKEN" ] && enqueue 3 brief "$SPOKEN"
+
+    rm -f "$S/active/$KEY" "$S/start/$KEY" "$S/pending/$KEY" "$S/subs/$KEY" "$S/notes/$KEY" \
+          "$S/done/$KEY" "$S/todo/$KEY" "$S/heads/$KEY"
     enqueue 6 bye "" ;;
 
   *)

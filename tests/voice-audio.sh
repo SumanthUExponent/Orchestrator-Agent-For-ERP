@@ -244,6 +244,11 @@ else
   budget "idle, solo          " 1.8 "Standing by, sir."
   budget "boot                " 3.2 "Good afternoon, sir. frappe bench online."
   budget "approval, 2 sessions" 2.6 "N S T needs your approval, sir."
+  # A summarised completion carries real information, so it earns more seconds than
+  # "task complete" — but not many more. The agent contract caps the clause at ten
+  # words precisely because each word is roughly a fifth of a second of speech.
+  budget "summary, within contract" 3.4 "Vendor Audit schema is in, sir. 4 minutes."
+  budget "summary, a wordy clause  " 5.2 "Vendor Audit schema is in, with three child tables, sir. 4 minutes."
 fi
 
 echo

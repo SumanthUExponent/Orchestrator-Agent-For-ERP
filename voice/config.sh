@@ -3,17 +3,26 @@
 #
 # Edit this file to change the defaults for every session.
 
-JARVIS_VOICE="${JARVIS_VOICE:-Daniel}"            # `jarvisctl voices` to audition
+# "Daniel" is a macOS name — see `jarvisctl voices` for what you have. On Linux and
+# Windows, leave this empty or set a name from `jarvisctl voices` for your platform.
+# EMPTY has its own meaning: use the System Voice, which is the only way to reach a
+# Siri voice on macOS. `jarvisctl voices --setup` explains that.
+JARVIS_VOICE="${JARVIS_VOICE:-Daniel}"
 
-# One voice per parallel session, pipe-separated, in start order. Four sessions in four
-# voices is far easier to tell apart than four pitches of one voice — you recognise a
-# voice without having to remember what slot 3 sounded like. Names that are not
-# installed fall back to JARVIS_VOICE, and `jarvisctl doctor` says which did.
-# Leave empty to use JARVIS_VOICE for everything.
+# ONE voice, deliberately. Leave this empty.
+#
+# An earlier version gave each parallel session its own voice, on the reasoning that a
+# voice is easier to recognise than a pitch. In use that is wrong: four voices read as
+# four different PEOPLE, which breaks the single-assistant model the whole thing rests
+# on. You are not meant to be tracking four narrators — you are meant to have one
+# assistant with an eye on everything, telling you which session it is talking about.
+#
+# The session name in the sentence is the identifier, and the chime pitch is a second
+# cue underneath it. That is enough, and it costs no learning.
+#
+# The mechanism is still here if you want it — pipe-separated, in session start order —
+# but it is off by default and not recommended.
 #   macOS:   "Daniel|Karen|Reed (English (UK))|Sandy (English (UK))"
-#            Run `jarvisctl voices` and paste the names EXACTLY as listed — the
-#            qualifier is part of the name, and `say` silently falls back to a US
-#            voice for a name it does not have.
 #   Windows: "Microsoft George Desktop|Microsoft Hazel Desktop"
 JARVIS_VOICES="${JARVIS_VOICES:-}"
 
@@ -78,6 +87,53 @@ JARVIS_SUBAGENT="${JARVIS_SUBAGENT:-chime}"
 # worktree prefix) is dropped.
 JARVIS_NAMES="${JARVIS_NAMES:-}"
 
+# Speak what the agents actually DID, rather than only that a turn ended.
+#
+# Every orchestrator agent is required to end its output with a line reading
+# "VOICE: <one clause>", and those clauses are collected and read out on completion:
+#
+#   without:  "Done, sir. Six specialists, four minutes."          3.5s
+#   with:     "Vendor Audit schema is in, sir. Four minutes."       2.8s
+#
+# The count of specialists disappears when there is a summary — it only ever existed
+# because there was nothing better to say. 0 disables and restores the short form.
+JARVIS_SUMMARY="${JARVIS_SUMMARY:-1}"
+
+# When several specialists reported, the one that mentions a problem is spoken — the
+# agent contract tells them to lead with one, and it is the only thing here worth
+# interrupting you for. Failing that, the LAST clause: in a requirements-design-build-test
+# pipeline the first agent to finish is the least conclusive.
+#
+# How many of those clauses to speak. One, by default, and deliberately: a swarm run can
+# dispatch a dozen, each clause costs roughly two seconds of speech, and `Stop` fires
+# after every turn. Two is a reasonable choice if you want more detail and can live with
+# announcements around four seconds instead of under three.
+JARVIS_SUMMARY_MAX="${JARVIS_SUMMARY_MAX:-1}"
+
 # Count the specialists a turn dispatched and mention it in the completion, so
 # "six specialists, four minutes" distinguishes a swarm run from a one-liner.
 JARVIS_COUNT_SUBAGENTS="${JARVIS_COUNT_SUBAGENTS:-1}"
+
+# Whether to SPEAK a completion that has nothing to report.
+#
+# This is the difference between a useful assistant and a talkative one. Running four
+# sessions, `Stop` fires constantly, and "Done, sir. Three minutes." carries no
+# information at all — it is the announcement that made the layer feel noisy.
+#
+#   auto  speak it only when ONE session is live; when several are, tick instead and
+#         save the voice for turns that actually have something to say   <- default
+#   1     always speak, informative or not
+#   0     never speak a completion without a summary; tick every time
+#
+# Blocked approvals, errors and escalations always speak. Those are actionable.
+JARVIS_SPEAK_WITHOUT_SUMMARY="${JARVIS_SPEAK_WITHOUT_SUMMARY:-auto}"
+
+# Speak what is still outstanding as each session closes: "N S T closing, sir. Pending:
+# the permissions matrix still needs an Auditor role." A session that finished cleanly
+# says nothing — the farewell already reports the totals. The FULL record is always
+# written either way; read it with `jarvisctl brief`. 0 disables the spoken part.
+JARVIS_BRIEF="${JARVIS_BRIEF:-1}"
+
+# One line at the very end of the day, when the last session closes: how many turns
+# there were across ALL sessions, and whether anything is still outstanding. 0 disables.
+JARVIS_DAY_DIGEST="${JARVIS_DAY_DIGEST:-1}"
