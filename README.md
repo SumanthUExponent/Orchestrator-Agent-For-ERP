@@ -267,10 +267,48 @@ What that buys, beyond not overlapping:
 
 It is swarm-aware. `SubagentStop` fires once per specialist, so a batch of four would
 be four announcements — speech is therefore **not** the default for subagents. They
-chime, and the count is carried into the completion instead: *"task complete, sir.
-Six specialists, four minutes."* One line that distinguishes a swarm run from a
-one-line edit. Set `JARVIS_SUBAGENT=silent|chime|speak` in
-`~/.claude/jarvis/config.sh` to change that.
+chime, and what they *found* is carried into the completion instead. Set
+`JARVIS_SUBAGENT=silent|chime|speak` in `~/.claude/jarvis/config.sh` to change that.
+
+### It says what changed, not that time passed
+
+Every agent in the swarm is required to end its output with one line:
+
+```
+VOICE: Vendor Audit schema is in, three child tables
+```
+
+Those clauses are collected as each specialist finishes, and read out on completion:
+
+| | |
+|---|---|
+| without | *"Done, sir. Six specialists, four minutes."* — 3.5s, and it reports only that time passed |
+| with | *"Vendor Audit schema is in, sir. Four minutes."* — 2.8s, and it reports what changed |
+
+The specialist count disappears when there is a summary, because that count was never
+information — it was a proxy for "something substantial happened", added because there
+was nothing better to say. A run that can say what it did does not also need to say how
+many agents were involved in it.
+
+**No model call, and nothing leaves the machine.** `Stop` and `SubagentStop` both carry
+`last_assistant_message`, so the clause is lifted straight from the hook payload — the
+documentation is explicit that hooks should read that rather than the transcript, which
+is written asynchronously and lags the conversation. The extraction is a single `sed`.
+
+The contract is enforced rather than suggested: it is a protocol field, so `doctor`
+fails the build if any agent omits it, and a test asserts every generated agent file
+explains the *format* — an agent that returns a paragraph, or a file path, produces
+something unintelligible read aloud.
+
+Agent output is treated as untrusted. The clause is filtered through an **allowlist** of
+plain-speech characters rather than escaped, and capped at 140 characters. A test feeds
+it `VOICE: done | $(touch PWNED) and \`id\`` and asserts nothing executed and every
+metacharacter is gone.
+
+One clause is spoken by default, measured rather than guessed: each word costs roughly a
+fifth of a second and `Stop` fires after *every* turn, so two clauses run to 4.2–6.5s —
+back to the monologue the brevity work removed. `JARVIS_SUMMARY_MAX=2` if you want more
+detail and can live with about four seconds instead of under three.
 
 ### The tones are synthesised, not sampled
 
@@ -384,9 +422,9 @@ first, writes atomically, and refuses to touch a `settings.json` it cannot parse
 | `agents [--apply]` | Generate `agents/*.md` from the registry. |
 | `doctor` | Audit the agent roster. |
 | `voice [--apply] [--force]` | Install the voice layer and its eight hooks. Dry run by default. |
-| `npm test` | Routing, execution-plan, installer, voice-installer and tone-synthesis suites (96 tests). |
-| `npm run test:audio` | Platform backends, installed-tone integrity, name handling, phrase-length budgets (27 checks). |
-| `npm run test:voice` | The above plus the concurrency harness (40 checks, stubbed audio). |
+| `npm test` | Routing, execution-plan, installer, voice-installer and tone-synthesis suites (102 tests). |
+| `npm run test:audio` | Platform backends, installed-tone integrity, name handling, phrase-length budgets (34 checks). |
+| `npm run test:voice` | The above plus the concurrency harness (50 checks, stubbed audio). |
 | `npm run test:all` | Everything. |
 
 ## Health check
@@ -456,8 +494,8 @@ tests/voice-concurrency.sh voice behaviour under genuine parallel load
 
 ## Status and limits
 
-Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, the cross-platform voice layer, 96
-passing regression tests plus 67 audio and concurrency checks.
+Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, the cross-platform voice layer, spoken
+agent summaries, 102 passing regression tests plus 84 audio and concurrency checks.
 
 Known gaps, stated plainly:
 
