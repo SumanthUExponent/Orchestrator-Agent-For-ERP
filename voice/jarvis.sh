@@ -40,7 +40,11 @@ if [ -n "${JARVIS_SESSION_KEY:-}" ]; then KEY="$JARVIS_SESSION_KEY"
 elif [ -n "$SID" ];                    then KEY="${SID: -12}"
 else                                        KEY="pwd-${PWD//\//_}"
 fi
-KEY=${KEY//[^A-Za-z0-9_-]/_}
+# Map everything that is not alphanumeric to an underscore, including the dash. A
+# session id's last 12 characters can begin with one ("-solo-000001"), and a state
+# file whose name starts with a dash is a hazard the moment any future code passes it
+# to a command without a `--` or a directory prefix.
+KEY=${KEY//[^A-Za-z0-9]/_}
 NOW=$(date +%s)
 
 [ -f "$S/muted" ] && [ "$(cat "$S/muted" 2>/dev/null)" -gt "$NOW" ] 2>/dev/null && exit 0

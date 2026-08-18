@@ -213,8 +213,33 @@ printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
 # Born well beyond JARVIS_STALE. Announcing this 90s after the fact is noise.
 printf 'done|alpha|200:0|%s|1|s1\n' $(( $(date +%s) - 300 )) > "$J/queue/5-$(date +%s)-x-1"
 hook s1 alpha idle    # wake the daemon
-sleep 4
-grep -q 'task complete\|all done\|finished\|everything' "$AUDIT"; [ $? = 1 ]; check $? "the stale completion was discarded"
+quiet 30
+# Assert on the render LOG, not on the spoken words. The first version grepped the
+# audit for phrases like "task complete"; when the wording was shortened the grep
+# stopped matching and the test passed unconditionally. The log records the mode.
+grep -q ' done ' "$J/log" 2>/dev/null; [ $? = 1 ]; check $? "the stale completion was never rendered" "$(cat "$J/log" 2>/dev/null)"
+grep -q ' idle ' "$J/log" 2>/dev/null; check $? "but the fresh item that woke it was" "$(cat "$J/log" 2>/dev/null)"
+
+# ---------------------------------------------------------------- T11
+echo
+echo "T11 the chime finishes before the speech starts"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+hook s1 alpha done
+quiet 30
+# Overlapped, the chime's energy lands on the vowel formants of the first word —
+# which is the project name, the one part that has to be understood. The motif ends
+# by waiting out its own audible span precisely so this holds.
+lastchime=$(grep 'AFPLAY' "$AUDIT" | tail -1 | awk '{print $1}')
+firstsay=$(grep 'SAY_START' "$AUDIT" | head -1 | awk '{print $1}')
+if [ -n "$lastchime" ] && [ -n "$firstsay" ]; then
+  awk -v c="$lastchime" -v s="$firstsay" 'BEGIN{exit (s>=c)?0:1}'
+  check $? "speech starts after the last tone (chime $lastchime, speech $firstsay)"
+else
+  bad "speech starts after the last tone" "missing events: chime=$lastchime say=$firstsay"
+fi
+n=$(chimes); [ "$n" = 2 ]; check $? "the completion is a two-note motif ($n tones)"
 
 # ---------------------------------------------------------------- T10
 echo

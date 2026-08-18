@@ -3,7 +3,8 @@
 #
 #   status            which sessions are live, how long, which are blocked
 #   doctor            verify the install: scripts, hooks, voice, daemon count
-#   test              walk every alert type so you can judge it by ear
+#   test              walk every alert type, chime and speech, as it really fires
+#   chimes            audition every motif back to back, and the four session pitches
 #   log [n]           the last n announcements
 #   mute <minutes> / unmute
 #   reset             clear all state (orphan daemons stand down on their own)
@@ -115,6 +116,39 @@ case "${1:-status}" in
   log)
     tail -"${2:-25}" "$J/log" 2>/dev/null || echo "nothing announced yet" ;;
 
+  chimes)
+    # Audition every motif back to back, then the same motif across all four session
+    # pitches. Judging these one at a time as real events arrive is hopeless — they
+    # are minutes apart. Heard in sequence, a muddy or indistinct one is obvious.
+    export JARVIS_LIB=1
+    . "$J/speaker.sh"
+    echo "Each motif once, at session pitch 1:"
+    for k in boot done approve nag err idle tick sub bye; do
+      printf '  %-9s ' "$k"
+      case "$k" in
+        boot)    echo "rising arpeggio — powering up" ;;
+        done)    echo "rising fourth — resolved, positive" ;;
+        approve) echo "three insistent taps — needs you" ;;
+        nag)     echo "the same, tighter and higher — still waiting" ;;
+        err)     echo "falling fifth on a dark atom — bad news" ;;
+        idle)    echo "two soft taps — waiting, not urgent" ;;
+        tick)    echo "one quiet tap — a whole short turn" ;;
+        sub)     echo "quieter and lower — background specialist" ;;
+        bye)     echo "falling arpeggio — powering down" ;;
+      esac
+      motif "$k" 1; sleep 1.1
+    done
+    echo
+    echo "The completion motif at each of the four session pitches."
+    echo "You should be able to tell them apart; they are 2 semitones apart."
+    for o in 1 2 3 4; do printf '  session %s\n' "$o"; motif done "$o"; sleep 1.1; done
+    echo
+    echo "Now the same four, interleaved, as parallel sessions would arrive:"
+    for o in 1 3 2 4 1 4; do motif done "$o"; sleep 0.75; done
+    echo
+    echo "If any of these sound muddy, indistinct or wrong, say which — the motif"
+    echo "tables are at the top of ~/.claude/jarvis/speaker.sh." ;;
+
   mute)   m=${2:-15}; echo $(( now + m*60 )) > "$S/muted"; echo "Muted for ${m}m." ;;
   unmute) rm -f "$S/muted"; echo "Unmuted." ;;
 
@@ -151,5 +185,5 @@ case "${1:-status}" in
       sleep 0.6
     done ;;
 
-  *) echo "usage: jarvisctl [status|doctor|test|log [n]|mute <min>|unmute|reset|voices]"; exit 2 ;;
+  *) echo "usage: jarvisctl [status|doctor|test|chimes|log [n]|mute <min>|unmute|reset|voices]"; exit 2 ;;
 esac

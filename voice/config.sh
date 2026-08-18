@@ -29,6 +29,13 @@ JARVIS_NAG_AFTER="${JARVIS_NAG_AFTER:-70}"
 #   speak   announce each one. Only sane with 1-2 agents
 JARVIS_SUBAGENT="${JARVIS_SUBAGENT:-chime}"
 
+# A directory basename is not a word. `say` renders "wt_nst" as two nonsense
+# syllables, and "exponent_utilities" takes 1.6s to get through. Map the ones you
+# actually run to something speakable:  "wt_nst=N S T;frappe-bench=bench"
+# Without an entry, underscores and hyphens become spaces and a leading "wt " (the
+# worktree prefix) is dropped.
+JARVIS_NAMES="${JARVIS_NAMES:-}"
+
 # Count the specialists a turn dispatched and mention it in the completion, so
 # "six specialists, four minutes" distinguishes a swarm run from a one-liner.
 JARVIS_COUNT_SUBAGENTS="${JARVIS_COUNT_SUBAGENTS:-1}"
