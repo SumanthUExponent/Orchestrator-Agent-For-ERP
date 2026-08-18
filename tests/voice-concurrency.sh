@@ -776,6 +776,64 @@ check "$rc" "the marker wins over the closing sentence"
 rc=0; grep -q 'closing prose' "$AUDIT" && rc=1
 check "$rc" "and the fallback is not used"
 
+# ---------------------------------------------------------------- T23
+echo
+echo "T23 every announcement says WHICH session it is about"
+fresh
+ST="$HOME/.claude/jarvis/state"
+printf 'alpha|1\n' > "$ST/active/s1"
+# The name used to be spoken only when more than one session was live. That depended on
+# bookkeeping which goes stale, so the failure mode was an anonymous announcement at
+# exactly the moment several projects were running.
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: nineteen tests pass"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+rc=0; wait_for 'alpha' "$AUDIT" 40 || rc=1
+check "$rc" "a single live session is still named" "$(grep SAY_START "$AUDIT" | tail -1)"
+quiet 40
+
+echo
+echo "T23b two sessions in the SAME directory are told apart"
+fresh
+# The normal case for a bench or a monorepo, and they would otherwise announce themselves
+# identically — the same failure in a different disguise.
+printf 'alpha|1\n' > "$ST/active/s1"
+printf 'alpha|2\n' > "$ST/active/s2"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: nineteen tests pass"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+rc=0; wait_for 'alpha one' "$AUDIT" 40 || rc=1
+check "$rc" "the ordinal disambiguates them" "$(grep SAY_START "$AUDIT" | tail -1)"
+quiet 40
+
+echo
+echo "T23c distinct names are NOT given a pointless ordinal"
+fresh
+printf 'alpha|1\n' > "$ST/active/s1"
+printf 'bravo|2\n' > "$ST/active/s2"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: nineteen tests pass"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+wait_for SAY_START "$AUDIT" 40
+rc=0; grep -q 'alpha one' "$AUDIT" && rc=1
+check "$rc" "no ordinal when the name is already unique" "$(grep SAY_START "$AUDIT" | tail -1)"
+rc=0; grep -q 'alpha' "$AUDIT" || rc=1
+check "$rc" "but it is still named"
+quiet 40
+
+echo
+echo "T23d the path is recorded, so a spoken name can be traced to a project"
+fresh
+hook s1 alpha start
+rc=0; [ -s "$ST/cwd/s1" ] || rc=1
+check "$rc" "cwd captured for the session" "$(cat "$ST/cwd/s1" 2>/dev/null)"
+rc=0; "$J/jarvisctl" status 2>/dev/null | grep -qF "$(cat "$ST/cwd/s1" 2>/dev/null)" || rc=1
+check "$rc" "and status shows it, so names map back to paths"
+quiet 40
+
 # ---------------------------------------------------------------- teardown
 echo
 stop_daemon

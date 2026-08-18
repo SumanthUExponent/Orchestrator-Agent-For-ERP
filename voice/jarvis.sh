@@ -17,7 +17,7 @@ J="$HOME/.claude/jarvis"
 
 Q="$J/queue"; S="$J/state"
 mkdir -p "$Q" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" \
-         "$S/done" "$S/todo" "$S/heads" "$J/briefings" "$J/run" 2>/dev/null
+         "$S/done" "$S/todo" "$S/heads" "$S/cwd" "$J/briefings" "$J/run" 2>/dev/null
 
 MODE="$1"
 
@@ -148,7 +148,19 @@ remember() {
   return 0
 }
 
-NAME="${JARVIS_SESSION_NAME:-$(basename "$PWD")}"
+# The session's working directory, taken from the hook payload where it is given. Claude
+# Code passes `cwd` explicitly; $PWD is only a proxy for it and the two can differ.
+CWD=""
+case "$IN" in
+  *'"cwd"'*)
+    CWD=${IN#*\"cwd\":\"}
+    CWD=${CWD%%\"*}
+    ;;
+esac
+# Anything that is not an absolute path is not a cwd.
+case "$CWD" in /*|?:[/\\]*) ;; *) CWD="" ;; esac
+
+NAME="${JARVIS_SESSION_NAME:-$(basename "${CWD:-$PWD}")}"
 if [ -n "${JARVIS_SESSION_KEY:-}" ]; then KEY="$JARVIS_SESSION_KEY"
 elif [ -n "$SID" ];                    then KEY="${SID: -12}"
 else                                        KEY="pwd-${PWD//\//_}"
@@ -159,6 +171,18 @@ fi
 # to a command without a `--` or a directory prefix.
 KEY=${KEY//[^A-Za-z0-9]/_}
 NOW=$(date +%s)
+
+# Use the name this session was REGISTERED with, in preference to one derived from the
+# current directory. Preserving the stored FILE was not enough: the announcement is built
+# from $NAME, which was being recomputed on every event — so a session that cd'd into a
+# subdirectory kept its record but started announcing itself as "erpnext" instead of
+# "frappe bench". Attribution has to be stable for the life of the session or it is not
+# attribution at all.
+if [ -r "$S/active/$KEY" ]; then
+  read -r _reg < "$S/active/$KEY" 2>/dev/null
+  _reg=${_reg%%|*}
+  [ -n "$_reg" ] && NAME="$_reg"
+fi
 
 [ -f "$S/muted" ] && [ "$(cat "$S/muted" 2>/dev/null)" -gt "$NOW" ] 2>/dev/null && exit 0
 
@@ -182,18 +206,15 @@ assign_ordinal() {
 }
 
 mark_active() {
-  if [ -e "$S/active/$KEY" ]; then
-    # Already registered. Keep the ordinal; the name can legitimately change if
-    # the session cd'd somewhere else.
-    local line ord
-    line=""
-    [ -r "$S/active/$KEY" ] && read -r line < "$S/active/$KEY" 2>/dev/null
-    ord=${line##*|}
-    case "$ord" in ''|*[!0-9]*) ord=1 ;; esac
-    printf '%s|%s\n' "$NAME" "$ord" > "$S/active/$KEY"
-  else
-    printf '%s|%s\n' "$NAME" "$(assign_ordinal)" > "$S/active/$KEY"
-  fi
+  # Registered once, and then left alone. An earlier version rewrote the record on every
+  # event, re-deriving the name from the current directory on the reasoning that a session
+  # which cd'd elsewhere had legitimately moved. That is wrong: the name is how you know
+  # which of several projects is talking, and an identifier that changes when you cd into
+  # a subdirectory is worse than no identifier at all.
+  [ -e "$S/active/$KEY" ] && return 0
+  printf '%s\n' "${CWD:-$PWD}" > "$S/cwd/$KEY" 2>/dev/null
+  printf '%s|%s\n' "$NAME" "$(assign_ordinal)" > "$S/active/$KEY"
+  return 0
 }
 
 ordinal() {
@@ -421,7 +442,7 @@ case "$MODE" in
     [ -n "$SPOKEN" ] && enqueue 3 brief "$SPOKEN"
 
     rm -f "$S/active/$KEY" "$S/start/$KEY" "$S/pending/$KEY" "$S/subs/$KEY" "$S/notes/$KEY" \
-          "$S/done/$KEY" "$S/todo/$KEY" "$S/heads/$KEY"
+          "$S/done/$KEY" "$S/todo/$KEY" "$S/heads/$KEY" "$S/cwd/$KEY"
     enqueue 6 bye "" ;;
 
   *)

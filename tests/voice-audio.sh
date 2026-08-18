@@ -236,7 +236,17 @@ else
         ' "$SB/len.wav" ;;
     esac
   }
-  rc=0; budget() { local d; d=$(measure "$3"); awk -v d="$d" -v m="$2" 'BEGIN{exit (d<=m)?0:1}' || rc=1; chk "$rc" "$1 = ${d}s (budget ${2}s)"; }
+  # rc MUST be reset inside the function. A mechanical rewrite hoisted `rc=0` outside the
+  # definition, so it was set once for the whole run — and after the first genuine failure
+  # every later budget reported FAIL regardless of its own measurement. A sticky false
+  # failure is the same class of defect as a silent false pass: the assertion stops
+  # answering the question it claims to.
+  budget() {
+    local d rc=0
+    d=$(measure "$3")
+    awk -v d="$d" -v m="$2" 'BEGIN{exit (d<=m)?0:1}' || rc=1
+    chk "$rc" "$1 = ${d}s (budget ${2}s)"
+  }
   budget "done, solo, no crew " 2.2 "Done, sir. 4 minutes."
   budget "done, solo, swarm   " 3.4 "Done, sir. 6 specialists, 4 minutes."
   budget "approval, solo      " 1.8 "Your approval, sir."
@@ -247,8 +257,22 @@ else
   # A summarised completion carries real information, so it earns more seconds than
   # "task complete" — but not many more. The agent contract caps the clause at ten
   # words precisely because each word is roughly a fifth of a second of speech.
-  budget "summary, within contract" 3.4 "Vendor Audit schema is in, sir. 4 minutes."
-  budget "summary, a wordy clause  " 5.2 "Vendor Audit schema is in, with three child tables, sir. 4 minutes."
+  # Every announcement now names its session, always. That costs about 1.3s and is worth
+  # it: an announcement you cannot attribute is worthless to someone running four
+  # projects, and the old rule — name it only when several are live — depended on
+  # live-session bookkeeping that is exactly the thing most likely to be stale.
+  budget "named + summary        " 4.6 "frappe bench: Vendor Audit schema is in, sir. 4 minutes."
+  # Six words is the contract, and this is where the number comes from: a word costs
+  # about 0.38s on macOS `say`, and the name plus the duration spend two seconds before
+  # the clause starts.
+  #
+  # The budgets carry roughly 10% headroom because they are enforced against whatever
+  # engine THIS machine has, and engines differ at the same nominal words-per-minute:
+  # espeak-ng renders the six-word case at 5.03s where `say` gives 4.78s. The contract
+  # being asserted is "an announcement stays short", not "two synthesisers agree to the
+  # centisecond" — a budget with no margin fails on a difference that is not a defect.
+  budget "named + 6-word clause  " 5.4 "frappe bench: Vendor Audit schema and fixtures done, sir. 4 minutes."
+  budget "two in one directory   " 4.9 "frappe bench two: Vendor Audit schema is in, sir. 4 minutes."
 fi
 
 echo

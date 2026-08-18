@@ -172,9 +172,11 @@ A speech synthesiser reads it aloud to someone who is not looking at the screen,
 often while three other sessions are running. That audience changes what a good summary
 is:
 
-- **One clause, under ten words.** Each word is roughly a fifth of a second of speech,
-  and the whole announcement has to land inside about three. Ten words spoken is already
-  longer than most people will wait to hear what changed.
+- **One clause, six words or fewer.** This is measured, not a style preference: a word
+  costs about 0.38 seconds of speech, and the announcement also has to name which session
+  it came from and how long the turn took — roughly two seconds before your clause even
+  starts. Five words lands the whole thing at 4.1s; eight takes it to 5.7s, which is
+  longer than anyone keeps listening. "Vendor Audit schema is in" is the shape to aim at.
 - **Say what CHANGED, not what you did.** "Vendor Audit schema is in, with three child
   tables" — not "I have completed the data model design task as requested".
 - **No paths, no identifiers, no camelCase, no version numbers.** A file path read aloud

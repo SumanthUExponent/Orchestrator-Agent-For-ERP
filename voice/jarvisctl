@@ -61,6 +61,11 @@ case "${1:-status}" in
       sb=$(cat "$S/subs/$k" 2>/dev/null); [ -n "$sb" ] && [ "$sb" != "0" ] && el="$el  ${sb} specialist(s)"
       [ -e "$S/pending/$k" ] && el="$el  ** BLOCKED ON APPROVAL **"
       printf '  [%s] %-24s %s\n' "${ord:-?}" "$nm" "$el"
+      # The path, so a spoken name can be traced back to a project. Several sessions in
+      # one directory announce themselves as "<name> one", "<name> two" — this is where
+      # you look up which is which.
+      cw=$(cat "$S/cwd/$k" 2>/dev/null)
+      [ -n "$cw" ] && printf '      %s\n' "$cw"
     done
     q=0; for g in "$J"/queue/[0-9]*; do [ -e "$g" ] && q=$(( q + 1 )); done
     echo "Queued announcements: $q"
@@ -300,9 +305,9 @@ case "${1:-status}" in
     # notes/ must be in both lists. It was in neither, so a reset left the previous
     # turn's spoken clauses on disk and the next completion announced them — the exact
     # staleness the begin-hook cleanup exists to prevent.
-    rm -rf "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" "$S/day" \
+    rm -rf "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" "$S/day" "$S/cwd" \
            "$J/run/lock" "$J/log" "$J/run/daemons.log" "$J/run/farewell"
-    mkdir -p "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes"
+    mkdir -p "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" "$S/cwd"
     echo "State cleared. Any live daemon stands down within a second." ;;
 
   test)

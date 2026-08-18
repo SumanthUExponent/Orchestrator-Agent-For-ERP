@@ -712,7 +712,7 @@ protocol:
   fields:
     summary: One paragraph. What was done, in plain terms.
     voice: >
-      One clause, under ten words, emitted as a final line reading
+      One clause, six words or fewer, emitted as a final line reading
       "VOICE: <clause>". It is spoken aloud to someone who is not looking at
       the screen, so it must say what CHANGED and contain no paths or identifiers.
       Two optional companions, same rules, read back at the end of the session:

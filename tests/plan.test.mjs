@@ -65,7 +65,7 @@ describe('the spoken-summary contract', () => {
     for (const f of files) {
       const body = fs.readFileSync(path.join(dir, f), 'utf8');
       assert.match(body, /VOICE: <one clause>/, `${f} does not show the marker format`);
-      assert.match(body, /under ten words/, `${f} does not state the length limit`);
+      assert.match(body, /six words or fewer/, `${f} does not state the length limit`);
       assert.match(body, /No paths, no identifiers/, `${f} does not warn against paths`);
     }
   });

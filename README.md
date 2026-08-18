@@ -261,7 +261,9 @@ What that buys, beyond not overlapping:
 | Six completions collapse to one | A burst is debounced 1.2s, then the newest is spoken and the rest deleted |
 | Completions older than 50s are dropped | An announcement 90s late is noise, not information |
 | Session name spoken only when 2+ are live | With one session, "frappe-bench, finished" is padding; with four it is the message |
-| One voice, always | Four parallel sessions do **not** get four voices. Four voices read as four different *people*; the point is one assistant with an eye on everything, naming the session it is talking about. The chime pitch is a second cue underneath the name |
+| One voice, always | Four parallel sessions do **not** get four voices. Four voices read as four different *people*; the point is one assistant with an eye on everything, naming the session it is talking about |
+| **Every announcement names its session** | Not conditionally. Sessions sharing a directory get the ordinal too — *"frappe bench two"* — and that ordinal is the same number as the chime pitch, so the two cues reinforce each other |
+| The name never changes mid-session | Fixed when the session registers. `cd` into a subdirectory and it is still the project you know it as |
 | A completion with nothing to report does not speak | With several sessions live, *"Done, sir. Three minutes."* is pure noise. It ticks instead, and the voice is saved for turns that have something to say (`JARVIS_SPEAK_WITHOUT_SUMMARY`) |
 | Each session briefs you as it closes | Only what is still **outstanding** — what was done was already announced turn by turn. The full record goes to disk: `jarvisctl brief` |
 | The last session out reports the day | *"All sessions closed, sir. Eleven turns, and one problem outstanding, last in C R M."* One line, once, across every session |
@@ -327,6 +329,46 @@ One clause is spoken by default, measured rather than guessed: each word costs r
 fifth of a second and `Stop` fires after *every* turn, so two clauses run to 4.2–6.5s —
 back to the monologue the brevity work removed. `JARVIS_SUMMARY_MAX=2` if you want more
 detail and can live with about four seconds instead of under three.
+
+### Knowing which session is talking
+
+Running several projects at once, an announcement you cannot attribute is worthless — so
+the session is named in **every** announcement, without exception.
+
+It used to be named only when more than one session was live, to save the 1.3 seconds.
+That was wrong twice over. The saving is not worth the ambiguity; and the rule depended on
+live-session bookkeeping being accurate, which is exactly the thing most likely to be
+stale — so the failure mode was an *anonymous* announcement at the precise moment several
+projects were running.
+
+Two further things follow from that:
+
+- **Sessions sharing a name are told apart.** Several terminals open in one bench or
+  monorepo is the normal case, and they would otherwise all announce themselves
+  identically. They get the ordinal — *"frappe bench two"* — which is the same number as
+  their chime pitch, so the spoken cue and the tonal cue agree rather than being two
+  things to learn.
+- **The name is fixed when the session registers.** It used to be re-derived from the
+  working directory on every event, so a `cd` into a subdirectory made a session start
+  announcing itself as *"erpnext"* instead of *"frappe bench"*. An identifier that moves
+  is not an identifier.
+
+`jarvisctl status` prints each session's path, so a spoken name maps back to a project:
+
+```
+Active sessions: 3
+  [1] frappe-bench             working 4m12s
+      /Users/you/frappe-bench
+  [2] wt_nst                   idle
+      /Users/you/wt_nst
+  [3] frappe-bench             working 0m18s   ** BLOCKED ON APPROVAL **
+      /Users/you/frappe-bench
+```
+
+The cost is measured: a word of speech is about 0.38s, and naming the session plus the
+duration spends roughly two seconds before the clause starts. That is why the agent
+contract caps a clause at **six words** — five lands the whole announcement at 4.1s, eight
+takes it to 5.7s, which is longer than anyone keeps listening.
 
 ### The end-of-session briefing
 
@@ -486,8 +528,8 @@ first, writes atomically, and refuses to touch a `settings.json` it cannot parse
 | `doctor` | Audit the agent roster. |
 | `voice [--apply] [--force]` | Install the voice layer and its eight hooks. Dry run by default. |
 | `npm test` | Routing, execution-plan, installer, voice-installer and tone-synthesis suites (105 tests). |
-| `npm run test:audio` | Platform backends, installed-tone integrity, name handling, phrase-length budgets (34 checks). |
-| `npm run test:voice` | The above plus the concurrency harness (90 checks, stubbed audio). |
+| `npm run test:audio` | Platform backends, installed-tone integrity, name handling, phrase-length budgets (35 checks). |
+| `npm run test:voice` | The above plus the concurrency harness (96 checks, stubbed audio). |
 | `npm run test:all` | Everything. |
 
 ## Health check
@@ -558,7 +600,7 @@ tests/voice-concurrency.sh voice behaviour under genuine parallel load
 ## Status and limits
 
 Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, the cross-platform voice layer, spoken
-agent summaries and end-of-session briefings, 105 passing regression tests plus 124
+agent summaries and end-of-session briefings, 105 passing regression tests plus 131
 audio and concurrency checks.
 
 Known gaps, stated plainly:
