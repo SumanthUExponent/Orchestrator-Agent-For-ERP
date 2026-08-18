@@ -17,10 +17,29 @@ JARVIS_VOICE="${JARVIS_VOICE:-Daniel}"            # `jarvisctl voices` to auditi
 #   Windows: "Microsoft George Desktop|Microsoft Hazel Desktop"
 JARVIS_VOICES="${JARVIS_VOICES:-}"
 
-# Linux: piper is a local neural voice — no network, no API — and it is the difference
-# between an assistant and a 1990s speech card. Install piper, download a voice, and
-# point this at the .onnx model. Without it the fallback is espeak, which works but
-# sounds like hardware from 1994.
+# THE SINGLE BIGGEST THING YOU CAN CHANGE ABOUT HOW THIS SOUNDS.
+#
+# Built-in voices are whatever the OS happens to ship, and what macOS ships by default
+# is a 2005-era synthesiser — the "compact" set. It sounds mechanical because it is.
+# Two ways out, both free and both entirely offline:
+#
+#  1. macOS: download a Siri or Premium voice (`jarvisctl voices --setup`). Free, about
+#     three times more natural. A Siri voice cannot be selected by name, so set it as
+#     your System Voice and put JARVIS_VOICE="system" above.
+#
+#  2. Any platform: point this at a local neural engine. {out} is a .wav to write,
+#     {text} is what to say. No account, no API, nothing leaves the machine.
+#
+#     Kokoro — 82M parameters, the best quality-per-megabyte available locally:
+#       JARVIS_TTS_CMD='kokoro-tts --voice bm_george --output {out} "{text}"'
+#     Piper — faster and smaller, but noticeably more robotic:
+#       JARVIS_TTS_CMD='piper --model /path/en_GB-alan-medium.onnx --output_file {out} <<< "{text}"'
+#
+# If the command fails, the built-in voice still speaks: a broken template must never
+# make the whole layer go quiet.
+JARVIS_TTS_CMD="${JARVIS_TTS_CMD:-}"
+
+# Convenience for piper specifically, if you would rather not write the template above.
 JARVIS_PIPER_MODEL="${JARVIS_PIPER_MODEL:-}"
 JARVIS_RATE="${JARVIS_RATE:-172}"                 # wpm. 165-180 reads as composed
 JARVIS_ADDRESS="${JARVIS_ADDRESS:-sir}"           # "" for none

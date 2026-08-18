@@ -173,9 +173,36 @@ macOS and Windows already have both. On Linux, install them:
 | audio | `apt install pulseaudio-utils` *or* `alsa-utils` | `dnf install pulseaudio-utils` | `pacman -S libpulse` |
 | banners *(optional)* | `apt install libnotify-bin` | `dnf install libnotify` | `pacman -S libnotify` |
 
-For a voice that does not sound like 1994, install [Piper](https://github.com/rhasspy/piper),
-download a voice, and set `JARVIS_PIPER_MODEL` in `~/.claude/jarvis/config.sh`. It is a
-local neural model — still no network, still no account.
+**Do this before you judge how it sounds.** Every voice macOS ships by default is the
+"compact" set — a 2005-era synthesiser. It sounds mechanical because it *is*, and no
+amount of tuning fixes a bad synthesiser. Two ways out, both free and both entirely
+offline:
+
+```bash
+jarvisctl voices --setup     # macOS: opens the free Siri / Premium downloads
+```
+
+Download a Siri or Premium English (UK) voice (100–500 MB, roughly three times more
+natural), set it as your System Voice, then put `JARVIS_VOICE="system"` in
+`~/.claude/jarvis/config.sh`. A Siri voice cannot be selected by name — `"system"`
+tells JARVIS to omit the `-v` flag, which is what makes `say` use it.
+
+Or point it at a local neural engine, on any platform:
+
+```bash
+# in ~/.claude/jarvis/config.sh — {out} is a .wav to write, {text} is what to say
+JARVIS_TTS_CMD='kokoro-tts --voice bm_george --output {out} "{text}"'
+```
+
+[Kokoro](https://github.com/hexgrad/kokoro) is the one to reach for: 82M parameters,
+and the best quality-per-megabyte available locally.
+[Piper](https://github.com/rhasspy/piper) is faster and smaller but noticeably more
+robotic. Anything that writes a WAV works. Nothing leaves your machine — no account, no
+API — and if the command fails the built-in voice still speaks, because a broken
+template must never make the whole layer go quiet.
+
+`jarvisctl doctor` tells you which of these you are on, and says so loudly if you are
+still on a compact voice.
 
 `jarvisctl doctor` tells you exactly what it found and what to install if it found
 nothing. Nothing here talks to a server: the speech is your operating system's, and the
@@ -334,9 +361,9 @@ drainer and take every future announcement with it (a test starts a hook that ha
 to a dashboard, whatever you like.
 
 **Everything runs locally.** No API, no network, no account. Speech is the operating
-system's own synthesiser, or [Piper](https://github.com/rhasspy/piper) if you point
-`JARVIS_PIPER_MODEL` at a voice — a local neural model, and on Linux the difference
-between an assistant and a 1990s speech card.
+system's own synthesiser, or any local neural engine you point `JARVIS_TTS_CMD` at.
+See [the voice-quality note](#adding-the-voice-layer) — it is the single biggest thing
+you can change about how this sounds.
 
 The installer **merges** into `settings.json` rather than replacing it: the
 orchestrator's own routing gate and context-pack hooks live in the same arrays, and
@@ -447,11 +474,11 @@ Known gaps, stated plainly:
   any of it carries over music at your volume. `jarvisctl chimes` auditions the lot and
   `jarvisctl demo` plays a full four-session working day; the motif definitions are at
   the top of `scripts/tones.mjs`.
-- **Only the macOS path has been run on real hardware.** The Linux and Windows branches
-  are dispatch-tested — the tools are stubbed, the platform forced, and the invocation
-  asserted — which proves the right backend is called with the right arguments, not
-  that the result sounds right. Phrase-length budgets skip where there is no TTS engine
-  that renders to a file.
+- **Linux and Windows are covered by CI, not by ears.** Every suite runs on
+  ubuntu-latest, windows-latest and macos-latest across Node 18/20/22, with a real
+  speech engine and a real audio backend installed on the Linux job — which is how the
+  three portability defects that shipped in the first cut were found. What CI cannot
+  judge is whether the result *sounds* right on those platforms.
 - **Nothing fires when a permission prompt is granted.** Claude Code has no such
   event, so pending state is cleared on the next `Stop` or prompt submission
   instead. The alternative — hooking `PostToolUse` — would spawn a process on every

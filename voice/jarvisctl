@@ -10,7 +10,7 @@
 #   log [n]           the last n announcements
 #   mute <minutes> / unmute
 #   reset             clear all state (orphan daemons stand down on their own)
-#   voices            audition the British voices installed on this Mac
+#   voices            list installed voices; --setup opens the free high-quality downloads
 
 J="$HOME/.claude/jarvis"; S="$J/state"
 [ -f "$J/config.sh" ] && . "$J/config.sh"
@@ -127,16 +127,37 @@ case "${1:-status}" in
         done )
     fi
 
+    # Voice QUALITY, which matters more than any other setting here. A compact voice
+    # sounds mechanical however well the rest is tuned.
+    hq=$(jv_hq_voices | head -5)
+    if [ -n "$hq" ]; then
+      echo "  ok    high-quality voices installed:"
+      printf '%s\n' "$hq" | sed 's/^/          /'
+      case "${JARVIS_VOICE:-}" in
+        *Enhanced*|*Premium*|Siri*|*Natural*|system) ;;
+        *) echo "  note  but JARVIS_VOICE is \"${JARVIS_VOICE:-unset}\", which is not one of them."
+           echo "        Set it to one of the above in ~/.claude/jarvis/config.sh." ;;
+      esac
+    elif [ "${JV_OS:-}" = macos ]; then
+      ck 1 "no Enhanced, Premium or Siri voice is installed — this is why it sounds robotic"
+      echo "        Every voice macOS ships by default is the \"compact\" set: a 2005-era"
+      echo "        synthesiser. The good ones are FREE, and about three times more natural."
+      echo
+      echo "        Run:   jarvisctl voices --setup"
+      echo "        or:    System Settings > Accessibility > Spoken Content >"
+      echo "               System Voice > Manage Voices, and download a Siri or"
+      echo "               Premium English (UK) voice (100-500MB each)."
+      echo
+      echo "        Siri voices cannot be chosen with a name — set the downloaded voice as"
+      echo "        your System Voice, then put JARVIS_VOICE=\"system\" in config.sh."
+    fi
+
     if [ "${JV_OS:-}" = macos ]; then
       V="${JARVIS_VOICE:-Daniel}"
-      if voice_exists "$V"; then
+      if [ "$V" = system ]; then
+        ck 0 "voice: the System Voice (which is how Siri voices are reached)"
+      elif voice_exists "$V"; then
         ck 0 "voice \"$V\" is installed"
-        case "$V" in
-          *Enhanced*|*Premium*) ;;
-          *) echo "  note  \"$V\" is the compact voice. The Enhanced download sounds markedly"
-             echo "        better: System Settings > Accessibility > Spoken Content >"
-             echo "        System Voice > Manage Voices, then set JARVIS_VOICE in config.sh" ;;
-        esac
       else
         ck 1 "voice \"$V\" is NOT installed — say falls back to the US default, silently"
         echo "        try: jarvisctl voices"
@@ -259,6 +280,34 @@ case "${1:-status}" in
   voices)
     case "${JV_OS:-}" in
       macos)
+        if [ "${2:-}" = "--setup" ]; then
+          echo "Opening System Settings at the voice downloads."
+          echo
+          echo "  1. Manage Voices…  (the button under System Voice)"
+          echo "  2. Download a Siri or Premium voice under English (UK) — 100-500MB."
+          echo "     Siri voices are the most natural; Premium is next."
+          echo "  3. Set it as your System Voice."
+          echo "  4. Then, in ~/.claude/jarvis/config.sh:"
+          echo "         JARVIS_VOICE=\"system\""
+          echo "     A Siri voice cannot be selected by name — \"system\" tells JARVIS to"
+          echo "     omit the -v flag, which is what makes `say` use it."
+          echo
+          open "x-apple.systempreferences:com.apple.preference.universalaccess?SpokenContent" 2>/dev/null \
+            || open "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?SpokenContent" 2>/dev/null \
+            || echo "  (could not open Settings — navigate there manually)"
+          exit 0
+        fi
+        hq=$(jv_hq_voices)
+        if [ -n "$hq" ]; then
+          echo "High-quality voices installed — use one of these:"
+          printf '%s\n' "$hq" | sed 's/^/  /'
+          echo
+        else
+          echo "NO high-quality voice is installed. Everything below is the \"compact\" set,"
+          echo "which is a 2005-era synthesiser — that is why it sounds mechanical."
+          echo "The good ones are free:   jarvisctl voices --setup"
+          echo
+        fi
         echo "Installed en_GB / en_AU voices:"
         say -v '?' 2>/dev/null | grep -E 'en_GB|en_AU' || echo "  none found"
         echo
