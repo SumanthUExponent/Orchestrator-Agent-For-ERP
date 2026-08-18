@@ -55,26 +55,81 @@ esac
 # VOICE is the outcome, spoken at the end of the turn. PENDING and HEADS-UP are
 # optional and are read back at the END OF THE SESSION, where the audience is someone
 # deciding whether they can walk away, or picking the work up tomorrow.
+#
+# The marker must BEGIN A LINE, and be among the LAST few lines of the message — which
+# is exactly what the contract asks agents for. Without that anchor, prose ABOUT the
+# contract is harvested as though it were a real summary: explaining the format in a
+# reply put "Material Movement schema is in" and a mangled half-sentence into a live
+# session's briefing. Documentation must not be mistaken for data.
+#
+# The clause is then filtered through an ALLOWLIST, not escaped. It is about to be read
+# aloud and carried through a pipe-delimited queue line, and agent output is not a
+# trusted input, so anything that is not plain speech is dropped.
 marker_note() {
-  local marker="$1"
+  local marker="$1" v
   case "$IN" in *"$marker":*) ;; *) return 1 ;; esac
-  # One sed, because matching a literal backslash in a bash glob is ambiguous — `\\n`
-  # inside a pattern reads as an escaped `n`, so an earlier attempt truncated at the
-  # first letter n instead of at the encoded newline. sed's semantics here are exact.
+  # A marker qualifies only if it is TERMINAL: every non-empty line after it is another
+  # marker, or the JSON tail. That is precisely what the contract asks agents for, and it
+  # is the only rule that separates a real handoff from prose ABOUT the format.
   #
-  # Then an ALLOWLIST, not an escape. This is about to be read aloud and carried through
-  # a pipe-delimited queue line, and an agent's output is not a trusted input, so
-  # anything that is not plain speech is dropped rather than quoted.
-  local v
+  # A line-anchor is not enough, and neither is a last-N-lines window — explaining the
+  # contract in a reply puts the markers inside a fenced block three lines from the end,
+  # and both rules harvested it. "Material Movement schema is in" and a mangled
+  # half-sentence went into a live session's briefing that way.
+  #
+  # The field opener becomes a line break too, so a message that STARTS with the marker
+  # is still line-anchored — otherwise the marker sits mid-line in the raw JSON and the
+  # anchor never matches. awk for both substitutions, deliberately: `sed 's/\\n/\n/'`
+  # puts a literal n in the replacement on BSD sed and a newline on GNU, so it would
+  # behave differently on macOS and Linux.
   v=$(printf '%s' "$IN" \
-      | sed -n "/$marker:/{ s/.*$marker:[[:space:]]*//; s/\\\\n.*//; s/\".*//; p; }" \
-      | tail -1 \
+      | awk '{ gsub(/"last_assistant_message":"/, "\n"); gsub(/\\n/, "\n") } 1' \
+      | awk 'NF' \
+      | awk -v M="$marker" '
+          { line[++n] = $0 }
+          END {
+            i = n
+            while (i > 0 && line[i] ~ /^["}\]]+,?$/) i--
+            while (i > 0 && line[i] ~ /^(VOICE|PENDING|HEADS-UP):/) {
+              if (out == "" && line[i] ~ "^" M ":") out = line[i]
+              i--
+            }
+            if (out != "") { sub("^" M ":[ \t]*", "", out); print out }
+          }' \
+      | sed 's/".*//' \
       | tr -cd "A-Za-z0-9 .,;:'-" \
       | tr -s ' ')
   v="${v# }"; v="${v% }"
   # A runaway line would otherwise be read out for a minute.
   v="${v:0:140}"
   [ ${#v} -ge 3 ] || return 1
+  printf '%s' "$v"
+}
+
+# The turn's own closing sentence, when no agent left a marker.
+#
+# The main thread emits no markers — a VOICE line in a reply is visible clutter for the
+# person reading it — so a chat where the work is done directly, with no specialists
+# dispatched, would otherwise never produce a summary at all. That is the COMMON case,
+# not the exception, and it is why nothing was ever spoken in an ordinary conversation.
+#
+# The opening sentence of the final message is a decent summary of a turn, and it costs
+# nothing: no model call, no marker, no clutter.
+first_sentence() {
+  local v
+  v=$(printf '%s' "$IN" \
+      | sed -n 's/.*"last_assistant_message":"//p' \
+      | awk '{gsub(/\\n/,"\n")} 1' \
+      | sed -e 's/^[[:space:]#>*`_-]*//' \
+      | sed -n '1,4p' \
+      | tr '\n' ' ' \
+      | sed 's/\([.!?]\)[[:space:]].*/\1/' \
+      | tr -cd "A-Za-z0-9 .,;:'-" \
+      | tr -s ' ')
+  v="${v# }"; v="${v% }"
+  v="${v:0:120}"
+  # Too short to be a sentence, or so long it was never one.
+  [ ${#v} -ge 12 ] || return 1
   printf '%s' "$v"
 }
 
@@ -258,6 +313,10 @@ case "$MODE" in
         fi
       else
         SUMMARY=$(voice_note) || SUMMARY=""
+        # No specialist left a clause, so fall back to how the turn itself ended.
+        if [ -z "$SUMMARY" ] && [ "${JARVIS_FALLBACK_SUMMARY:-1}" = "1" ]; then
+          SUMMARY=$(first_sentence) || SUMMARY=""
+        fi
       fi
     fi
     [ -n "$SUMMARY" ] && remember "$S/done/$KEY" "$SUMMARY"
