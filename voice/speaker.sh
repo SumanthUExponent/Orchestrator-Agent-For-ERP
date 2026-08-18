@@ -158,6 +158,37 @@ spoken() {
   printf '%s' "${out# }"
 }
 
+# The number word for a session slot, so the spoken ordinal matches the chime pitch and
+# the two cues reinforce each other rather than being separate things to learn.
+ordinal_word() {
+  case "${1:-1}" in 1) echo one ;; 2) echo two ;; 3) echo three ;; 4) echo four ;; *) echo "$1" ;; esac
+}
+
+# The spoken identifier for a session. ALWAYS spoken, never conditional.
+#
+# It used to be spoken only when more than one session was live, to save a second of
+# speech. That was wrong twice over: an announcement you cannot attribute is worthless,
+# and the rule depended on live-session bookkeeping being accurate — which is exactly the
+# thing most likely to be stale, so the failure mode was an anonymous announcement at the
+# moment several projects were running.
+#
+# Sessions that SHARE a name get the ordinal appended. Several terminals open in one
+# directory is the normal case for a bench or a monorepo, and they would otherwise all
+# announce themselves identically — which is the same failure in a different disguise.
+label_for() {
+  local name="$1" ord="$2" n=0 f nm
+  for f in "$S"/active/*; do
+    [ -r "$f" ] || continue
+    IFS='|' read -r nm _ < "$f"
+    [ "$nm" = "$name" ] && n=$(( n + 1 ))
+  done
+  if [ "$n" -gt 1 ]; then
+    printf '%s %s' "$(spoken "$name")" "$(ordinal_word "$ord")"
+  else
+    printf '%s' "$(spoken "$name")"
+  fi
+}
+
 # render <mode> <name> <extra> <ordinal> [summary]
 render() {
   local mode="$1" name="$2" extra="$3" ord="$4" summary="${5:-}"
@@ -181,16 +212,10 @@ render() {
   printf '%s %-8s %-20s %-9s %s\n' "$(date +%H:%M:%S)" "$mode" "$name" "${extra:-—}" "${summary:-}" >> "$J/log" 2>/dev/null
   [ "$(wc -l < "$J/log" 2>/dev/null || echo 0)" -gt 500 ] && { tail -200 "$J/log" > "$J/log.t" 2>/dev/null && mv "$J/log.t" "$J/log"; }
 
-  # Two registers, not one. Measured at rate 172, the original phrasings ran
-  # 4.4-5.4 seconds EACH, and Stop fires on every turn over 25s — so a normal
-  # session spent minutes being talked at. Naming the project is only worth its
-  # 1.1-1.6s when there is more than one session to tell apart; alone, the terse
-  # form says the same thing in 1.7s instead of 5.4s.
-  local solo=1 who=""
-  if [ "$(nactive)" -gt 1 ]; then
-    solo=0
-    who="$(spoken "$name")"
-  fi
+  # Who this is about, always. The brevity saved by omitting it is not worth the
+  # ambiguity: someone running four projects needs to know which one is talking before
+  # they can use anything else in the sentence.
+  local who; who="$(label_for "$name" "$ord")"
 
   case "$mode" in
     boot)
@@ -199,9 +224,9 @@ render() {
       elif [ "$h" -lt 18 ]; then g="Good afternoon"
       else g="Good evening"; fi
       motif boot "$ord"
-      # Boot names the project even when solo: it is the one moment the name is
-      # information rather than repetition.
-      speak "$g$SIR. $(spoken "$name") online." ;;
+      # Boot is the moment the name matters most: it is how you learn what this session
+      # will be called for the rest of its life.
+      speak "$g$SIR. $who online." ;;
 
     tick) motif tick "$ord" ;;
 
@@ -218,17 +243,8 @@ render() {
         # existed because there was nothing better to say than "time passed" — a run that
         # can report "schema is in, all tests pass" does not need to also report that six
         # agents were involved in it.
-        if [ "$solo" = 1 ]; then
-          speak "$summary$SIR. $(dur "$el")."
-        else
-          speak "$who: $summary$SIR. $(dur "$el")."
-        fi
+        speak "$who: $summary$SIR. $(dur "$el")."
         banner "$name" "$summary  ($(dur "$el"))"
-      elif [ "$solo" = 1 ]; then
-        speak "$(pick "Done$SIR.$crew $(dur "$el")." \
-                      "Finished$SIR.$crew $(dur "$el")." \
-                      "All done$SIR.$crew $(dur "$el").")"
-        banner "$name" "Complete - $(dur "$el")${crew:+ -$crew}"
       else
         speak "$(pick "$who done$SIR.$crew $(dur "$el")." \
                       "$who finished.$crew $(dur "$el")." \
@@ -238,13 +254,9 @@ render() {
 
     approve)
       motif approve "$ord"
-      if [ "$solo" = 1 ]; then
-        speak "$(pick "Your approval$SIR." "Approval needed$SIR." "Holding for clearance$SIR.")"
-      else
-        speak "$(pick "$who needs your approval$SIR." \
-                      "$who is holding for clearance$SIR." \
-                      "$who needs you$SIR.")"
-      fi
+      speak "$(pick "$who needs your approval$SIR." \
+                    "$who is holding for clearance$SIR." \
+                    "$who needs you$SIR.")"
       banner "$name" "Approval required" ;;
 
     escalate)
@@ -253,22 +265,18 @@ render() {
       # minutes while the others work — so it gets the loudest motif, a named duration,
       # and a banner that stays on screen.
       motif escalate 1
-      speak "$(spoken "$name") has been waiting $(dur "$extra")$SIR. [[slnc 200]] It is going nowhere without you."
+      speak "$who has been waiting $(dur "$extra")$SIR. [[slnc 200]] It is going nowhere without you."
       banner "$name" "STILL BLOCKED - $(dur "$extra")" ;;
 
     nag)
       motif nag "$ord"
-      speak "$(pick "$(spoken "$name") is still waiting$SIR." \
-                    "Still blocked on $(spoken "$name")$SIR." \
-                    "$(spoken "$name") has not moved$SIR.")" ;;
+      speak "$(pick "$who is still waiting$SIR." \
+                    "Still blocked on $who$SIR." \
+                    "$who has not moved$SIR.")" ;;
 
     idle)
       motif idle "$ord"
-      if [ "$solo" = 1 ]; then
-        speak "$(pick "Standing by$SIR." "Awaiting instruction$SIR." "Whenever you're ready$SIR.")"
-      else
-        speak "$(pick "$who is standing by$SIR." "$who awaits instruction$SIR.")"
-      fi ;;
+      speak "$(pick "$who is standing by$SIR." "$who awaits instruction$SIR.")" ;;
 
     sub) motif sub "$ord" ;;
 
@@ -278,11 +286,7 @@ render() {
 
     err)
       motif err "$ord"
-      if [ "$solo" = 1 ]; then
-        speak "$(pick "A problem$SIR." "We've hit a problem$SIR." "Something's gone wrong$SIR.")"
-      else
-        speak "$(pick "$who has a problem$SIR." "Something's gone wrong in $who$SIR.")"
-      fi
+      speak "$(pick "$who has a problem$SIR." "Something's gone wrong in $who$SIR.")"
       banner "$name" "Error" ;;
 
     brief)
@@ -290,7 +294,7 @@ render() {
       # priority 3 — ahead of the farewell, behind anything urgent — so a session that is
       # shutting down still gets its say before "all sessions closed".
       motif idle "$ord"
-      speak "$(spoken "$name") closing$SIR. [[slnc 150]] $extra." ;;
+      speak "$who closing$SIR. [[slnc 150]] $extra." ;;
 
     bye)
       # Reaching here at all means this session won the farewell — see the guard at
