@@ -99,6 +99,11 @@ JARVIS_NAMES="${JARVIS_NAMES:-}"
 # because there was nothing better to say. 0 disables and restores the short form.
 JARVIS_SUMMARY="${JARVIS_SUMMARY:-1}"
 
+# When no agent left a VOICE clause — which is every ordinary turn, since the main
+# thread emits no markers — fall back to the opening sentence of its own final message.
+# It is a decent summary of a turn and costs nothing. 0 restores the short form.
+JARVIS_FALLBACK_SUMMARY="${JARVIS_FALLBACK_SUMMARY:-1}"
+
 # When several specialists reported, the one that mentions a problem is spoken — the
 # agent contract tells them to lead with one, and it is the only thing here worth
 # interrupting you for. Failing that, the LAST clause: in a requirements-design-build-test

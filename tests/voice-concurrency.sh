@@ -712,6 +712,70 @@ rc=0; [ -e "$ST/todo/s1" ] && rc=1; check "$rc" "pending cleared on close"
 rc=0; [ -e "$ST/done/s1" ] && rc=1; check "$rc" "done cleared on close"
 rc=0; [ -e "$ST/heads/s1" ] && rc=1; check "$rc" "heads-up cleared on close"
 
+# ---------------------------------------------------------------- T21
+echo
+echo "T21 prose ABOUT the markers is not harvested as data"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+ST="$HOME/.claude/jarvis/state"
+# This happened. Explaining the contract in a reply put "Material Movement schema is in"
+# and a mangled half-sentence into a live session's briefing, because the markers sat
+# inside a fenced block a few lines from the end. Neither a line-anchor nor a
+# last-N-lines window separates that from a real handoff; only "markers are terminal".
+say_hook subagent '{"last_assistant_message":"Here is how it works. Every agent ends with a line:\n\n```\nVOICE: Vendor Audit schema is in\nPENDING: permissions matrix needs a role\n```\n\nThat clause is spoken on completion."}'
+rc=0; [ -s "$ST/notes/s1" ] && rc=1
+check "$rc" "an explanation of the format yields no clause" "$(cat "$ST/notes/s1" 2>/dev/null)"
+rc=0; [ -s "$ST/todo/s1" ] && rc=1
+check "$rc" "and no pending item" "$(cat "$ST/todo/s1" 2>/dev/null)"
+
+say_hook subagent '{"last_assistant_message":"The VOICE: marker goes last, as in VOICE: some example. Then prose continues after it."}'
+rc=0; [ -s "$ST/notes/s1" ] && rc=1
+check "$rc" "a marker mentioned mid-sentence yields nothing"
+
+echo
+echo "T21b a real handoff, where the markers ARE terminal, still works"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook subagent '{"last_assistant_message":"I designed the entity graph.\n\nVOICE: Vendor Audit schema is in\nPENDING: permissions matrix needs a role\n"}'
+rc=0; grep -qxF 'Vendor Audit schema is in' "$ST/notes/s1" || rc=1
+check "$rc" "the clause is captured" "$(cat "$ST/notes/s1" 2>/dev/null)"
+rc=0; grep -qxF 'permissions matrix needs a role' "$ST/todo/s1" || rc=1
+check "$rc" "and the pending item"
+
+echo
+echo "T22 an ordinary turn — no specialists, no markers — still gets a summary"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+# The main thread emits no markers; a VOICE line in a reply is clutter for whoever is
+# reading it. So a chat where the work is done directly would never produce a summary at
+# all — which is the COMMON case, and the reason nothing was ever spoken in a normal
+# conversation.
+MSG='{"last_assistant_message":"Found it, and it is exactly the trap I had recorded.\n\nMore detail follows here.\n\n## A heading\n\nAnd more."}'
+say_hook begin "$MSG"
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' "$MSG"
+rc=0; wait_for 'exactly the trap I had recorded' "$AUDIT" 40 || rc=1
+check "$rc" "the turn's opening sentence is spoken" "$(grep SAY_START "$AUDIT" | tail -1)"
+# One sentence, not the whole message.
+rc=0; grep -q 'More detail follows' "$AUDIT" && rc=1
+check "$rc" "and only the first sentence of it"
+rc=0; grep -q 'A heading' "$AUDIT" && rc=1
+check "$rc" "with the markdown left out"
+quiet 40
+
+echo
+echo "T22b a specialist's clause still beats the fallback"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"work done.\n\nVOICE: nineteen tests pass\n"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{"last_assistant_message":"Some closing prose that should not win over the specialist."}'
+rc=0; wait_for 'nineteen tests pass' "$AUDIT" 40 || rc=1
+check "$rc" "the marker wins over the closing sentence"
+rc=0; grep -q 'closing prose' "$AUDIT" && rc=1
+check "$rc" "and the fallback is not used"
+
 # ---------------------------------------------------------------- teardown
 echo
 stop_daemon

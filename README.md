@@ -293,6 +293,21 @@ information — it was a proxy for "something substantial happened", added becau
 was nothing better to say. A run that can say what it did does not also need to say how
 many agents were involved in it.
 
+**A marker only counts when it is terminal** — every non-empty line after it must be
+another marker. That is what the contract asks agents for, and it is the only rule that
+separates a real handoff from prose *about* the format. Neither a line anchor nor a
+last-N-lines window does: documenting the format in a reply puts the markers inside a
+fenced block a few lines from the end, and both of those rules harvested it as though it
+were real. It happened, and a live session's briefing ended up containing an example
+sentence and a mangled fragment.
+
+**Every ordinary turn gets a summary too.** The main thread emits no markers — a `VOICE`
+line in a reply is clutter for whoever is reading it — so a chat where the work is done
+directly, with no specialists dispatched, would otherwise never produce a summary at all.
+That is the common case, not the exception. Failing a marker, the turn's own opening
+sentence is spoken: markdown stripped, one sentence, capped. No model call for that
+either.
+
 **No model call, and nothing leaves the machine.** `Stop` and `SubagentStop` both carry
 `last_assistant_message`, so the clause is lifted straight from the hook payload — the
 documentation is explicit that hooks should read that rather than the transcript, which
@@ -472,7 +487,7 @@ first, writes atomically, and refuses to touch a `settings.json` it cannot parse
 | `voice [--apply] [--force]` | Install the voice layer and its eight hooks. Dry run by default. |
 | `npm test` | Routing, execution-plan, installer, voice-installer and tone-synthesis suites (105 tests). |
 | `npm run test:audio` | Platform backends, installed-tone integrity, name handling, phrase-length budgets (34 checks). |
-| `npm run test:voice` | The above plus the concurrency harness (80 checks, stubbed audio). |
+| `npm run test:voice` | The above plus the concurrency harness (90 checks, stubbed audio). |
 | `npm run test:all` | Everything. |
 
 ## Health check
@@ -543,7 +558,7 @@ tests/voice-concurrency.sh voice behaviour under genuine parallel load
 ## Status and limits
 
 Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, the cross-platform voice layer, spoken
-agent summaries and end-of-session briefings, 105 passing regression tests plus 114
+agent summaries and end-of-session briefings, 105 passing regression tests plus 124
 audio and concurrency checks.
 
 Known gaps, stated plainly:
