@@ -45,23 +45,37 @@ n=$(date +%N 2>/dev/null)
 case "$n" in ''|*[!0-9]*|N) printf '%s.000\n' "$(date +%s)" ;; *) printf '%s.%s\n' "$(date +%s)" "${n:0:3}" ;; esac
 STUB
 
-cat > "$SB/bin/say" <<STUB
+# Stub EVERY backend the platform layer might select, not just the macOS ones. The
+# first version stubbed `say` and `afplay`; on Linux the layer correctly dispatched to
+# espeak-ng and paplay instead, which were not stubbed — so nothing was captured and
+# every assertion counted zero utterances while the code underneath was working.
+#
+# Speech stubs BLOCK for 1.2s. That is what makes overlapping speech detectable: the
+# whole architecture exists to prevent it, and without a duration there is nothing to
+# overlap.
+for t in say espeak-ng espeak spd-say festival pico2wave; do
+  cat > "$SB/bin/$t" <<STUB
 #!/usr/bin/env bash
 echo "\$($SB/bin/now) SAY_START \$*" >> $AUDIT
 sleep 1.2
 echo "\$($SB/bin/now) SAY_END" >> $AUDIT
 STUB
+done
 
-cat > "$SB/bin/afplay" <<STUB
+for t in afplay paplay aplay ffplay mpv play cvlc; do
+  cat > "$SB/bin/$t" <<STUB
 #!/usr/bin/env bash
 echo "\$($SB/bin/now) AFPLAY \$*" >> $AUDIT
 sleep 0.2
 STUB
+done
 
-cat > "$SB/bin/osascript" <<STUB
+for t in osascript notify-send; do
+  cat > "$SB/bin/$t" <<STUB
 #!/usr/bin/env bash
 echo "\$($SB/bin/now) BANNER \$*" >> $AUDIT
 STUB
+done
 
 chmod +x "$SB/bin"/*
 export PATH="$SB/bin:$PATH"
@@ -255,8 +269,12 @@ fresh
 hook s1 alpha start
 hook s2 bravo start
 hook s2 bravo permission
-rc=0; "$J/jarvisctl" status | grep -q 'BLOCKED ON APPROVAL' || rc=1; check "$rc" "status names the blocked session"
-rc=0; "$J/jarvisctl" status | grep -q 'bravo' || rc=1; check "$rc" "and names which one it is"
+# Capture once, then match. Piping straight into `grep -q` closes the pipe as soon as
+# it matches, so the writer takes EPIPE and bash prints "write error: Broken pipe" —
+# harmless, but it is noise in every CI log for a test that passed.
+st_out=$("$J/jarvisctl" status 2>/dev/null)
+rc=0; printf '%s\n' "$st_out" | grep -q 'BLOCKED ON APPROVAL' || rc=1; check "$rc" "status names the blocked session"
+rc=0; printf '%s\n' "$st_out" | grep -q 'bravo' || rc=1; check "$rc" "and names which one it is"
 quiet 40
 
 # ---------------------------------------------------------------- T6
