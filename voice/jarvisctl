@@ -120,6 +120,10 @@ case "${1:-status}" in
     fi
 
     if [ -n "${JARVIS_VOICES:-}" ]; then
+      adv "JARVIS_VOICES is set, so each session speaks in a different voice."
+      echo "          Four voices read as four different people, which is harder to follow"
+      echo "          than one assistant naming the session it is talking about. Clear it"
+      echo "          in config.sh unless you specifically want per-session speakers."
       ( export JARVIS_LIB=1; . "$J/speaker.sh"
         i=1; while [ "$i" -le 4 ]; do
           v="JV_V$i"; got="${!v-}"
@@ -274,7 +278,7 @@ case "${1:-status}" in
     # notes/ must be in both lists. It was in neither, so a reset left the previous
     # turn's spoken clauses on disk and the next completion announced them — the exact
     # staleness the begin-hook cleanup exists to prevent.
-    rm -rf "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" \
+    rm -rf "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" "$S/day" \
            "$J/run/lock" "$J/log" "$J/run/daemons.log" "$J/run/farewell"
     mkdir -p "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes"
     echo "State cleared. Any live daemon stands down within a second." ;;

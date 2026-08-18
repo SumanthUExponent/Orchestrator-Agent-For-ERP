@@ -213,15 +213,59 @@ case "$MODE" in
         # — it is deliberately preserved across upgrades, so a newly added setting never
         # appears in theirs. It must therefore match what config.sh documents.
         max=${JARVIS_SUMMARY_MAX:-1}
-        SUMMARY=$(head -"$max" "$S/notes/$KEY" 2>/dev/null | tr '\n' ';' | sed 's/;$//; s/;/; /g')
+
+        # WHICH clause, when several arrived, is the whole question.
+        #
+        # A problem wins outright. The agent contract already tells specialists to lead
+        # with one, and a problem is the only thing here genuinely worth interrupting
+        # someone for — announcing "schema is in" while a sibling agent reported a failing
+        # test would be actively misleading.
+        #
+        # Otherwise the LAST, not the first. In a requirements-design-build-test pipeline
+        # the earliest agent to finish is the least conclusive; taking the first meant a
+        # four-agent run announced its acceptance criteria and never mentioned that the
+        # tests passed.
+        SUMMARY=$(grep -inE '(^|[^a-z])(fail|failed|failing|error|errors|broken|blocked|cannot|missing|unsafe|conflict|conflicts|risk|risks)([^a-z]|$)' \
+                    "$S/notes/$KEY" 2>/dev/null | head -1 | cut -d: -f2-)
+        if [ -z "$SUMMARY" ]; then
+          SUMMARY=$(tail -"$max" "$S/notes/$KEY" 2>/dev/null | tr '\n' ';' | sed 's/;$//; s/;/; /g')
+        fi
       else
         SUMMARY=$(voice_note) || SUMMARY=""
       fi
     fi
     rm -f "$S/notes/$KEY"
 
-    if [ "$el" -lt "${JARVIS_MIN_SECONDS:-25}" ]; then enqueue 7 tick "$el"
-    else enqueue 5 'done' "$el:$subs" "$SUMMARY"; fi ;;
+    # A completion with nothing to report is the announcement that makes this feel
+    # talkative. Running four sessions, `Stop` fires constantly and "Done, sir. Three
+    # minutes." carries no information — so by default the voice is saved for turns that
+    # actually have something to say, and the rest just tick.
+    speak_it=1
+    if [ -z "$SUMMARY" ]; then
+      case "${JARVIS_SPEAK_WITHOUT_SUMMARY:-auto}" in
+        0) speak_it=0 ;;
+        1) speak_it=1 ;;
+        *) live=$(ls "$S/active" 2>/dev/null | wc -l | tr -d ' ')
+           case "$live" in ''|*[!0-9]*) live=1 ;; esac
+           [ "$live" -gt 1 ] && speak_it=0 ;;
+      esac
+    fi
+
+    # The day's tally, for the single farewell. One line per completed turn across ALL
+    # sessions, which is the only place anything has a view of the whole day.
+    if [ "${JARVIS_DAY_DIGEST:-1}" = "1" ]; then
+      flag=ok
+      case "$SUMMARY" in
+        *fail*|*error*|*broken*|*blocked*|*cannot*|*missing*|*unsafe*|*conflict*|*risk*) flag=problem ;;
+      esac
+      printf '%s|%s|%s\n' "$NAME" "$flag" "$SUMMARY" >> "$S/day" 2>/dev/null
+    fi
+
+    if [ "$el" -lt "${JARVIS_MIN_SECONDS:-25}" ] || [ "$speak_it" = 0 ]; then
+      enqueue 7 tick "$el"
+    else
+      enqueue 5 'done' "$el:$subs" "$SUMMARY"
+    fi ;;
 
   permission|approve)               # Notification / permission_prompt
     mark_active

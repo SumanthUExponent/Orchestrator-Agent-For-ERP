@@ -383,10 +383,14 @@ quiet 40
 # all of them and it said goodbye four times. No existing test could see this: each
 # behaviour is correct in isolation.
 for i in 1 2 3 4; do hook s$i proj$i end; done
-wait_for Goodbye "$AUDIT" 30
+# Match on the RENDER, not on the words. This asserted the literal "Goodbye" and broke
+# the moment the farewell gained a day digest — the third time a spoken-text grep in this
+# harness has quietly stopped testing what it claimed to.
+wait_for ' bye ' "$J/log" 40
 quiet 40
-n=$(grep -c 'Goodbye' "$AUDIT" 2>/dev/null); n=${n:-0}
-rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "exactly one goodbye spoken (got $n)" "$(grep SAY_START "$AUDIT")"
+n=$(grep -c ' bye ' "$J/log" 2>/dev/null); n=${n:-0}
+rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "exactly one farewell rendered (got $n)" "$(cat "$J/log")"
+u=$(says); rc=0; [ "$u" = 1 ] || rc=1; check "$rc" "and exactly one utterance (got $u)" "$(grep SAY_START "$AUDIT")"
 # The log must agree with what was actually said. Three suppressed byes were still
 # being logged, so `jarvisctl log` and the simulation both reported four farewells.
 b=$(grep -c ' bye ' "$J/log" 2>/dev/null); b=${b:-0}
@@ -396,11 +400,11 @@ echo
 echo "T13 a new session re-arms the farewell"
 hook s1 proj1 start
 quiet 40
-: > "$AUDIT"
+: > "$AUDIT"; : > "$J/log"
 hook s1 proj1 end
-wait_for Goodbye "$AUDIT" 30
-n=$(grep -c 'Goodbye' "$AUDIT" 2>/dev/null); n=${n:-0}
-rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "the next close says goodbye again (got $n)"
+wait_for ' bye ' "$J/log" 40
+n=$(grep -c ' bye ' "$J/log" 2>/dev/null); n=${n:-0}
+rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "the next close bids farewell again (got $n)"
 
 # ---------------------------------------------------------------- T14
 echo
@@ -568,6 +572,70 @@ say_hook subagent "{\"last_assistant_message\":\"VOICE: $long\"}"
 note=$(cat "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null); len=${#note}
 rc=0; [ "$len" -le 140 ] || rc=1
 check "$rc" "capped at 140 characters (got $len)"
+
+# ---------------------------------------------------------------- T18
+echo
+echo "T18 the voice is not spent on completions with nothing to report"
+fresh
+# Running several sessions, Stop fires constantly and "Done, sir. Three minutes." carries
+# no information — it is the announcement that made the layer feel talkative.
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+printf 'bravo|2\n' > "$HOME/.claude/jarvis/state/active/s2"
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+quiet 40
+n=$(says); rc=0; [ "$n" = 0 ] || rc=1
+check "$rc" "two sessions live, nothing to say: ticks instead of speaking ($n utterances)"
+c=$(chimes); rc=0; [ "$c" -ge 1 ] || rc=1
+check "$rc" "but it still ticks, so the turn is not invisible ($c)"
+
+echo
+echo "T18b with something to say, it speaks — however many sessions are live"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+printf 'bravo|2\n' > "$HOME/.claude/jarvis/state/active/s2"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: nineteen tests pass"}'
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+rc=0; wait_for 'nineteen tests pass' "$AUDIT" 40 || rc=1
+check "$rc" "an informative completion is always spoken" "$(grep SAY_START "$AUDIT" | tail -1)"
+quiet 40
+
+echo
+echo "T18c alone, the short form is still spoken"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+rc=0; wait_for SAY_START "$AUDIT" 40 || rc=1
+check "$rc" "one session, nothing to say: still worth a sentence"
+quiet 40
+
+echo
+echo "T19 the farewell reports the whole day, once"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: schema is in"}'
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+quiet 40
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: four tests are failing on the refund path"}'
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+quiet 40
+: > "$AUDIT"
+say_hook end '{}'
+rc=0; wait_for 'All sessions closed' "$AUDIT" 40 || rc=1
+check "$rc" "the farewell speaks" "$(grep SAY_START "$AUDIT")"
+rc=0; grep -q '2 turns' "$AUDIT" || rc=1
+check "$rc" "and counts the turns across the day" "$(grep SAY_START "$AUDIT")"
+rc=0; grep -q '1 problem outstanding' "$AUDIT" || rc=1
+check "$rc" "and names that something is outstanding"
+rc=0; [ -e "$HOME/.claude/jarvis/state/day" ] && rc=1
+check "$rc" "and clears the tally, so tomorrow starts fresh"
 
 # ---------------------------------------------------------------- teardown
 echo

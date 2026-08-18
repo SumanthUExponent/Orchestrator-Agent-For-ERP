@@ -291,7 +291,27 @@ render() {
       # is not enough, because every closing session removes its own marker before
       # the first bye is ever claimed.
       motif bye 1
-      speak "Goodbye$SIR." ;;
+      # The only moment anything here has a view of the whole day. One line, once,
+      # across every session — which is the point of having a single assistant rather
+      # than one narrator per terminal.
+      digest=""
+      if [ "${JARVIS_DAY_DIGEST:-1}" = "1" ] && [ -s "$S/day" ]; then
+        turns=$(grep -c '' "$S/day" 2>/dev/null); turns=${turns:-0}
+        probs=$(grep -c '|problem|' "$S/day" 2>/dev/null); probs=${probs:-0}
+        if [ "$turns" -gt 0 ]; then
+          digest=" $turns $(plural "$turns" turn)"
+          if [ "$probs" -gt 0 ]; then
+            # Name where it was left, because "one problem outstanding" without a
+            # session name is a puzzle rather than a report.
+            last=$(grep '|problem|' "$S/day" 2>/dev/null | tail -1 | cut -d'|' -f1)
+            digest="$digest, and $probs $(plural "$probs" problem) outstanding, last in $(spoken "$last")"
+          else
+            digest="$digest, nothing outstanding"
+          fi
+        fi
+      fi
+      rm -f "$S/day"
+      speak "All sessions closed$SIR.$digest." ;;
   esac
 
   # Extension point. Anything executable in hooks.d gets the event after it has been
