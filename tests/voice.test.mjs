@@ -20,7 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { ROOT } from '../scripts/orchestrator.mjs';
-import { installVoice, mergeHooks, stripJarvis, HOOKS } from '../scripts/voice.mjs';
+import { installVoice, mergeHooks, stripJarvis, hookCommand, HOOKS } from '../scripts/voice.mjs';
 
 let tmp;
 const SETTINGS = () => path.join(tmp, 'settings.json');
@@ -199,6 +199,38 @@ describe('config.sh is the user\'s file', () => {
     for (const f of ['jarvis.sh', 'speaker.sh', 'jarvisctl']) {
       assert.ok(fs.statSync(path.join(TARGET(), f)).mode & 0o111, `${f} is not executable`);
     }
+  });
+});
+
+describe('the hook command is executable on the platform it targets', () => {
+  test('unix gets the bare quoted path', () => {
+    assert.equal(hookCommand('/home/me/.claude/jarvis/jarvis.sh', 'done', 'linux'), '"/home/me/.claude/jarvis/jarvis.sh" done');
+    assert.equal(hookCommand('/Users/me/.claude/jarvis/jarvis.sh', 'done', 'darwin'), '"/Users/me/.claude/jarvis/jarvis.sh" done');
+  });
+
+  test('windows names bash and uses forward slashes', () => {
+    // The bare path fails twice on Windows: cmd.exe cannot execute a .sh, and a shell
+    // that can would read `C:\Users\...` backslashes as escapes. Naming bash works
+    // whether the hook is handed to cmd.exe or to a shell.
+    const c = hookCommand('C:\\Users\\me\\.claude\\jarvis\\jarvis.sh', 'done', 'win32');
+    assert.equal(c, 'bash "C:/Users/me/.claude/jarvis/jarvis.sh" done');
+    assert.ok(!c.includes('\\'), 'a backslash survived into the hook command');
+  });
+
+  test('every platform still contains "jarvis", or the installer cannot find its own hooks', () => {
+    // stripJarvis matches on the command string. If a platform ever produced a command
+    // without that substring, re-running the installer would stop replacing its own
+    // entries and start accumulating duplicates instead.
+    for (const p of ['linux', 'darwin', 'win32']) {
+      assert.ok(hookCommand('/x/.claude/jarvis/jarvis.sh', 'done', p).includes('jarvis'));
+    }
+  });
+
+  test('a windows merge is still idempotent', () => {
+    const s = JSON.parse(JSON.stringify(ORCHESTRATOR_SETTINGS));
+    mergeHooks(s, 'C:\\Users\\me\\.claude\\jarvis\\jarvis.sh', 'win32');
+    mergeHooks(s, 'C:\\Users\\me\\.claude\\jarvis\\jarvis.sh', 'win32');
+    assert.equal(jarvisCmds(s).length, HOOKS.length, 'hooks multiplied on Windows');
   });
 });
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # JARVIS hook entry point. Runs on EVERY hook event, so it must stay cheap.
 #
 # It does not speak. It writes one queue file and exits. Speaking from inside the
@@ -127,6 +127,9 @@ wake_speaker() {
 
 case "$MODE" in
   start|boot)                       # SessionStart
+    # A new session means the previous farewell is spent. Without this the one-shot
+    # goodbye marker would suppress the goodbye for every later run of the day.
+    rm -rf "$J/run/farewell" 2>/dev/null
     mark_active
     echo "$NOW" > "$S/start/$KEY"
     rm -f "$S/subs/$KEY"
@@ -154,7 +157,7 @@ case "$MODE" in
 
   permission|approve)               # Notification / permission_prompt
     mark_active
-    printf '%s|%s|0\n' "$NOW" "$NAME" > "$S/pending/$KEY"
+    printf '%s|%s|0|0\n' "$NOW" "$NAME" > "$S/pending/$KEY"
     enqueue 0 approve "" ;;
 
   idle)                             # Notification / idle_prompt

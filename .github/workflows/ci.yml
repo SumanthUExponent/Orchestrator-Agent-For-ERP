@@ -1,0 +1,116 @@
+name: ci
+
+# The voice layer claims to run on macOS, Linux and Windows. Two of those three cannot
+# be checked on the machine it was written on, so they are checked here instead — the
+# Linux job installs a real speech engine and a real audio backend and runs the same
+# suites, rather than trusting that the dispatch code was right.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # espeak-ng gives the Linux job a genuine speech backend to detect and measure;
+      # alsa-utils gives it a genuine audio backend. There is no sound card on a runner,
+      # so playback fails — which is itself worth exercising, because a missing device
+      # must degrade to silence and never to a non-zero hook.
+      - name: Linux audio and speech backends
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends espeak-ng alsa-utils
+
+      - run: node --version && bash --version | head -1
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Registry and swarm health
+        run: |
+          node scripts/orchestrator.mjs health
+          node scripts/orchestrator.mjs doctor
+
+      # Only on one node version per OS: these are wall-clock heavy (real sleeps, real
+      # daemon lifecycles) and they exercise shell behaviour, not the Node version.
+      - name: Platform and speech assertions
+        if: matrix.node == '20'
+        run: tests/voice-audio.sh
+
+      - name: Concurrency harness
+        if: matrix.node == '20'
+        run: tests/voice-concurrency.sh
+
+      - name: Install end to end, then verify with doctor
+        if: matrix.node == '20'
+        run: |
+          export CLAUDE_JARVIS_DIR="$HOME/.claude/jarvis"
+          export CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json"
+          mkdir -p "$HOME/.claude" && echo '{}' > "$CLAUDE_SETTINGS_FILE"
+          node scripts/orchestrator.mjs voice --apply
+          "$HOME/.claude/jarvis/jarvisctl" doctor
+          "$HOME/.claude/jarvis/jarvisctl" report --text
+
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends shellcheck
+      # The shell here has to run on bash 3.2 (macOS), bash 5 (Linux) and Git Bash, so
+      # portability warnings are the ones that matter most.
+      - run: shellcheck --shell=bash --severity=warning voice/*.sh voice/jarvisctl tests/*.sh
+
+  windows:
+    name: windows · path handling
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # The Windows job deliberately does NOT try to play audio: a runner has no device
+      # and no voice. What it proves is that the installer produces a hook command
+      # Windows can actually execute, and that the shell scripts parse under Git Bash.
+      - name: Unit tests
+        run: npm test
+      - name: Install, and check the hook command is executable here
+        shell: bash
+        run: |
+          export CLAUDE_JARVIS_DIR="$HOME/.claude/jarvis"
+          export CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json"
+          mkdir -p "$HOME/.claude" && echo '{}' > "$CLAUDE_SETTINGS_FILE"
+          node scripts/orchestrator.mjs voice --apply
+          node -e "
+            const fs=require('fs');
+            const s=JSON.parse(fs.readFileSync(process.env.CLAUDE_SETTINGS_FILE,'utf8'));
+            const cmds=Object.values(s.hooks).flatMap(g=>g.flatMap(x=>x.hooks.map(h=>h.command)));
+            const jarvis=cmds.filter(c=>c.includes('jarvis'));
+            if(jarvis.length!==8) throw new Error('expected 8 hooks, got '+jarvis.length);
+            for(const c of jarvis){
+              if(c.includes('\\\\')) throw new Error('backslash in hook command: '+c);
+              if(!c.startsWith('bash ')) throw new Error('hook does not invoke bash: '+c);
+            }
+            console.log('hook commands are Windows-executable:'); jarvis.forEach(c=>console.log('  '+c));
+          "
+      - name: The shell scripts parse under Git Bash
+        shell: bash
+        run: |
+          for f in voice/*.sh voice/jarvisctl tests/*.sh; do bash -n "$f" && echo "ok  $f"; done
+      - name: jarvisctl runs
+        shell: bash
+        run: |
+          "$HOME/.claude/jarvis/jarvisctl" report --text
+          "$HOME/.claude/jarvis/jarvisctl" doctor || true

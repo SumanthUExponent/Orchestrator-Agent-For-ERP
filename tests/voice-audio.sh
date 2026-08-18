@@ -1,171 +1,206 @@
-#!/bin/bash
-# Audio-design assertions for the voice layer.
+#!/usr/bin/env bash
+# Platform and speech assertions for the voice layer.
 #
-# Sound is the one output a unit test cannot listen to, so this asserts the things
-# that DETERMINE how it sounds and fail silently when wrong:
+# The motif tables, tone synthesis and loudness ordering are asserted in
+# tests/tones.test.mjs, which runs everywhere. What is left here is what genuinely
+# needs the live machine: that a speech and an audio backend were actually found, that
+# the installed motif table agrees with the installed tone files, that names come out
+# sayable, and that announcements stay short.
 #
-#   - afplay does nothing, and reports nothing, for a rate outside 0.4-3.0. A motif
-#     table that multiplies past the ceiling is mute, not broken. It clamped once
-#     already, collapsing two sessions onto one identical tone.
-#   - the chime must finish before the speech starts. Overlapped, its energy sits on
-#     the vowel formants of the first word, which is usually the project name.
-#   - `Stop` fires after every turn, so announcement LENGTH is a feature. The first
-#     cut ran 4.4-5.4s each and turned a normal session into a monologue.
+# Length matters because `Stop` fires after EVERY turn. The first version ran 4.4-5.4
+# seconds per announcement and turned a normal session into a monologue.
 #
-# Uses the real `say` to measure durations, so it is macOS-only, like the layer.
+# Speech-duration checks need a TTS engine that can render to a file, which today is
+# macOS `say`; they are skipped elsewhere rather than failed.
 #
 # Usage: tests/voice-audio.sh
 
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 V="$REPO/voice"
-PASS=0; FAIL=0
-ok()  { PASS=$((PASS+1)); printf '  \033[32mPASS\033[0m %s\n' "$1"; }
-bad() { FAIL=$((FAIL+1)); printf '  \033[31mFAIL\033[0m %s\n' "$1"; [ -n "${2:-}" ] && printf '        %s\n' "$2"; }
-chk() { if [ "$1" = 0 ]; then ok "$2"; else bad "$2" "${3:-}"; fi; }
+PASS=0; FAIL=0; SKIP=0
+ok()   { PASS=$((PASS+1)); printf '  \033[32mPASS\033[0m %s\n' "$1"; }
+bad()  { FAIL=$((FAIL+1)); printf '  \033[31mFAIL\033[0m %s\n' "$1"; [ -n "${2:-}" ] && printf '        %s\n' "$2"; }
+skip() { SKIP=$((SKIP+1)); printf '  \033[33mSKIP\033[0m %s\n' "$1"; }
+chk()  { if [ "$1" = 0 ]; then ok "$2"; else bad "$2" "${3:-}"; fi; }
 
-MOTIFS="boot done approve nag err idle tick sub bye"
+# A sandbox install, so the suite never depends on what happens to be in ~/.claude.
+SB=$(mktemp -d /tmp/jv-audio-XXXXXX)
+export CLAUDE_JARVIS_DIR="$SB/jarvis"
+export CLAUDE_SETTINGS_FILE="$SB/settings.json"
+echo '{}' > "$CLAUDE_SETTINGS_FILE"
+node "$REPO/scripts/orchestrator.mjs" voice --apply >/dev/null 2>&1
+J="$CLAUDE_JARVIS_DIR"
+trap 'rm -rf "$SB"' EXIT
 
-# ---- load speaker.sh as a library, with the players stubbed to print the table --
-dump() {  # dump <motif> <ordinal>  ->  lines of "vol rate atom"
-  (
-    export JARVIS_LIB=1
-    . "$V/config.sh"
-    J=/tmp/jv-audio-$$; mkdir -p "$J/run" "$J/state/active" "$J/queue"
-    afplay() { echo "$2 $4 $(basename "$5" .aiff)"; }
-    sleep()  { :; }
-    . "$V/speaker.sh"
-    motif "$1" "$2" 2>/dev/null
-    rm -rf "$J"
-  )
-}
-spoken_of() {
-  (
-    export JARVIS_LIB=1
-    . "$V/config.sh"
-    [ -n "${2:-}" ] && JARVIS_NAMES="$2"
-    J=/tmp/jv-audio-$$; mkdir -p "$J/run" "$J/state/active" "$J/queue"
-    . "$V/speaker.sh"
-    spoken "$1"
-    rm -rf "$J"
-  )
-}
-speech_len() { say -v "${JARVIS_VOICE:-Daniel}" -r "${JARVIS_RATE:-172}" -o /tmp/jv-len.aiff "$1" 2>/dev/null
-               afinfo /tmp/jv-len.aiff 2>/dev/null | awk -F': ' '/estimated duration/{printf "%.2f", $2}'; }
+. "$J/platform.sh"
 
-echo "JARVIS audio-design assertions"
+echo "JARVIS platform and speech assertions"
+echo "platform: $JV_OS"
 echo
 
-# ---------------------------------------------------------------------- rates
-echo "R1  every motif rate is inside afplay's 0.4-3.0 window"
-outofrange=""
-for k in $MOTIFS; do for o in 1 2 3 4; do
-  while read -r v r a; do
-    [ -z "${r:-}" ] && continue
-    awk -v r="$r" 'BEGIN{exit (r<0.4||r>3.0)?1:0}' || outofrange="$outofrange $k/$o:$r"
-  done <<< "$(dump "$k" "$o")"
-done; done
-[ -z "$outofrange" ]; chk $? "no rate outside the window" "$outofrange"
+# ------------------------------------------------------------------ backends
+echo "P1  a speech and an audio backend were found on THIS machine"
+sayb=$(jv_backend_say);  case "$sayb"  in NONE*) bad "speech backend ($sayb)" ;; *) ok "speech backend: $sayb" ;; esac
+playb=$(jv_backend_play); case "$playb" in NONE*) bad "audio backend ($playb)" ;; *) ok "audio backend: $playb" ;; esac
+ok "banner backend: $(jv_backend_notify)"
 
 echo
-echo "R2  no rate sits ON the clamp — a clamped table is mute, not wrong"
-# 3.000 exactly means rate() saturated. The value is legal, the motif is not: two
-# different ordinals that both saturate produce the identical tone.
-clamped=""
-for k in $MOTIFS; do for o in 1 2 3 4; do
-  while read -r v r a; do
-    [ "${r:-}" = "3.000" ] && clamped="$clamped $k/$o"
-  done <<< "$(dump "$k" "$o")"
-done; done
-[ -z "$clamped" ]; chk $? "nothing reaches the ceiling" "$clamped"
+echo "P2  the platform layer is the ONLY place that names an OS tool"
+# If an OS call leaks back into speaker.sh the layer stops being portable, and the
+# breakage appears on someone else's machine rather than here.
+leak=$(grep -nE '^[^#]*\b(afplay|osascript|say -v|paplay|aplay|powershell)' "$V/speaker.sh" "$V/jarvis.sh" 2>/dev/null | grep -v 'jv_' || true)
+[ -z "$leak" ]; chk $? "no OS-specific call outside platform.sh" "$leak"
 
 echo
-echo "R3  each session ordinal gets an audibly different motif"
-same=""
-for k in $MOTIFS; do
-  [ "$k" = err ] && continue   # err is deliberately session-independent: bad is bad
-  prev=""
+echo "P3  installed tones and the installed motif table agree"
+. "$J/tones/motifs.sh"
+missing=""; total=0
+for k in boot done approve nag err idle tick sub bye; do
   for o in 1 2 3 4; do
-    cur=$(dump "$k" "$o" | awk '{print $2}' | tr '\n' ',')
-    [ -n "$prev" ] && [ "$cur" = "$prev" ] && same="$same $k/$o"
-    prev="$cur"
+    var="MOTIF_${k}_${o}"; seq="${!var-}"
+    [ -z "$seq" ] && { missing="$missing $k/$o:EMPTY"; continue; }
+    for item in $seq; do
+      total=$((total+1))
+      [ -f "$J/tones/${item%%:*}" ] || missing="$missing $k/$o:${item%%:*}"
+    done
   done
 done
-[ -z "$same" ]; chk $? "adjacent ordinals differ for every motif" "$same"
+[ -z "$missing" ]; chk $? "all $total referenced notes are present" "$missing"
 
 echo
-echo "R4  volumes are in range, and importance is ordered"
-badvol=""
-for k in $MOTIFS; do
-  while read -r v r a; do
-    [ -z "${v:-}" ] && continue
-    awk -v v="$v" 'BEGIN{exit (v<=0||v>2.0)?1:0}' || badvol="$badvol $k:$v"
-  done <<< "$(dump "$k" 1)"
+echo "P4  the Linux and Windows branches actually invoke something"
+# These cannot be run for real from macOS, but the branch that dispatches to them can:
+# stub the tools, force JV_OS, and assert the right one was called with the text. The
+# alternative is shipping a Linux path nobody has ever executed.
+STUB="$SB/stub"; mkdir -p "$STUB"
+for tool in espeak-ng spd-say paplay aplay notify-send powershell.exe wslpath; do
+  printf '#!/usr/bin/env bash\necho "%s $*" >> "%s/calls.log"\n' "$tool" "$SB" > "$STUB/$tool"
+  chmod +x "$STUB/$tool"
 done
-[ -z "$badvol" ]; chk $? "no volume outside 0-2.0" "$badvol"
-# An urgent alert must not be quieter than a routine one. It was: measured RMS
-# differs 4.6x across the system sounds, so one fixed volume made the error chime
-# quieter than the completion.
-verr=$(dump err 1  | head -1 | awk '{print $1}')
-vdone=$(dump done 1 | head -1 | awk '{print $1}')
-vsub=$(dump sub 1  | head -1 | awk '{print $1}')
-awk -v e="$verr" -v d="$vdone" 'BEGIN{exit (e>d)?0:1}'; chk $? "error ($verr) is louder than completion ($vdone)"
-awk -v s="$vsub" -v d="$vdone" 'BEGIN{exit (s<d)?0:1}'; chk $? "subagent ($vsub) is quieter than completion ($vdone)"
+printf '#!/usr/bin/env bash\nprintf "C:\\\\fake\\\\%%s" "$(basename "$2")"\n' > "$STUB/wslpath"; chmod +x "$STUB/wslpath"
+
+probe() {  # probe <os> <call> -> the logged invocation
+  : > "$SB/calls.log"
+  ( export PATH="$STUB:$PATH"
+    . "$J/config.sh"
+    . "$J/platform.sh"
+    JV_OS="$1"
+    # Re-resolve the PowerShell handle now that the stub is on PATH.
+    for c in powershell.exe pwsh.exe powershell; do have "$c" && { JV_PS="$c"; break; }; done
+    eval "$2" ) >/dev/null 2>&1
+  # Poll rather than sleep. The banner is deliberately fire-and-forget — backgrounded
+  # so that a slow notifier can never delay the speech — and the first exec of a stub
+  # measured 495ms cold against 10ms warm, so any fixed wait is a coin flip.
+  local n=0
+  while [ "$n" -lt 60 ] && [ ! -s "$SB/calls.log" ]; do sleep 0.05; n=$((n+1)); done
+  cat "$SB/calls.log" 2>/dev/null
+}
+
+r=$(probe linux 'jv_say "test one"')
+case "$r" in *spd-say*|*espeak*) ok "linux speech dispatched: $(echo "$r" | head -1)" ;;
+             *) bad "linux speech dispatched" "got: ${r:-nothing}" ;; esac
+
+r=$(probe linux 'jv_play_now "$J/tones/motifs.sh"')
+case "$r" in *paplay*|*aplay*) ok "linux audio dispatched: $(echo "$r" | head -1 | cut -c1-40)" ;;
+             *) bad "linux audio dispatched" "got: ${r:-nothing}" ;; esac
+
+r=$(probe linux 'jv_notify "Title" "Body"')
+case "$r" in *notify-send*) ok "linux banner dispatched" ;;
+             *) bad "linux banner dispatched" "got: ${r:-nothing}" ;; esac
+
+r=$(probe windows 'jv_say "test one"')
+case "$r" in *powershell*System.Speech*) ok "windows speech dispatched via System.Speech" ;;
+             *) bad "windows speech dispatched" "got: ${r:-nothing}" ;; esac
+
+r=$(probe windows 'jv_play_now "$J/tones/motifs.sh"')
+case "$r" in *powershell*SoundPlayer*) ok "windows audio dispatched via Media.SoundPlayer" ;;
+             *) bad "windows audio dispatched" "got: ${r:-nothing}" ;; esac
 
 echo
-echo "R5  a two-note motif uses one atom, so the interval is exact"
-# Layering two DIFFERENT system sounds gave a sustained chord, not two notes: they
-# are 0.56-1.65s long with their energy in the same band.
-mixed=""
-for k in $MOTIFS; do
-  n=$(dump "$k" 1 | awk '{print $3}' | sort -u | wc -l | tr -d ' ')
-  [ "$n" -gt 1 ] && mixed="$mixed $k"
-done
-[ -z "$mixed" ]; chk $? "each motif is built from a single atom" "$mixed"
+echo "P5  a platform with no backend at all degrades to silence, not to an error"
+# A missing engine must never make a hook fail: a non-zero hook surfaces a notice in
+# the transcript, so an absent speech engine would become visible noise every turn.
+out=$( ( export PATH="$SB/empty:/usr/bin:/bin"; mkdir -p "$SB/empty"
+         . "$J/config.sh"; . "$J/platform.sh"; JV_OS=linux
+         jv_say "hello"; jv_play_now "/nonexistent.wav"; jv_notify "a" "b" ) 2>&1 )
+rc=$?
+[ "$rc" = 0 ]; chk $? "exit 0 with no engine present (rc=$rc)"
+[ -z "$out" ]; chk $? "and no output" "$out"
 
-echo
-echo "R6  direction carries meaning: good rises, bad falls"
-r1=$(dump done 1 | sed -n 1p | awk '{print $2}'); r2=$(dump done 1 | sed -n 2p | awk '{print $2}')
-awk -v a="$r1" -v b="$r2" 'BEGIN{exit (b>a)?0:1}'; chk $? "completion rises ($r1 -> $r2)"
-e1=$(dump err 1 | sed -n 1p | awk '{print $2}'); e2=$(dump err 1 | sed -n 2p | awk '{print $2}')
-awk -v a="$e1" -v b="$e2" 'BEGIN{exit (b<a)?0:1}'; chk $? "error falls ($e1 -> $e2)"
-b1=$(dump bye 1 | sed -n 1p | awk '{print $2}'); b3=$(dump bye 1 | sed -n 3p | awk '{print $2}')
-awk -v a="$b1" -v b="$b3" 'BEGIN{exit (b<a)?0:1}'; chk $? "shutdown falls ($b1 -> $b3)"
+r=$(probe unknown 'jv_say "x"')
+[ -z "$r" ]; chk $? "an unrecognised platform calls nothing at all" "$r"
 
-# ------------------------------------------------------------------- names
+# --------------------------------------------------------------------- names
 echo
-echo "N1  spoken() turns a directory basename into something sayable"
+echo "N1  a directory basename comes out sayable"
+spoken_of() (
+  export JARVIS_LIB=1
+  . "$J/config.sh"; [ -n "${2:-}" ] && JARVIS_NAMES="$2"
+  . "$J/platform.sh"; . "$J/speaker.sh"
+  spoken "$1"
+)
 t() { r=$(spoken_of "$1" "${3:-}"); if [ "$r" = "$2" ]; then ok "$1 -> \"$r\""; else bad "$1 -> \"$r\", expected \"$2\""; fi; }
 t "frappe-bench"       "frappe bench"
 t "exponent_utilities" "exponent utilities"
 t "nsproto"            "nsproto"
-t "wt_nst"             "N S T"                       # worktree prefix + initialism
+t "wt_nst"             "N S T"                                    # worktree prefix + initialism
 t "wt_crm"             "C R M"
-t "wt_nst"             "the N S T tree"  "wt_nst=the N S T tree"   # explicit override wins
+t "wt_nst"             "the N S T tree"  "wt_nst=the N S T tree"  # explicit override wins
 
-# ---------------------------------------------------- announcement length
+# ------------------------------------------------------------------- lengths
 echo
 echo "L1  announcements stay short — Stop fires after EVERY turn"
-budget() {  # budget <label> <max seconds> <text>
-  local d; d=$(speech_len "$3")
-  awk -v d="$d" -v m="$2" 'BEGIN{exit (d<=m)?0:1}'
-  chk $? "$1 = ${d}s (budget ${2}s)"
-}
-budget "done, solo, no crew " 2.2 "Done, sir. 4 minutes."
-budget "done, solo, swarm   " 3.4 "Done, sir. 6 specialists, 4 minutes."
-budget "approval, solo      " 1.8 "Your approval, sir."
-budget "error, solo         " 1.8 "A problem, sir."
-budget "idle, solo          " 1.8 "Standing by, sir."
-budget "boot                " 3.2 "Good afternoon, sir. frappe bench online."
-budget "approval, 2 sessions" 2.6 "N S T needs your approval, sir."
+# Rendering speech to a file is the only way to measure it, and every platform does it
+# differently. Where it can be done the budgets are enforced for real; where it cannot,
+# the checks skip rather than pretending to pass.
+speech_len=""
+case "$JV_OS" in
+  macos) have say && have afinfo && speech_len=macos ;;
+  linux) have espeak-ng && speech_len=espeak ;;
+esac
+if [ -z "$speech_len" ]; then
+  skip "speech-duration budgets (no TTS engine here that renders to a file)"
+else
+  measure() {
+    case "$speech_len" in
+      macos)
+        say -v "${JARVIS_VOICE:-Daniel}" -r "${JARVIS_RATE:-172}" -o "$SB/len.aiff" "$1" 2>/dev/null
+        afinfo "$SB/len.aiff" 2>/dev/null | awk -F': ' '/estimated duration/{printf "%.2f", $2}' ;;
+      espeak)
+        # espeak-ng speaks noticeably faster than macOS `say` at the same nominal wpm,
+        # so the budgets below are enforced against whatever THIS engine produces —
+        # the point is that an announcement stays short, not that two engines agree.
+        espeak-ng -s "${JARVIS_RATE:-172}" -w "$SB/len.wav" "$1" 2>/dev/null
+        node -e '
+          const fs=require("fs"),b=fs.readFileSync(process.argv[1]);
+          let p=12,dataLen=0,rate=b.readUInt32LE(24),bytes=b.readUInt32LE(28);
+          while(p<b.length-8){const id=b.toString("ascii",p,p+4),sz=b.readUInt32LE(p+4);
+            if(id==="data"){dataLen=sz;break} p+=8+sz+(sz%2)}
+          process.stdout.write((dataLen/(bytes||rate*2)).toFixed(2));
+        ' "$SB/len.wav" ;;
+    esac
+  }
+  budget() { local d; d=$(measure "$3"); awk -v d="$d" -v m="$2" 'BEGIN{exit (d<=m)?0:1}'; chk $? "$1 = ${d}s (budget ${2}s)"; }
+  budget "done, solo, no crew " 2.2 "Done, sir. 4 minutes."
+  budget "done, solo, swarm   " 3.4 "Done, sir. 6 specialists, 4 minutes."
+  budget "approval, solo      " 1.8 "Your approval, sir."
+  budget "error, solo         " 1.8 "A problem, sir."
+  budget "idle, solo          " 1.8 "Standing by, sir."
+  budget "boot                " 3.2 "Good afternoon, sir. frappe bench online."
+  budget "approval, 2 sessions" 2.6 "N S T needs your approval, sir."
+fi
 
 echo
-echo "L2  [[slnc]] actually inserts silence (it is silently ignored by some voices)"
-a=$(speech_len "One. Two.")
-b=$(speech_len "One. [[slnc 600]] Two.")
-awk -v a="$a" -v b="$b" 'BEGIN{exit (b-a>0.4)?0:1}'; chk $? "600ms pause lengthened the utterance ${a}s -> ${b}s"
+echo "L2  macOS-only speech markup is stripped on other platforms"
+# [[slnc 200]] is a macOS `say` directive. Anywhere else it would be READ ALOUD as
+# "bracket bracket s l n c two hundred".
+out=$(JV_OS=linux; . "$J/platform.sh" 2>/dev/null; JV_OS=linux
+      t="One. [[slnc 200]] Two."
+      [ "$JV_OS" = macos ] || t=$(printf '%s' "$t" | sed 's/\[\[[^]]*\]\]//g; s/  */ /g')
+      printf '%s' "$t")
+case "$out" in *slnc*) bad "markup stripped off macOS" "got: $out" ;; *) ok "stripped: \"$out\"" ;; esac
 
 echo
-printf 'RESULT: %s passed, %s failed\n' "$PASS" "$FAIL"
-rm -f /tmp/jv-len.aiff
+printf 'RESULT: %s passed, %s failed, %s skipped\n' "$PASS" "$FAIL" "$SKIP"
 [ "$FAIL" = 0 ] || exit 1

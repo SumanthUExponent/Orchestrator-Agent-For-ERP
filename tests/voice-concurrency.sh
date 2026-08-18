@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Concurrency harness for the voice layer.
 #
 # The interesting failures here are invisible to a unit test and inaudible to one
@@ -21,34 +21,45 @@ export HOME="$SB/home"
 J="$HOME/.claude/jarvis"
 mkdir -p "$J" "$SB/bin"
 
-for f in jarvis.sh speaker.sh jarvisctl config.sh; do cp "$REPO/voice/$f" "$J/$f"; done
-chmod +x "$J/jarvis.sh" "$J/speaker.sh" "$J/jarvisctl"
+# Install through the REAL installer rather than copying files by hand. Hand-copying
+# missed platform.sh and the generated tones the moment those were introduced, and the
+# harness would have gone on testing an install nobody ships.
+export CLAUDE_JARVIS_DIR="$J"
+export CLAUDE_SETTINGS_FILE="$SB/settings.json"
+echo '{}' > "$CLAUDE_SETTINGS_FILE"
+node "$REPO/scripts/orchestrator.mjs" voice --apply >/dev/null 2>&1 || { echo "install failed"; exit 1; }
 
 AUDIT="$SB/audit.log"
 : > "$AUDIT"
 
-# Sub-second timestamps. macOS `date` has no %N and $EPOCHREALTIME needs bash 5,
-# which macOS does not ship; perl is always present.
+# Sub-second timestamps, and every obvious source is missing somewhere: macOS `date`
+# has no %N, $EPOCHREALTIME needs bash 5 which macOS does not ship, and perl is absent
+# from minimal Linux images. Try each in turn and fall back to whole seconds — the
+# overlap check needs ordering, not precision, so a coarser clock still answers it.
 cat > "$SB/bin/now" <<'STUB'
-#!/bin/bash
-perl -MTime::HiRes -e 'printf "%.3f\n", Time::HiRes::time()'
+#!/usr/bin/env bash
+if [ -n "${EPOCHREALTIME:-}" ]; then printf '%s\n' "${EPOCHREALTIME/,/.}"; exit 0; fi
+if command -v perl >/dev/null 2>&1; then perl -MTime::HiRes -e 'printf "%.3f\n", Time::HiRes::time()'; exit 0; fi
+if command -v python3 >/dev/null 2>&1; then python3 -c 'import time;print("%.3f"%time.time())'; exit 0; fi
+n=$(date +%N 2>/dev/null)
+case "$n" in ''|*[!0-9]*|N) printf '%s.000\n' "$(date +%s)" ;; *) printf '%s.%s\n' "$(date +%s)" "${n:0:3}" ;; esac
 STUB
 
 cat > "$SB/bin/say" <<STUB
-#!/bin/bash
+#!/usr/bin/env bash
 echo "\$($SB/bin/now) SAY_START \$*" >> $AUDIT
 sleep 1.2
 echo "\$($SB/bin/now) SAY_END" >> $AUDIT
 STUB
 
 cat > "$SB/bin/afplay" <<STUB
-#!/bin/bash
+#!/usr/bin/env bash
 echo "\$($SB/bin/now) AFPLAY \$*" >> $AUDIT
 sleep 0.2
 STUB
 
 cat > "$SB/bin/osascript" <<STUB
-#!/bin/bash
+#!/usr/bin/env bash
 echo "\$($SB/bin/now) BANNER \$*" >> $AUDIT
 STUB
 
@@ -66,6 +77,7 @@ hook()    { local k="$1" n="$2" m="$3"; JARVIS_SESSION_KEY="$k" JARVIS_SESSION_N
 # including the harness itself under some shells — and a point-in-time sample also
 # misses a duplicate that spawns and exits between checks. Births cannot be missed.
 LEDGER="$J/run/daemons.log"
+Q_SEED="$J/queue"
 mkdir -p "$J/run"; : > "$LEDGER"
 births() { local n; n=$(grep -c ' start$' "$LEDGER" 2>/dev/null); echo "${n:-0}"; }
 live()   { local b e; b=$(births); e=$(grep -c ' exit$' "$LEDGER" 2>/dev/null); echo $(( b - ${e:-0} )); }
@@ -74,10 +86,39 @@ live()   { local b e; b=$(births); e=$(grep -c ' exit$' "$LEDGER" 2>/dev/null); 
 # arithmetic test downstream then fails on "0\n0" rather than on the behaviour.
 says()    { local n; n=$(grep -c 'SAY_START' "$AUDIT" 2>/dev/null); echo "${n:-0}"; }
 chimes()  { local n; n=$(grep -c 'AFPLAY'    "$AUDIT" 2>/dev/null); echo "${n:-0}"; }
-quiet()   { local n=0; while [ "$n" -lt "${1:-30}" ]; do [ -z "$(ls "$J/queue" 2>/dev/null | grep -v '^\.')" ] && sleep 1.6 && return 0; sleep 0.5; n=$((n+1)); done; return 1; }
+# An empty queue does NOT mean the daemon is finished: the item has been claimed and
+# is inside its debounce and its speech. Fixed sleeps here made every assertion a
+# coin flip once the trailing debounce added over a second to each announcement.
+quiet() {
+  local n=0
+  while [ "$n" -lt "${1:-30}" ]; do
+    [ -z "$(ls "$J/queue" 2>/dev/null | grep -v '^\.')" ] && sleep 4 && return 0
+    sleep 0.5; n=$((n+1))
+  done
+  return 1
+}
+# wait_for <pattern> <file> [secs] — poll for something to actually happen.
+wait_for() {
+  local pat="$1" f="$2" lim="${3:-25}" n=0
+  while [ "$n" -lt "$lim" ]; do
+    grep -qF "$pat" "$f" 2>/dev/null && return 0
+    sleep 0.5; n=$((n+1))
+  done
+  return 1
+}
+# pkill is in procps, which minimal Linux images and Git Bash do not always ship. The
+# lock records the daemon's own pid, so asking it is both more portable and more precise
+# than matching a command line.
+stop_daemon() {
+  local p; p=$(cat "$J/run/lock/pid" 2>/dev/null)
+  [ -n "$p" ] && kill "$p" 2>/dev/null
+  command -v pkill >/dev/null 2>&1 && pkill -f 'jarvis/speaker.sh' 2>/dev/null
+  return 0
+}
+
 fresh() {
   mkdir -p "$J/run"
-  pkill -f 'jarvis/speaker.sh' 2>/dev/null
+  stop_daemon
   # Wait for the death to be RECORDED, not merely requested. bash defers a trap
   # until the current foreground command returns, so a daemon sitting in its
   # `sleep 0.5` poll writes its exit line up to half a second after the signal.
@@ -114,13 +155,34 @@ sleep 1
 d=$(births); [ "$d" = 1 ]; check $? "exactly one speaker daemon was ever started (saw $d)"
 quiet 40
 no_overlap; check $? "no overlapping speech" "$(grep OVERLAP "$AUDIT" 2>/dev/null)"
-# Urgent items carry priority 0 and must be spoken before the routine greetings.
-first=$(grep 'SAY_START' "$AUDIT" | head -1)
-case "$first" in
-  *approval*|*clearance*|*authorization*|*problem*|*rong*|*Error*|*error*) ok "urgent item spoken first" ;;
-  *) bad "urgent item spoken first" "first was: $first" ;;
-esac
 [ "$(says)" -ge 3 ]; check $? "all four sessions announced ($(says) utterances)"
+
+echo
+echo "T1b urgent items are spoken before routine ones"
+# Priority only orders what is in the queue TOGETHER. Firing four hooks in parallel
+# and asserting on the first utterance was a race: whichever hook won the spawn could
+# have its own item claimed before the others were enqueued, so a boot legitimately
+# came first. Seed the queue, THEN let the daemon in — which is the situation the
+# priority prefix actually exists for.
+fresh
+now=$(date +%s)
+printf 'boot|alpha|||1|s1\n'      > "$Q_SEED/4-$now-a-1"
+printf 'boot|bravo|||2|s2\n'      > "$Q_SEED/4-$now-a-2"
+printf 'approve|charlie|||3|s3\n' > "$Q_SEED/0-$now-a-3"
+printf 'err|delta|||4|s4\n'       > "$Q_SEED/0-$now-a-4"
+mkdir -p "$J/run"
+mkdir "$J/run/lock" 2>/dev/null && nohup "$J/speaker.sh" >/dev/null 2>&1 &
+wait_for SAY_START "$AUDIT" 30
+# Assert on the render LOG, which records the MODE, not on the words. Matching spoken
+# text is brittle for two reasons already hit: the phrasing gets shortened, and the
+# solo register capitalises the opening word, so a lowercase pattern silently missed
+# the very item it was checking for.
+first=$(awk 'NR==1{print $2}' "$J/log" 2>/dev/null)
+case "$first" in
+  approve|err) ok "an urgent item was rendered first (was: $first)" ;;
+  *) bad "an urgent item was rendered first" "first was: ${first:-nothing}; log: $(cat "$J/log" 2>/dev/null | tr '\n' ' ')" ;;
+esac
+quiet 40
 
 # ---------------------------------------------------------------- T2
 echo
@@ -134,6 +196,32 @@ for i in 1 2 3 4 5 6; do
 done
 quiet 40
 n=$(says); [ "$n" = 1 ]; check $? "collapsed to exactly one announcement (got $n)"
+
+# ---------------------------------------------------------------- T2b
+echo
+echo "T2b a burst SPREAD OVER TIME also collapses to one"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+# T2 fired all six at once, which fits inside a single debounce window and therefore
+# never exercised the edge. Spaced 0.3s apart they straddle it: with a fixed one-shot
+# wait this produced two announcements, and six subagent events produced two chimes.
+# Only the end-to-end simulation surfaced it.
+for i in 1 2 3 4 5 6; do
+  echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+  hook s1 alpha done
+  sleep 0.3
+done
+quiet 40
+n=$(says); [ "$n" = 1 ]; check $? "a staggered burst is still one announcement (got $n)"
+
+echo
+echo "T2c six subagents 0.3s apart are one chime"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+hook s1 alpha begin
+for i in 1 2 3 4 5 6; do hook s1 alpha subagent; sleep 0.3; done
+quiet 40
+n=$(chimes); [ "$n" = 1 ]; check $? "one tone for the whole batch (got $n)"
 
 # ---------------------------------------------------------------- T3
 echo
@@ -251,9 +339,123 @@ for m in start begin done permission idle subagent error end; do
 done
 quiet 40
 
+# ---------------------------------------------------------------- T12
+echo
+echo "T12 closing four sessions at once says goodbye ONCE"
+fresh
+for i in 1 2 3 4; do hook s$i proj$i start; done
+quiet 40
+: > "$AUDIT"; : > "$J/log"
+# Every SessionEnd fires together when a terminal quits, and all four remove their
+# active marker before the FIRST bye reaches render — so `nactive -eq 0` was true for
+# all of them and it said goodbye four times. No existing test could see this: each
+# behaviour is correct in isolation.
+for i in 1 2 3 4; do hook s$i proj$i end; done
+wait_for Goodbye "$AUDIT" 30
+quiet 40
+n=$(grep -c 'Goodbye' "$AUDIT" 2>/dev/null); n=${n:-0}
+[ "$n" = 1 ]; check $? "exactly one goodbye spoken (got $n)" "$(grep SAY_START "$AUDIT")"
+# The log must agree with what was actually said. Three suppressed byes were still
+# being logged, so `jarvisctl log` and the simulation both reported four farewells.
+b=$(grep -c ' bye ' "$J/log" 2>/dev/null); b=${b:-0}
+[ "$b" = 1 ]; check $? "and the log records exactly one (got $b)" "$(cat "$J/log")"
+
+echo
+echo "T13 a new session re-arms the farewell"
+hook s1 proj1 start
+quiet 40
+: > "$AUDIT"
+hook s1 proj1 end
+wait_for Goodbye "$AUDIT" 30
+n=$(grep -c 'Goodbye' "$AUDIT" 2>/dev/null); n=${n:-0}
+[ "$n" = 1 ]; check $? "the next close says goodbye again (got $n)"
+
+# ---------------------------------------------------------------- T14
+echo
+echo "T14 mute silences the daemon's own nags, not just the hooks"
+fresh
+# The nag is generated by the daemon from its idle loop, so it never passes through
+# a hook — and the mute check lived only in the hook. Muting for fifteen minutes did
+# not stop it nagging.
+export JARVIS_NAG_AFTER=3 JARVIS_NAG=3
+hook s1 alpha start
+hook s1 alpha permission
+quiet 40
+"$J/jarvisctl" mute 1 >/dev/null
+: > "$AUDIT"
+sleep 12                      # four nag intervals
+n=$(( $(says) + $(chimes) )); [ "$n" = 0 ]; check $? "silent through four nag intervals ($n audio events)"
+"$J/jarvisctl" unmute >/dev/null
+unset JARVIS_NAG_AFTER JARVIS_NAG
+
+# ---------------------------------------------------------------- T15
+echo
+echo "T15 a long-blocked session escalates — once"
+fresh
+export JARVIS_NAG_AFTER=2 JARVIS_NAG=1 JARVIS_ESCALATE=7
+hook s1 alpha start
+quiet 30
+: > "$J/log"
+hook s1 alpha permission
+# check_nags runs from the daemon's IDLE loop, once every 10s of quiet — and the nag
+# it fires first resets that counter, so the escalation lands on the second sweep, not
+# the first. Roughly 25-30s here, whatever the thresholds are set to.
+wait_for ' escalate ' "$J/log" 90
+n=$(grep -c ' escalate ' "$J/log" 2>/dev/null); n=${n:-0}
+[ "$n" = 1 ]; check $? "escalated once (got $n)" "$(cat "$J/log")"
+g=$(grep -c ' nag ' "$J/log" 2>/dev/null); g=${g:-0}
+[ "$g" -ge 1 ]; check $? "and nagged first ($g nags)"
+# Repeating an escalation turns the most important alert in the set into background
+# noise, which is the one thing it cannot afford to become.
+sleep 22
+n=$(grep -c ' escalate ' "$J/log" 2>/dev/null); n=${n:-0}
+[ "$n" = 1 ]; check $? "and does not escalate again (still $n)"
+unset JARVIS_NAG_AFTER JARVIS_NAG JARVIS_ESCALATE
+
+echo
+echo "T15b answering the prompt stops the escalation"
+fresh
+export JARVIS_NAG_AFTER=2 JARVIS_NAG=1 JARVIS_ESCALATE=6
+hook s1 alpha start
+quiet 30
+hook s1 alpha permission
+sleep 2
+hook s1 alpha begin        # what a granted permission looks like: the next prompt
+: > "$J/log"
+sleep 25
+n=$(grep -cE ' (escalate|nag) ' "$J/log" 2>/dev/null); n=${n:-0}
+[ "$n" = 0 ]; check $? "silent once unblocked ($n reminders)" "$(cat "$J/log")"
+unset JARVIS_NAG_AFTER JARVIS_NAG JARVIS_ESCALATE
+
+# ---------------------------------------------------------------- T16
+echo
+echo "T16 hooks.d extensions receive events and cannot break the daemon"
+fresh
+mkdir -p "$J/hooks.d"
+printf '#!/usr/bin/env bash\necho "$1 $2 $3 $4" >> "%s/hookargs.log"\n' "$SB" > "$J/hooks.d/10-log.sh"
+# A hook that hangs, one that fails, one that is not executable. None may affect the
+# announcements: a user script that could stall the drainer would take every future
+# announcement down with it.
+printf '#!/usr/bin/env bash\nsleep 45\n'      > "$J/hooks.d/20-hangs.sh"
+printf '#!/usr/bin/env bash\nexit 3\n'        > "$J/hooks.d/30-fails.sh"
+printf '#!/usr/bin/env bash\nexit 0\n'        > "$J/hooks.d/40-not-exec.sh"
+chmod +x "$J/hooks.d/10-log.sh" "$J/hooks.d/20-hangs.sh" "$J/hooks.d/30-fails.sh"
+: > "$SB/hookargs.log"
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+echo $(( $(date +%s) - 300 )) > "$HOME/.claude/jarvis/state/start/s1"
+echo 4 > "$HOME/.claude/jarvis/state/subs/s1"
+hook s1 alpha done
+wait_for 'done alpha' "$SB/hookargs.log" 30
+grep -q 'done alpha 300:4 1' "$SB/hookargs.log"; check $? "the extension got mode, name, extra and ordinal" "$(cat "$SB/hookargs.log")"
+# And the next announcement still happens, despite the hanging hook.
+: > "$AUDIT"
+hook s1 alpha error
+wait_for SAY_START "$AUDIT" 30; check $? "a hanging extension does not stall the queue"
+rm -rf "$J/hooks.d"
+
 # ---------------------------------------------------------------- teardown
 echo
-pkill -f 'jarvis/speaker.sh' 2>/dev/null
+stop_daemon
 sleep 0.3
 if [ "$VERBOSE" = 1 ]; then echo "--- audit log ---"; cat "$AUDIT"; echo; fi
 printf 'RESULT: %s passed, %s failed\n' "$PASS" "$FAIL"

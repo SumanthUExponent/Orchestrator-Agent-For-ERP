@@ -23,9 +23,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { generate } from './tones.mjs';
 
-const SCRIPTS = ['jarvis.sh', 'speaker.sh', 'jarvisctl'];
-const EXECUTABLE = new Set(SCRIPTS);
+const SCRIPTS = ['jarvis.sh', 'speaker.sh', 'jarvisctl', 'demo.sh', 'platform.sh'];
+const EXECUTABLE = new Set(['jarvis.sh', 'speaker.sh', 'jarvisctl', 'demo.sh']);
 
 /** Every hook the voice layer registers. Order here is the order written. */
 export const HOOKS = [
@@ -70,12 +71,27 @@ export function stripJarvis(hooks) {
   return removed;
 }
 
+/**
+ * The command Claude Code will execute for a hook.
+ *
+ * On Windows this cannot be the bare path. `path.join` produces
+ * `C:\Users\me\.claude\jarvis\jarvis.sh`, and that string fails twice over: cmd.exe
+ * cannot execute a .sh at all, and a shell that CAN would read the backslashes as
+ * escapes. So the path is written with forward slashes — which Git Bash, WSL and
+ * PowerShell all accept — and `bash` is named explicitly, which works whether the hook
+ * is handed to cmd.exe or to a shell.
+ */
+export function hookCommand(script, arg, platform = process.platform) {
+  if (platform === 'win32') return `bash "${script.replace(/\\/g, '/')}" ${arg}`;
+  return `"${script}" ${arg}`;
+}
+
 /** Merge our hooks into a settings object, in place. Idempotent by construction. */
-export function mergeHooks(settings, script) {
+export function mergeHooks(settings, script, platform = process.platform) {
   const hooks = settings.hooks || (settings.hooks = {});
   const removed = stripJarvis(hooks);
   for (const h of HOOKS) {
-    const entry = { type: 'command', command: `"${script}" ${h.arg}` };
+    const entry = { type: 'command', command: hookCommand(script, h.arg, platform) };
     if (h.timeout) entry.timeout = h.timeout;
     (hooks[h.event] || (hooks[h.event] = [])).push({ matcher: h.matcher, hooks: [entry] });
   }
@@ -122,6 +138,21 @@ export function installVoice({ root, apply = false, force = false, target = jarv
   const scripts = copyScripts({ from, to: target, apply, force });
   const script = path.join(target, 'jarvis.sh');
 
+  // Tones are SYNTHESISED here rather than shipped. They are derived data — pitch,
+  // envelope and loudness baked into plain WAV so playback needs no per-platform rate
+  // or volume flags — and generating them keeps a megabyte of binaries out of the
+  // repository and guarantees they match the motif table that ships with them.
+  const tones = generate({ target, apply });
+
+  // The extension point. Created empty with its contract documented, because a hook
+  // directory nobody knows exists is not an extension point.
+  if (apply) {
+    const hd = path.join(target, 'hooks.d');
+    fs.mkdirSync(hd, { recursive: true });
+    const readme = path.join(from, 'hooks.d', 'README');
+    if (fs.existsSync(readme)) fs.copyFileSync(readme, path.join(hd, 'README'));
+  }
+
   let existing = {};
   if (fs.existsSync(settings)) {
     try {
@@ -165,7 +196,7 @@ export function installVoice({ root, apply = false, force = false, target = jarv
     }
   }
 
-  return { target, settings, script, applied: apply, backup, foreign, ...counts, ...scripts };
+  return { target, settings, script, applied: apply, backup, foreign, tones, ...counts, ...scripts };
 }
 
 export function render(r) {
@@ -175,6 +206,10 @@ export function render(r) {
 
   console.log(`\n${r.applied ? 'Installed' : 'Would install'} (${r.written.length} files)`);
   for (const w of r.written) console.log(`  + ${w.name}`);
+  console.log(
+    `  + tones/                     ${r.tones.count} synthesised notes for ${r.tones.motifs} motifs (${Math.round(r.tones.bytes / 1024)}KB)`
+  );
+  for (const w of r.tones.warnings) console.log(`  ! ${w}`);
   if (r.skipped.length) {
     console.log('\nSkipped');
     for (const s of r.skipped) console.log(`  - ${s.name.padEnd(12)} ${s.reason}`);
@@ -196,6 +231,8 @@ export function render(r) {
       '  jarvisctl status        which sessions are live and which are blocked',
       '',
       'Hooks are read AT SESSION START. Already-open sessions stay silent until restarted.',
+      'macOS, Linux and Windows (WSL or Git Bash) are supported — `jarvisctl doctor`',
+      'names the speech and audio backend it found, and what to install if it found none.',
     ].join('\n')
   );
   return 0;
