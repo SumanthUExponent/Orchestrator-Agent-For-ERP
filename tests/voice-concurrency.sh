@@ -114,6 +114,8 @@ quiet() {
   return 1
 }
 # wait_for <pattern> <file> [secs] — poll for something to actually happen.
+# Fire a hook with a JSON payload, the way Claude Code delivers one.
+say_hook() { printf '%s' "$2" | JARVIS_SESSION_KEY=s1 JARVIS_SESSION_NAME=alpha "$J/jarvis.sh" "$1" >/dev/null 2>&1; }
 wait_for() {
   local pat="$1" f="$2" lim="${3:-25}" n=0
   while [ "$n" -lt "$lim" ]; do
@@ -357,6 +359,16 @@ for m in start begin 'done' permission idle subagent error end; do
   out=$(JARVIS_SESSION_KEY=q1 JARVIS_SESSION_NAME=quiet "$J/jarvis.sh" "$m" </dev/null 2>&1)
   if [ -n "$out" ]; then bad "$m produced output" "$out"; else ok "$m is silent"; fi
 done
+# And with a payload carrying a marker, which is the path that actually runs. Without a
+# marker the extraction bails early and never reaches the file it has to append to — so
+# the version of this test that passed no stdin missed a hook writing to stderr on the
+# FIRST note of every single turn.
+rm -f "$HOME/.claude/jarvis/state/notes/q2"
+for m in subagent 'done'; do
+  out=$(printf '%s' '{"last_assistant_message":"VOICE: something changed in the thing"}' \
+        | JARVIS_SESSION_KEY=q2 JARVIS_SESSION_NAME=quiet "$J/jarvis.sh" "$m" 2>&1)
+  if [ -n "$out" ]; then bad "$m with a marker produced output" "$out"; else ok "$m is silent with a marker"; fi
+done
 quiet 40
 
 # ---------------------------------------------------------------- T12
@@ -481,7 +493,6 @@ printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
 # Every orchestrator agent is required to end with a VOICE: line. Stop and SubagentStop
 # both carry last_assistant_message, so the clause is picked up from the hook payload —
 # no transcript parsing, no model call, nothing leaving the machine.
-say_hook() { printf '%s' "$2" | JARVIS_SESSION_KEY=s1 JARVIS_SESSION_NAME=alpha "$J/jarvis.sh" "$1" >/dev/null 2>&1; }
 say_hook begin '{}'
 say_hook subagent '{"agent_type":"data-model-architect","last_assistant_message":"Long design text.\n\nVOICE: Vendor Audit schema is in\n"}'
 rc=0; grep -qF 'Vendor Audit schema is in' "$HOME/.claude/jarvis/state/notes/s1" || rc=1
@@ -499,6 +510,17 @@ check "$rc" "and it is spoken on completion" "$(grep SAY_START "$AUDIT" | tail -
 rc=0; grep -q 'specialists' "$AUDIT" && rc=1
 check "$rc" "the specialist count is dropped when there is a summary"
 quiet 40
+
+echo
+echo "T17f reset clears the notes too"
+# reset listed every other state directory but not notes/, so a reset left the previous
+# turn's clauses on disk for the next completion to announce.
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook subagent '{"last_assistant_message":"VOICE: a clause from before the reset"}'
+"$J/jarvisctl" reset >/dev/null
+rc=0; [ -s "$HOME/.claude/jarvis/state/notes/s1" ] && rc=1
+check "$rc" "no clause survives a reset" "$(cat "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null)"
 
 echo
 echo "T17b a new turn starts with no inherited summary"

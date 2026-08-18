@@ -269,3 +269,82 @@ describe('mergeHooks is pure enough to preview', () => {
     assert.equal(jarvisCmds(copy).length, HOOKS.length);
   });
 });
+
+describe('documented defaults are the real defaults', () => {
+  // config.sh is deliberately NOT overwritten on upgrade, so that a user's edits survive.
+  // The consequence is easy to miss: for anyone who already has a config.sh, a newly
+  // added setting never appears in theirs, and the EFFECTIVE default is the inline
+  // `${VAR:-fallback}` in the scripts — not the value config.sh documents.
+  //
+  // That is exactly how JARVIS_SUMMARY_MAX came to be documented as 1 and behave as 2.
+  // This test compares the two and fails on any divergence.
+  const read = (f) => fs.readFileSync(path.join(ROOT, 'voice', f), 'utf8');
+  const SCRIPTS = ['jarvis.sh', 'speaker.sh', 'platform.sh', 'jarvisctl'];
+
+  // Where a divergence is intentional, it is named here with the reason.
+  const EXEMPT = {
+    // Not settings: internal flags with no place in a user's config.
+    JARVIS_LIB: 'internal — selects library mode when sourcing speaker.sh',
+    JARVIS_SESSION_KEY: 'per-invocation override, never configured globally',
+    JARVIS_SESSION_NAME: 'per-invocation override, never configured globally',
+    // Platform-specific and only meaningful on Linux, so config.sh does not carry it.
+    JARVIS_VOICE_LINUX: 'espeak voice id, Linux only',
+    // The one genuine tension. config.sh names a macOS voice because that is the
+    // platform whose stock voices are worth overriding, but the scripts must fall back
+    // to EMPTY — a macOS voice name passed to espeak or SAPI selects nothing, and empty
+    // now carries meaning of its own: use the platform's own System Voice, which is the
+    // only way to reach a Siri voice.
+    JARVIS_VOICE: 'default is platform-specific; empty means the System Voice',
+  };
+
+  const configDefaults = () => {
+    const out = new Map();
+    // Trailing comments are the norm in config.sh, so the line must not be anchored at
+    // the closing quote — anchoring there made three declared settings look undeclared.
+    for (const m of read('config.sh').matchAll(/^(JARVIS_[A-Z_]+)="\$\{\1:-(.*?)\}"\s*(?:#.*)?$/gm)) {
+      out.set(m[1], m[2]);
+    }
+    return out;
+  };
+
+  test('config.sh declares a default for every setting the scripts fall back on', () => {
+    const declared = configDefaults();
+    const missing = [];
+    for (const f of SCRIPTS) {
+      for (const m of read(f).matchAll(/\$\{(JARVIS_[A-Z_]+):-/g)) {
+        const name = m[1];
+        if (EXEMPT[name] || declared.has(name)) continue;
+        missing.push(`${name} (used in ${f})`);
+      }
+    }
+    assert.deepEqual([...new Set(missing)], [], 'settings with no documented default');
+  });
+
+  test('and every inline fallback agrees with it', () => {
+    const declared = configDefaults();
+    const clashes = [];
+    for (const f of SCRIPTS) {
+      // Only simple literal fallbacks are comparable; a fallback containing a command
+      // substitution is computed, not a default.
+      for (const m of read(f).matchAll(/\$\{(JARVIS_[A-Z_]+):-([^}$]*)\}/g)) {
+        const [, name, fallback] = m;
+        if (EXEMPT[name] || !declared.has(name)) continue;
+        // A message string rather than a value — "unset" in a diagnostic line.
+        if (fallback === 'unset') continue;
+        if (declared.get(name) !== fallback) {
+          clashes.push(`${name}: config.sh says "${declared.get(name)}", ${f} falls back to "${fallback}"`);
+        }
+      }
+    }
+    assert.deepEqual([...new Set(clashes)], [], 'documented default differs from effective default');
+  });
+
+  test('the test itself is looking at something', () => {
+    // A regex that silently matches nothing would make both assertions above vacuous.
+    // A regex that silently matched nothing, or only some, would make both assertions
+    // above vacuous — which is how the first version of this test passed while missing
+    // every setting that carried a trailing comment.
+    const n = configDefaults().size;
+    assert.ok(n >= 15, `only found ${n} declared defaults — the matcher is missing lines`);
+  });
+});

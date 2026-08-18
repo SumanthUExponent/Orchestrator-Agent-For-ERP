@@ -3,7 +3,11 @@
 #
 # Edit this file to change the defaults for every session.
 
-JARVIS_VOICE="${JARVIS_VOICE:-Daniel}"            # `jarvisctl voices` to audition
+# "Daniel" is a macOS name — see `jarvisctl voices` for what you have. On Linux and
+# Windows, leave this empty or set a name from `jarvisctl voices` for your platform.
+# EMPTY has its own meaning: use the System Voice, which is the only way to reach a
+# Siri voice on macOS. `jarvisctl voices --setup` explains that.
+JARVIS_VOICE="${JARVIS_VOICE:-Daniel}"
 
 # One voice per parallel session, pipe-separated, in start order. Four sessions in four
 # voices is far easier to tell apart than four pitches of one voice — you recognise a

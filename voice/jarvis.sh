@@ -209,7 +209,10 @@ case "$MODE" in
     SUMMARY=""
     if [ "${JARVIS_SUMMARY:-1}" = "1" ]; then
       if [ -s "$S/notes/$KEY" ]; then
-        max=${JARVIS_SUMMARY_MAX:-2}
+        # This fallback IS the effective default for anyone who already had a config.sh
+        # — it is deliberately preserved across upgrades, so a newly added setting never
+        # appears in theirs. It must therefore match what config.sh documents.
+        max=${JARVIS_SUMMARY_MAX:-1}
         SUMMARY=$(head -"$max" "$S/notes/$KEY" 2>/dev/null | tr '\n' ';' | sed 's/;$//; s/;/; /g')
       else
         SUMMARY=$(voice_note) || SUMMARY=""
@@ -234,7 +237,15 @@ case "$MODE" in
     # Whatever this specialist wanted said. Capped: a swarm run can dispatch a dozen,
     # and a dozen clauses is a paragraph nobody asked to have read to them.
     if note=$(voice_note); then
-      lines=$(wc -l < "$S/notes/$KEY" 2>/dev/null | tr -d ' '); [ -z "$lines" ] && lines=0
+      # Guard the file before redirecting into it. A redirect that cannot open its target
+      # is reported by the SHELL, so `2>/dev/null` on the command never suppresses it —
+      # and the very first note of every turn hits exactly that, printing an error from a
+      # hook. A hook that writes to stderr surfaces a notice in the transcript.
+      lines=0
+      if [ -r "$S/notes/$KEY" ]; then
+        lines=$(wc -l < "$S/notes/$KEY" 2>/dev/null | tr -d ' ')
+        case "$lines" in ''|*[!0-9]*) lines=0 ;; esac
+      fi
       [ "$lines" -lt 8 ] && printf '%s\n' "$note" >> "$S/notes/$KEY"
     fi
     case "${JARVIS_SUBAGENT:-chime}" in
