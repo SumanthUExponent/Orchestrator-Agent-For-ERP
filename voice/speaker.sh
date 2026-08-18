@@ -12,119 +12,57 @@
 
 J="$HOME/.claude/jarvis"
 [ -f "$J/config.sh" ] && . "$J/config.sh"
-Q="$J/queue"; S="$J/state"; SND=/System/Library/Sounds
+# Every OS-specific call lives in platform.sh. Nothing below this line names `say`,
+# `afplay` or `osascript`.
+[ -f "$J/platform.sh" ] && . "$J/platform.sh"
+Q="$J/queue"; S="$J/state"
 mkdir -p "$Q" "$S/active" "$S/pending" 2>/dev/null
 
 SIR="${JARVIS_ADDRESS:-sir}"; [ -n "$SIR" ] && SIR=", $SIR"
 
 pick()    { local a=("$@"); printf '%s' "${a[$(( RANDOM % ${#a[@]} ))]}"; }
 nactive() { ls "$S/active" 2>/dev/null | wc -l | tr -d ' '; }
-speak()   { say -v "$JARVIS_VOICE" -r "$JARVIS_RATE" "$1" 2>/dev/null; }
-banner()  { osascript -e "display notification \"$2\" with title \"J.A.R.V.I.S. - $1\"" >/dev/null 2>&1 & }
+speak()   { jv_say "$1"; }
+banner()  { jv_notify "$1" "$2"; }
 
 # ---------------------------------------------------------------------- CHIMES
 #
-# One percussive atom, pitch-sequenced into motifs. The first cut layered two
-# different system sounds 160ms apart, which measurement showed was wrong three
-# ways: Blow and Hero are 1.4s and 1.06s long with their energy in the SAME
-# 300-1000Hz band, so a 160ms offset produced a sustained chord rather than two
-# notes; Submarine and Basso were layered over themselves, which is comb filtering
-# and sounds like a fault; and Tink+Pop are 34Hz apart in dominant pitch, close
-# enough to beat against each other.
+# The motif tables are GENERATED, not written here: scripts/tones.mjs synthesises one
+# WAV per note with pitch, envelope and loudness already baked in, and emits this
+# shell table alongside them. Two reasons it works that way.
 #
-# Tink is the atom because it is the only genuinely percussive one: 0.04s of
-# audible sound in a 0.56s file. Intervals over a single atom are exact, the timbre
-# stays constant, and the motif shape — rising, falling, insistent — carries the
-# meaning instead of an arbitrary pairing.
-ATOM=Tink
-DARK=Basso        # low and short. Falling + dark = unambiguously bad news.
-
-# Everything is transposed up from here. At rate 1.0 Tink puts 95% of its energy in
-# 300-1000Hz, exactly where a male voice's first two formants live, so the chime
-# masked the vowels of the first word — usually the project name. At 1.55 that drops
-# to 7%, and the atom is brighter, which also helps it carry over music.
-BASE_RATE=1.55
-
-# Session identity, as a transposition of the whole motif. Spread over eight
-# semitones rather than the three the first cut used, since absolute pitch memory is
-# poor and these are heard minutes apart. It is a secondary cue in any case — with
-# two or more sessions live the name is spoken as well.
-sfactor() {
-  case $(( ${1:-1} % 4 )) in
-    1) echo 1.00 ;;   # +0 semitones
-    2) echo 1.12 ;;   # +2
-    3) echo 1.26 ;;   # +4
-    *) echo 1.41 ;;   # +6
-  esac
-}
-
-# afplay silently does nothing outside 0.4-3.0, so the rate is clamped rather than
-# left to fail without a sound and without an error. The chosen tables top out at
-# 2.92, which is deliberate headroom under that ceiling.
-rate() { awk -v b="$BASE_RATE" -v f="$1" -v n="$2" 'BEGIN{r=b*f*n; if(r<0.4)r=0.4; if(r>3)r=3; printf "%.3f", r}'; }
-
-# Per-atom loudness correction, then a per-category multiplier. Measured RMS differs
-# by 4.6x across the system sounds, so at one fixed volume the error chime came out
-# QUIETER than the routine completion. afplay accepts a gain above 1.0, which is
-# what makes matching them possible rather than only attenuating to the quietest.
-vol() { awk -v v="${JARVIS_VOLUME:-0.7}" -v m="$1" 'BEGIN{x=v*m; if(x<0)x=0; if(x>2)x=2; printf "%.2f", x}'; }
-DARK_GAIN=1.42    # Basso rms 0.0258 vs Tink 0.0367; peaks at 0.39, ample headroom
-
-# tone <volume> <rate> <delay> [atom]
-tone() {
-  ( [ "$3" != "0" ] && sleep "$3"
-    afplay -v "$1" -r "$2" "$SND/${4:-$ATOM}.aiff" 2>/dev/null ) &
-}
-
-# motif <kind> <ordinal>
+# Musically: the first version layered pairs of macOS system sounds 160ms apart, and
+# measurement showed that could not work — the usable ones are 0.56-1.65s long with
+# their energy in the same 300-1000Hz band, so "two notes" was a sustained chord, and
+# the same file over itself was comb filtering.
 #
-# Ends by waiting out its own audible span, so speech starts AFTER the chime rather
-# than underneath it. That costs about a third of a second and buys back the
-# intelligibility of the first word.
+# Practically: shaping a sound at playback needs `afplay -r` and `-v`, which exist
+# only on macOS. `aplay` and Windows' Media.SoundPlayer have no volume control at all.
+# Baking it into the file reduces playback to "play this", which every platform can
+# do — and the frequency and decay end up chosen rather than inherited.
+TONES="$J/tones"
+[ -f "$TONES/motifs.sh" ] && . "$TONES/motifs.sh"
+
+# motif <kind> <session-ordinal>
+#
+# Ends by waiting out its own span, so speech starts AFTER the chime rather than
+# underneath it. That costs about a third of a second and buys the intelligibility of
+# the first word, which is normally the project name.
 motif() {
-  local k="$1" f; f=$(sfactor "$2")
-  case "$k" in
-    done)                                  # rising fourth — resolved, positive
-      tone "$(vol 1.0)"  "$(rate "$f" 1.000)" 0
-      tone "$(vol 1.0)"  "$(rate "$f" 1.335)" 0.11
-      sleep 0.30 ;;
-    boot)                                  # rising arpeggio — powering up
-      tone "$(vol 0.9)"  "$(rate "$f" 1.000)" 0
-      tone "$(vol 0.9)"  "$(rate "$f" 1.260)" 0.10
-      tone "$(vol 0.9)"  "$(rate "$f" 1.335)" 0.20
-      sleep 0.40 ;;
-    approve)                               # three insistent taps — rhythm, not pitch,
-      tone "$(vol 1.25)" "$(rate "$f" 1.260)" 0     # so it reads as "attention"
-      tone "$(vol 1.25)" "$(rate "$f" 1.260)" 0.13  # rather than as a notification
-      tone "$(vol 1.25)" "$(rate "$f" 1.260)" 0.26
-      sleep 0.42 ;;
-    nag)                                   # the same figure, tighter and higher
-      tone "$(vol 1.3)"  "$(rate "$f" 1.335)" 0
-      tone "$(vol 1.3)"  "$(rate "$f" 1.335)" 0.10
-      tone "$(vol 1.3)"  "$(rate "$f" 1.335)" 0.20
-      sleep 0.36 ;;
-    err)                                   # falling fifth, dark atom
-      tone "$(vol "$(awk -v g=$DARK_GAIN 'BEGIN{printf "%.2f", 1.35*g}')")" 1.19 0    "$DARK"
-      tone "$(vol "$(awk -v g=$DARK_GAIN 'BEGIN{printf "%.2f", 1.35*g}')")" 0.84 0.16 "$DARK"
-      sleep 0.50 ;;
-    idle)                                  # two soft taps — waiting, not urgent
-      tone "$(vol 0.6)"  "$(rate "$f" 1.000)" 0
-      tone "$(vol 0.6)"  "$(rate "$f" 1.000)" 0.14
-      sleep 0.32 ;;
-    tick)                                  # one quiet tap. A whole turn, in 40ms
-      tone "$(vol 0.45)" "$(rate "$f" 1.335)" 0 ;;
-    sub)                                   # background work: quiet, and a note BELOW
-      # the tick so the two are not confused. It was 1.680, which at ordinals 3 and
-      # 4 multiplied past afplay's 3.0 ceiling and clamped — silently collapsing two
-      # sessions onto one identical tone. Every ratio here must survive the widest
-      # session transposition (x1.41) without reaching the clamp.
-      tone "$(vol 0.35)" "$(rate "$f" 1.190)" 0 ;;
-    bye)                                   # falling arpeggio — powering down
-      tone "$(vol 0.8)"  "$(rate "$f" 1.335)" 0
-      tone "$(vol 0.8)"  "$(rate "$f" 1.260)" 0.10
-      tone "$(vol 0.8)"  "$(rate "$f" 1.000)" 0.20
-      sleep 0.42 ;;
-  esac
+  local k="$1" o="${2:-1}" v seq span item f d
+  case "$o" in ''|*[!0-9]*) o=1 ;; esac
+  [ "$o" -lt 1 ] || [ "$o" -gt 4 ] && o=$(( (o - 1) % 4 + 1 ))
+  v="MOTIF_${k}_${o}"; seq="${!v-}"
+  v="SPAN_${k}_${o}";  span="${!v-}"
+  # No tones generated (or a partial install): stay silent rather than erroring. The
+  # speech still carries the message, and `doctor` reports the missing set.
+  [ -z "$seq" ] && return 0
+  for item in $seq; do
+    f="${item%%:*}"; d="${item##*:}"
+    jv_play_at "$TONES/$f" "$d"
+  done
+  sleep "${span:-0.3}"
+  return 0
 }
 
 plural() { [ "$1" = "1" ] && printf '%s' "$2" || printf '%s' "$2s"; }
@@ -166,6 +104,16 @@ spoken() {
 # render <mode> <name> <extra> <ordinal>
 render() {
   local mode="$1" name="$2" extra="$3" ord="$4"
+
+  # Resolve the once-only farewell BEFORE anything is logged. Closing a terminal fires
+  # every session's SessionEnd, so four byes reach render and three of them are
+  # non-events — but they were still being written to the log, which then claimed four
+  # farewells had been announced when one was. A log that overstates what was said is
+  # worse than no log, because it is what `jarvisctl log` shows and what the
+  # simulation reports.
+  if [ "$mode" = bye ]; then
+    { [ "$(nactive)" -eq 0 ] && mkdir "$J/run/farewell" 2>/dev/null; } || return 0
+  fi
 
   # One line per announcement. This is what `jarvisctl log` shows and what the
   # concurrency tests assert against — the behaviour that matters is unobservable
@@ -257,9 +205,12 @@ render() {
       banner "$name" "Error" ;;
 
     bye)
-      # Only worth saying when the last one goes out. Per-session goodbyes with
-      # four sessions open is four goodbyes for nothing.
-      [ "$(nactive)" -eq 0 ] && { motif bye 1; speak "Goodbye$SIR."; } ;;
+      # Reaching here at all means this session won the farewell — see the guard at
+      # the top of render(). mkdir is the atomic test-and-set; `nactive -eq 0` alone
+      # is not enough, because every closing session removes its own marker before
+      # the first bye is ever claimed.
+      motif bye 1
+      speak "Goodbye$SIR." ;;
   esac
 }
 
@@ -286,17 +237,28 @@ check_nags() {
 }
 
 # Sourced as a library (JARVIS_LIB=1) the file stops here, exposing motif(), rate(),
-# vol(), spoken() and dur() for testing. A rate outside afplay's 0.4-3.0 window
-# produces no sound AND no error, so it has to be asserted rather than heard.
+# spoken(), dur() and the generated motif table for testing. A motif that references
+# a tone which was never generated is silent and reports nothing, so it has to be
+# asserted rather than heard.
 [ "${JARVIS_LIB:-0}" = "1" ] && return 0
 
 # Lifecycle ledger. A duplicate daemon is the failure this lock exists to prevent,
 # and a point-in-time `ps` count misses one that starts and dies between samples —
 # so every daemon records its own birth and death and the test counts births.
 ledger() { printf '%s %s %s\n' "$(date +%s)" "$$" "$1" >> "$J/run/daemons.log" 2>/dev/null; }
+# Idempotent, and it must be. `trap ... EXIT INT TERM` runs the TERM handler and
+# then, because the shell goes on to exit, the EXIT handler as well — so cleanup ran
+# twice and wrote two exit lines for one daemon. That made "how many daemons are
+# live" read one below the truth, which is what `doctor` reports and what the test
+# harness asserts on.
+CLEANED=""
 cleanup() {
+  [ -n "$CLEANED" ] && return 0
+  CLEANED=1
+  trap - EXIT INT TERM
   [ "$(cat "$J/run/lock/pid" 2>/dev/null)" = "$$" ] && rm -rf "$J/run/lock"
   ledger exit
+  return 0
 }
 trap cleanup EXIT INT TERM
 echo $$ > "$J/run/lock/pid"
@@ -318,6 +280,15 @@ while :; do
   fi
   idle_ticks=0
 
+  # Mute is checked HERE as well as in the hook. The hook cannot cover two cases:
+  # an item queued in the second before you muted, and — worse — the nags, which the
+  # daemon generates itself from its idle loop and which therefore never pass through
+  # a hook at all. Muting for fifteen minutes did not stop it nagging.
+  if [ -f "$S/muted" ] && [ "$(cat "$S/muted" 2>/dev/null)" -gt "$(date +%s)" ] 2>/dev/null; then
+    ls "$Q" 2>/dev/null | grep -v '^\.' | while read -r stale; do rm -f "$Q/$stale"; done
+    sleep 0.5; continue
+  fi
+
   # Claim atomically. `cat` then `rm` let two readers take the same entry and
   # announce it twice; `mv` cannot, and losing the race is a clean skip.
   claim="$Q/.claim.$$"
@@ -332,23 +303,27 @@ while :; do
 
   if [ "$pri" -ge 4 ]; then
     [ "$age" -gt "${JARVIS_STALE:-50}" ] && continue
-    sleep 1.2                              # let a burst arrive, then collapse it
 
-    # Collapse the burst in ONE pass. Six completions from one session must become
-    # one announcement — but dropping this entry and letting the loop re-debounce
-    # each of the other five costs 1.2s apiece, so the announcement lands seven
-    # seconds after the work finished. Instead: take the NEWEST duplicate (its
-    # elapsed time is the accurate one), delete the whole set, and speak once.
+    # TRAILING debounce: wait for the burst to STOP, not merely for a fixed interval
+    # to pass. A single 1.2s wait collapses only what has already arrived, so a burst
+    # spread wider than the window straddles it — six subagent events 0.3s apart
+    # produced two chimes, and six completions produced two announcements. Each round
+    # absorbs everything matching, keeps the NEWEST (its elapsed time is the accurate
+    # one), and goes round again only if more turned up while it was absorbing.
     #
-    # -F is not optional. Without it the '|' is regex alternation and the empty
-    # trailing alternative matches every file, which silently suppressed nearly
-    # every announcement.
-    newest=""
-    for g in "$Q"/[0-9]*; do
-      [ -e "$g" ] || continue
-      grep -qF "$mode|$name|" "$g" 2>/dev/null && newest="$g"
-    done
-    if [ -n "$newest" ]; then
+    # Bounded at five rounds. An unbounded wait would let a session that chatters
+    # steadily defer its own announcement forever.
+    absorbed=0
+    while [ "$absorbed" -lt 5 ]; do
+      sleep 1.2
+      newest=""
+      for g in "$Q"/[0-9]*; do
+        [ -e "$g" ] || continue
+        # -F is not optional: without it '|' is regex alternation, and the empty
+        # trailing alternative matches every file.
+        grep -qF "$mode|$name|" "$g" 2>/dev/null && newest="$g"
+      done
+      [ -z "$newest" ] && break
       nline=$(cat "$newest" 2>/dev/null)
       for g in "$Q"/[0-9]*; do
         [ -e "$g" ] || continue
@@ -358,7 +333,8 @@ while :; do
         line="$nline"
         IFS='|' read -r mode name extra born ord key <<< "$line"
       fi
-    fi
+      absorbed=$(( absorbed + 1 ))
+    done
   fi
 
   render "$mode" "$name" "$extra" "$ord"

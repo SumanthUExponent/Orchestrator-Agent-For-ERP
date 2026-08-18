@@ -23,9 +23,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { generate } from './tones.mjs';
 
-const SCRIPTS = ['jarvis.sh', 'speaker.sh', 'jarvisctl'];
-const EXECUTABLE = new Set(SCRIPTS);
+const SCRIPTS = ['jarvis.sh', 'speaker.sh', 'jarvisctl', 'demo.sh', 'platform.sh'];
+const EXECUTABLE = new Set(['jarvis.sh', 'speaker.sh', 'jarvisctl', 'demo.sh']);
 
 /** Every hook the voice layer registers. Order here is the order written. */
 export const HOOKS = [
@@ -122,6 +123,12 @@ export function installVoice({ root, apply = false, force = false, target = jarv
   const scripts = copyScripts({ from, to: target, apply, force });
   const script = path.join(target, 'jarvis.sh');
 
+  // Tones are SYNTHESISED here rather than shipped. They are derived data — pitch,
+  // envelope and loudness baked into plain WAV so playback needs no per-platform rate
+  // or volume flags — and generating them keeps a megabyte of binaries out of the
+  // repository and guarantees they match the motif table that ships with them.
+  const tones = generate({ target, apply });
+
   let existing = {};
   if (fs.existsSync(settings)) {
     try {
@@ -165,7 +172,7 @@ export function installVoice({ root, apply = false, force = false, target = jarv
     }
   }
 
-  return { target, settings, script, applied: apply, backup, foreign, ...counts, ...scripts };
+  return { target, settings, script, applied: apply, backup, foreign, tones, ...counts, ...scripts };
 }
 
 export function render(r) {
@@ -175,6 +182,10 @@ export function render(r) {
 
   console.log(`\n${r.applied ? 'Installed' : 'Would install'} (${r.written.length} files)`);
   for (const w of r.written) console.log(`  + ${w.name}`);
+  console.log(
+    `  + tones/                     ${r.tones.count} synthesised notes for ${r.tones.motifs} motifs (${Math.round(r.tones.bytes / 1024)}KB)`
+  );
+  for (const w of r.tones.warnings) console.log(`  ! ${w}`);
   if (r.skipped.length) {
     console.log('\nSkipped');
     for (const s of r.skipped) console.log(`  - ${s.name.padEnd(12)} ${s.reason}`);
@@ -196,6 +207,8 @@ export function render(r) {
       '  jarvisctl status        which sessions are live and which are blocked',
       '',
       'Hooks are read AT SESSION START. Already-open sessions stay silent until restarted.',
+      'macOS, Linux and Windows (WSL or Git Bash) are supported — `jarvisctl doctor`',
+      'names the speech and audio backend it found, and what to install if it found none.',
     ].join('\n')
   );
   return 0;

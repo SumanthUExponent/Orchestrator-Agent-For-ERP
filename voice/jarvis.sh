@@ -127,6 +127,9 @@ wake_speaker() {
 
 case "$MODE" in
   start|boot)                       # SessionStart
+    # A new session means the previous farewell is spent. Without this the one-shot
+    # goodbye marker would suppress the goodbye for every later run of the day.
+    rm -rf "$J/run/farewell" 2>/dev/null
     mark_active
     echo "$NOW" > "$S/start/$KEY"
     rm -f "$S/subs/$KEY"

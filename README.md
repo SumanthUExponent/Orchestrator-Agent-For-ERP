@@ -163,7 +163,20 @@ jarvisctl doctor                             # verify
 jarvisctl test                               # hear every alert
 ```
 
-macOS only — it is built on `say`, `afplay` and `osascript`.
+Runs on **macOS, Linux and Windows** (WSL or Git Bash). `jarvisctl doctor` names the
+speech and audio backend it found on your machine, and tells you what to install if it
+found none.
+
+| | speech | audio | banner |
+|---|---|---|---|
+| macOS | `say` | `afplay` | `osascript` |
+| Linux | `spd-say`, `espeak-ng`, `espeak`, `festival` or `pico2wave` | `paplay`, `aplay`, `ffplay`, `mpv`, `play` or `cvlc` | `notify-send` |
+| Windows | PowerShell `System.Speech` | PowerShell `Media.SoundPlayer` | BurntToast, if installed |
+
+Every OS call lives in one file, `platform.sh`; a test asserts that no other script
+names an OS tool. A machine with no speech engine at all degrades to silence and exits
+zero — a hook that fails surfaces a notice in the transcript, so an absent engine must
+never become visible noise.
 
 **Nothing speaks from inside a hook.** That is the whole architecture. Two `say`
 calls on macOS do not queue, they play at once, so four sessions announcing
@@ -191,6 +204,18 @@ Six specialists, four minutes."* One line that distinguishes a swarm run from a
 one-line edit. Set `JARVIS_SUBAGENT=silent|chime|speak` in
 `~/.claude/jarvis/config.sh` to change that.
 
+### The tones are synthesised, not sampled
+
+The chimes are generated at install time — one WAV per note, with pitch, envelope and
+loudness baked in — rather than shipped or sampled from the OS.
+
+That started as a portability problem. Shaping a sound at playback needs `afplay -r`
+for pitch and `-v` for gain, and neither exists off macOS: `aplay` and Windows'
+`Media.SoundPlayer` have no volume control at all. Baking the shaping into the file
+reduces playback to "play this", which every platform can do.
+
+It turned out to fix the sound as well.
+
 ### The chimes are measured, not chosen
 
 The first cut layered pairs of macOS system sounds 160ms apart. Analysing the actual
@@ -204,17 +229,18 @@ just have sounded cheap:
 - **Tink + Pop** are 34 Hz apart in dominant pitch — under a semitone, close enough
   to beat against each other.
 
-So the chimes are now one percussive atom, pitch-sequenced into motifs. Intervals
-over a single atom are exact, the timbre stays constant, and the *shape* carries the
-meaning: completion rises, error falls on a darker atom, approval is three insistent
-taps at one pitch, because rhythm is identifiable where absolute pitch is not.
+So the chimes are now a struck-bell tone — a fundamental with inharmonic partials that
+decay faster than it does, plus a 2ms noise transient — sequenced into motifs. The
+intervals are exact because the frequencies are chosen, the timbre is constant, and the
+*shape* carries the meaning: completion rises, error falls two octaves down, approval is
+three taps at one pitch, because rhythm is identifiable where absolute pitch is not.
 
 Three other things measurement settled:
 
 | Finding | Change |
 |---|---|
-| At its natural pitch the atom puts **95%** of its energy in 300–1000 Hz — exactly where a male voice's first two formants live, so the chime masked the vowels of the first word | Transposed up to where that is **7%**, and the motif now waits out its own audible span so speech starts *after* it |
-| Measured RMS differs **4.6×** across the system sounds, so at one fixed volume the *error* chime came out quieter than the routine completion | Per-atom gain correction, then a per-category multiplier. `afplay` accepts a gain above 1.0, which is what makes matching possible rather than only attenuating |
+| At its natural pitch the sampled atom put **95%** of its energy in 300–1000 Hz — exactly where a male voice's first two formants live, so the chime masked the vowels of the first word | Tones are synthesised above that band; measured on the generated files it is now **0.0–0.1%**, and the motif waits out its own span so speech starts *after* it |
+| Measured RMS differs **4.6×** across the macOS system sounds, so at one fixed volume the *error* chime came out quieter than the routine completion | Each tone is normalised then scaled by its category, so loudness tracks importance. A test reads the generated WAVs back and asserts an urgent alert is never quieter than a routine one |
 | Announcements ran **4.4–5.4s each**, and `Stop` fires after every turn | Two registers. Alone, "Done, sir. Four minutes." is 1.67s; the project name is only worth its 1.1–1.6s when there is more than one session to tell apart |
 
 `say` also mangles directory basenames: `wt_nst` is a worktree prefix plus an
@@ -227,8 +253,14 @@ To judge all of this by ear rather than by table:
 
 ```bash
 jarvisctl chimes     # every motif back to back, then the four session pitches
+jarvisctl demo       # a narrated four-session working day, end to end
 jarvisctl test       # every alert as it really fires, chime and speech
 ```
+
+`demo` is the one that finds things. Each behaviour is verifiable alone; whether the
+*system* is pleasant for ten minutes is not, and it took an end-to-end run to expose
+that six specialists produced two chimes rather than one, and that closing four
+sessions said goodbye four times.
 
 ```
 $ jarvisctl status
@@ -261,9 +293,9 @@ first, writes atomically, and refuses to touch a `settings.json` it cannot parse
 | `agents [--apply]` | Generate `agents/*.md` from the registry. |
 | `doctor` | Audit the agent roster. |
 | `voice [--apply] [--force]` | Install the voice layer and its eight hooks. Dry run by default. |
-| `npm test` | Routing, execution-plan, installer and voice-installer suites (74 tests). |
-| `npm run test:audio` | Audio-design assertions: motif rate tables, name handling, phrase-length budgets (24 checks). |
-| `npm run test:voice` | The above plus the concurrency harness (28 checks, stubbed audio). |
+| `npm test` | Routing, execution-plan, installer, voice-installer and tone-synthesis suites (95 tests). |
+| `npm run test:audio` | Platform backends, installed-tone integrity, name handling, phrase-length budgets (27 checks). |
+| `npm run test:voice` | The above plus the concurrency harness (34 checks, stubbed audio). |
 | `npm run test:all` | Everything. |
 
 ## Health check
@@ -318,18 +350,22 @@ scripts/install.mjs        installer
 scripts/voice.mjs          voice-layer installer and settings.json merge
 voice/jarvis.sh            hook entry point — enqueues and exits, never speaks
 voice/speaker.sh           the single drainer: one lock, one voice
-voice/jarvisctl            status, doctor, log, mute, reset, voices
+voice/platform.sh          every OS-specific call, and nothing else
+voice/jarvisctl            status, doctor, log, mute, reset, voices, chimes, demo
+voice/demo.sh              narrated four-session simulation
 voice/config.sh            tunables; not overwritten by an upgrade
+scripts/tones.mjs          motif definitions and the tone synthesiser
 skills/                    in-tree skills
 tests/                     regression suites
-tests/voice-audio.sh       motif rate tables, name handling, phrase-length budgets
+tests/tones.test.mjs       motif tables, pitch, measured loudness of the generated WAVs
+tests/voice-audio.sh       platform backends, installed tones, names, phrase budgets
 tests/voice-concurrency.sh voice behaviour under genuine parallel load
 ```
 
 ## Status and limits
 
-Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, the voice layer, 74 passing regression
-tests plus 52 audio and concurrency checks.
+Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, the cross-platform voice layer, 95
+passing regression tests plus 61 audio and concurrency checks.
 
 Known gaps, stated plainly:
 
@@ -343,8 +379,14 @@ Known gaps, stated plainly:
   hooks are asserted by tests and were driven live on macOS. What no measurement
   settles is taste: whether a rising fourth reads as "done" to *you*, whether four
   transpositions two semitones apart are far enough apart in practice, and whether
-  any of it carries over music at your volume. `jarvisctl chimes` auditions the lot;
-  the tables are at the top of `speaker.sh`.
+  any of it carries over music at your volume. `jarvisctl chimes` auditions the lot and
+  `jarvisctl demo` plays a full four-session working day; the motif definitions are at
+  the top of `scripts/tones.mjs`.
+- **Only the macOS path has been run on real hardware.** The Linux and Windows branches
+  are dispatch-tested — the tools are stubbed, the platform forced, and the invocation
+  asserted — which proves the right backend is called with the right arguments, not
+  that the result sounds right. Phrase-length budgets skip where there is no TTS engine
+  that renders to a file.
 - **Nothing fires when a permission prompt is granted.** Claude Code has no such
   event, so pending state is cleared on the next `Stop` or prompt submission
   instead. The alternative — hooking `PostToolUse` — would spawn a process on every

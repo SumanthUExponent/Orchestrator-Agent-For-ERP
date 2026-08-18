@@ -5,6 +5,7 @@
 #   doctor            verify the install: scripts, hooks, voice, daemon count
 #   test              walk every alert type, chime and speech, as it really fires
 #   chimes            audition every motif back to back, and the four session pitches
+#   demo              narrated simulation of four parallel sessions, end to end
 #   log [n]           the last n announcements
 #   mute <minutes> / unmute
 #   reset             clear all state (orphan daemons stand down on their own)
@@ -12,6 +13,7 @@
 
 J="$HOME/.claude/jarvis"; S="$J/state"
 [ -f "$J/config.sh" ] && . "$J/config.sh"
+[ -f "$J/platform.sh" ] && . "$J/platform.sh"
 mkdir -p "$S/active" "$S/start" "$S/pending" "$S/subs" "$J/queue" 2>/dev/null
 now=$(date +%s)
 SET="$HOME/.claude/settings.json"
@@ -83,23 +85,47 @@ case "${1:-status}" in
     else
       ck 1 "settings.json exists"
     fi
-    V="${JARVIS_VOICE:-Daniel}"
-    voice_exists "$V"
-    if [ $? = 0 ]; then
-      ck 0 "voice \"$V\" is installed"
-    else
-      ck 1 "voice \"$V\" is NOT installed — say will fall back to the US default, silently"
-      echo "        installed en_GB / en_AU voices:"
-      voice_list | while read -r v; do
-        say -v '?' 2>/dev/null | grep -E "^$v +en_(GB|AU)" >/dev/null 2>&1 && echo "          $v"
+    echo "  ---- platform: ${JV_OS:-unknown} ----"
+    sayb=$(jv_backend_say); playb=$(jv_backend_play)
+    case "$sayb"  in NONE*) ck 1 "speech:  $sayb" ;; *) ck 0 "speech:  $sayb" ;; esac
+    case "$playb" in NONE*) ck 1 "audio:   $playb" ;; *) ck 0 "audio:   $playb" ;; esac
+    echo "  ok    banner:  $(jv_backend_notify)"
+
+    # The tones are generated at install time rather than shipped, so a partial or
+    # interrupted install leaves motifs that reference files which do not exist —
+    # and a missing tone is silent and reports nothing.
+    if [ -f "$J/tones/motifs.sh" ]; then
+      . "$J/tones/motifs.sh"
+      missing=0; total=0
+      for k in boot done approve nag err idle tick sub bye; do
+        for o in 1 2 3 4; do
+          v="MOTIF_${k}_${o}"; seq="${!v-}"
+          for item in $seq; do
+            total=$((total+1))
+            [ -f "$J/tones/${item%%:*}" ] || missing=$((missing+1))
+          done
+        done
       done
+      [ "$missing" = 0 ]; ck $? "tones: $((total-missing))/$total notes present"
+    else
+      ck 1 "tones: none generated — run: node scripts/orchestrator.mjs voice --apply"
     fi
-    case "$V" in
-      *Enhanced*|*Premium*) ;;
-      *) echo "  note  \"$V\" is the compact voice. The Enhanced download sounds markedly"
-         echo "        better: System Settings > Accessibility > Spoken Content >"
-         echo "        System Voice > Manage Voices, then set JARVIS_VOICE in config.sh" ;;
-    esac
+
+    if [ "${JV_OS:-}" = macos ]; then
+      V="${JARVIS_VOICE:-Daniel}"
+      if voice_exists "$V"; then
+        ck 0 "voice \"$V\" is installed"
+        case "$V" in
+          *Enhanced*|*Premium*) ;;
+          *) echo "  note  \"$V\" is the compact voice. The Enhanced download sounds markedly"
+             echo "        better: System Settings > Accessibility > Spoken Content >"
+             echo "        System Voice > Manage Voices, then set JARVIS_VOICE in config.sh" ;;
+        esac
+      else
+        ck 1 "voice \"$V\" is NOT installed — say falls back to the US default, silently"
+        echo "        try: jarvisctl voices"
+      fi
+    fi
     if p=$(running); then ck 0 "speaker running (pid $p)"; else ck 0 "speaker idle (starts on demand)"; fi
     # The lock's whole purpose. If two ever started, the mutex is broken and
     # parallel sessions will talk over each other again.
@@ -115,6 +141,10 @@ case "${1:-status}" in
 
   log)
     tail -"${2:-25}" "$J/log" 2>/dev/null || echo "nothing announced yet" ;;
+
+  demo)
+    # The full simulation: four parallel sessions, every alert, in order, narrated.
+    exec "$J/demo.sh" ;;
 
   chimes)
     # Audition every motif back to back, then the same motif across all four session
@@ -153,7 +183,7 @@ case "${1:-status}" in
   unmute) rm -f "$S/muted"; echo "Unmuted." ;;
 
   reset)
-    rm -rf "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs" "$J/run/lock" "$J/log" "$J/run/daemons.log"
+    rm -rf "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs" "$J/run/lock" "$J/log" "$J/run/daemons.log" "$J/run/farewell"
     mkdir -p "$J/queue" "$S/active" "$S/start" "$S/pending" "$S/subs"
     echo "State cleared. Any live daemon stands down within a second." ;;
 
@@ -172,18 +202,48 @@ case "${1:-status}" in
     echo "Done. If anything overlapped, that is a bug — report it." ;;
 
   voices)
-    echo "Installed en_GB / en_AU voices:"
-    say -v '?' 2>/dev/null | grep -E 'en_GB|en_AU' || echo "  none found"
-    echo
-    echo "For a voice that does not sound synthetic, download an Enhanced one:"
-    echo "  System Settings > Accessibility > Spoken Content > System Voice > Manage Voices"
-    echo "  then: export JARVIS_VOICE=\"Daniel (Enhanced)\"  in ~/.zshrc"
-    echo
-    for v in Daniel Oliver Serena Karen "Daniel (Enhanced)"; do
-      voice_exists "$v" || continue
-      echo "  $v"; say -v "$v" -r "${JARVIS_RATE:-172}" "Task complete, sir. Awaiting your review." 2>/dev/null
-      sleep 0.6
-    done ;;
+    case "${JV_OS:-}" in
+      macos)
+        echo "Installed en_GB / en_AU voices:"
+        say -v '?' 2>/dev/null | grep -E 'en_GB|en_AU' || echo "  none found"
+        echo
+        echo "For a voice that does not sound synthetic, download an Enhanced one:"
+        echo "  System Settings > Accessibility > Spoken Content > System Voice > Manage Voices"
+        echo "  then set JARVIS_VOICE in ~/.claude/jarvis/config.sh"
+        echo
+        for v in Daniel Oliver Serena Karen "Daniel (Enhanced)"; do
+          voice_exists "$v" || continue
+          echo "  $v"; JARVIS_VOICE="$v" jv_say "Task complete, sir. Awaiting your review."
+          sleep 0.4
+        done ;;
+      windows)
+        echo "Voices installed for System.Speech:"
+        [ -n "${JV_PS:-}" ] && "$JV_PS" -NoProfile -Command \
+          "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | ForEach-Object { '  ' + \$_.VoiceInfo.Name + '  (' + \$_.VoiceInfo.Culture + ')' }" 2>/dev/null
+        echo
+        echo "Set JARVIS_VOICE in ~/.claude/jarvis/config.sh to one of the names above."
+        echo "\"Microsoft George Desktop\" and \"Microsoft Hazel Desktop\" are the British ones."
+        echo "More: Settings > Time & Language > Speech > Manage voices." ;;
+      linux)
+        echo "Speech backend: $(jv_backend_say)"
+        if command -v espeak-ng >/dev/null 2>&1; then
+          echo "Voices (set JARVIS_VOICE_LINUX in config.sh):"
+          espeak-ng --voices=en 2>/dev/null | awk 'NR>1{print "  " $2 "  " $4}' | head -20
+        elif command -v spd-say >/dev/null 2>&1; then
+          echo "Modules:"; spd-say -O 2>/dev/null | sed 's/^/  /'
+        else
+          echo
+          echo "No speech engine found. Install one:"
+          echo "  Debian/Ubuntu: sudo apt install espeak-ng     (or speech-dispatcher)"
+          echo "  Fedora:        sudo dnf install espeak-ng"
+          echo "  Arch:          sudo pacman -S espeak-ng"
+        fi
+        command -v paplay >/dev/null 2>&1 || command -v aplay >/dev/null 2>&1 || {
+          echo
+          echo "No audio player found. Install one:"
+          echo "  Debian/Ubuntu: sudo apt install pulseaudio-utils   (or alsa-utils)"; } ;;
+      *) echo "Unsupported platform: $(uname -s)" ;;
+    esac ;;
 
-  *) echo "usage: jarvisctl [status|doctor|test|chimes|log [n]|mute <min>|unmute|reset|voices]"; exit 2 ;;
+  *) echo "usage: jarvisctl [status|doctor|test|chimes|demo|log [n]|mute <min>|unmute|reset|voices]"; exit 2 ;;
 esac
