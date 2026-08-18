@@ -5,6 +5,7 @@
  *   node scripts/orchestrator.mjs build     regenerate registry.generated.json
  *   node scripts/orchestrator.mjs health    validate the ecosystem (§17)
  *   node scripts/orchestrator.mjs route "<request>"   explain a routing decision
+ *   node scripts/orchestrator.mjs voice --apply       install the voice layer
  *
  * Zero runtime dependencies, deliberately. This tool verifies that a skill
  * ecosystem is sound; making it depend on an npm install would put a supply
@@ -411,6 +412,19 @@ try {
       );
       break;
     }
+    case 'voice': {
+      const { installVoice, render } = await import('./voice.mjs');
+      process.exit(
+        render(
+          installVoice({
+            root: ROOT,
+            apply: rest.includes('--apply'),
+            force: rest.includes('--force'),
+          })
+        )
+      );
+      break;
+    }
     case 'agents': {
       const { buildAgents, render } = await import('./swarm.mjs');
       render(buildAgents({ root: ROOT, readYaml, apply: rest.includes('--apply') }));
@@ -438,6 +452,7 @@ try {
           '  pack [dir]                 deterministic Context Pack — zero tokens, share it',
           '  bench                      before/after efficiency benchmark over a fixed corpus',
           '  install [--apply] [--external] [--force]',
+        '  voice [--apply] [--force]  install the JARVIS voice layer and its hooks',
           '  agents [--apply]           generate agents/*.md from registry/agents.yaml',
           '  doctor                     audit the agent roster (§6)',
           '  show-agent <id>            print one resolved agent definition',
