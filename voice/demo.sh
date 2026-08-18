@@ -41,7 +41,11 @@ elapsed() { echo $(( $(date +%s) - $2 )) > "$S/start/$1"; [ -n "${3:-}" ] && ech
 settle() {  # wait for the queue to drain, then let the last utterance finish
   local n=0
   while [ "$n" -lt 60 ]; do
-    [ -z "$(ls "$J/queue" 2>/dev/null | grep -v '^\.')" ] && break
+    # Glob rather than `ls | grep`: queue entries start with the priority digit and
+    # claims start with a dot, so the pattern excludes claims by construction.
+    empty=1
+    for g in "$J"/queue/[0-9]*; do [ -e "$g" ] && { empty=0; break; }; done
+    [ "$empty" = 1 ] && break
     sleep 1; n=$((n+1))
   done
   sleep "${1:-3}"
@@ -85,7 +89,7 @@ settle 2
 narrate "You ask frappe-bench a three-second question" \
         "Stop fires after EVERY turn. Under 25 seconds it is not worth a sentence."
 listen "one quiet tick. No speech at all"
-hook d1 frappe-bench begin; sleep 3; hook d1 frappe-bench done
+hook d1 frappe-bench begin; sleep 3; hook d1 frappe-bench 'done'
 settle 2
 
 # ---------------------------------------------------------------- swarm
@@ -100,7 +104,7 @@ narrate "…and the swarm turn completes, four minutes in" \
         "The specialist count is what distinguishes a swarm run from a one-line edit."
 listen "rising two-note chime, then \"N S T done, sir. Six specialists, four minutes.\""
 elapsed d2 245 6
-hook d2 wt_nst done
+hook d2 wt_nst 'done'
 settle 2
 
 # ---------------------------------------------------------------- the expensive failure
@@ -115,8 +119,8 @@ narrate "Two other sessions finish at the same instant" \
 listen "two completions, one after the other, never overlapping"
 elapsed d1 210 0
 elapsed d4 380 3
-hook d1 frappe-bench done
-hook d4 exponent_utilities done
+hook d1 frappe-bench 'done'
+hook d4 exponent_utilities 'done'
 settle 2
 
 narrate "You still have not answered wt_crm" \
@@ -129,7 +133,7 @@ settle 2
 narrate "exponent_utilities finishes six turns in two seconds" \
         "A burst is debounced, then collapsed to the newest — its elapsed time is the accurate one."
 listen "ONE completion, not six"
-for i in 1 2 3 4 5 6; do elapsed d4 $(( 90 + i * 10 )) 0; hook d4 exponent_utilities done; sleep 0.3; done
+for i in 1 2 3 4 5 6; do elapsed d4 $(( 90 + i * 10 )) 0; hook d4 exponent_utilities 'done'; sleep 0.3; done
 settle 2
 
 # ---------------------------------------------------------------- bad news

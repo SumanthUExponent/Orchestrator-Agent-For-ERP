@@ -45,23 +45,37 @@ n=$(date +%N 2>/dev/null)
 case "$n" in ''|*[!0-9]*|N) printf '%s.000\n' "$(date +%s)" ;; *) printf '%s.%s\n' "$(date +%s)" "${n:0:3}" ;; esac
 STUB
 
-cat > "$SB/bin/say" <<STUB
+# Stub EVERY backend the platform layer might select, not just the macOS ones. The
+# first version stubbed `say` and `afplay`; on Linux the layer correctly dispatched to
+# espeak-ng and paplay instead, which were not stubbed — so nothing was captured and
+# every assertion counted zero utterances while the code underneath was working.
+#
+# Speech stubs BLOCK for 1.2s. That is what makes overlapping speech detectable: the
+# whole architecture exists to prevent it, and without a duration there is nothing to
+# overlap.
+for t in say espeak-ng espeak spd-say festival pico2wave; do
+  cat > "$SB/bin/$t" <<STUB
 #!/usr/bin/env bash
 echo "\$($SB/bin/now) SAY_START \$*" >> $AUDIT
 sleep 1.2
 echo "\$($SB/bin/now) SAY_END" >> $AUDIT
 STUB
+done
 
-cat > "$SB/bin/afplay" <<STUB
+for t in afplay paplay aplay ffplay mpv play cvlc; do
+  cat > "$SB/bin/$t" <<STUB
 #!/usr/bin/env bash
 echo "\$($SB/bin/now) AFPLAY \$*" >> $AUDIT
 sleep 0.2
 STUB
+done
 
-cat > "$SB/bin/osascript" <<STUB
+for t in osascript notify-send; do
+  cat > "$SB/bin/$t" <<STUB
 #!/usr/bin/env bash
 echo "\$($SB/bin/now) BANNER \$*" >> $AUDIT
 STUB
+done
 
 chmod +x "$SB/bin"/*
 export PATH="$SB/bin:$PATH"
@@ -92,7 +106,9 @@ chimes()  { local n; n=$(grep -c 'AFPLAY'    "$AUDIT" 2>/dev/null); echo "${n:-0
 quiet() {
   local n=0
   while [ "$n" -lt "${1:-30}" ]; do
-    [ -z "$(ls "$J/queue" 2>/dev/null | grep -v '^\.')" ] && sleep 4 && return 0
+    empty=1
+    for g in "$J"/queue/[0-9]*; do [ -e "$g" ] && { empty=0; break; }; done
+    [ "$empty" = 1 ] && sleep 4 && return 0
     sleep 0.5; n=$((n+1))
   done
   return 1
@@ -152,10 +168,10 @@ hook s3 charlie permission &
 hook s4 delta   error      &
 wait
 sleep 1
-d=$(births); [ "$d" = 1 ]; check $? "exactly one speaker daemon was ever started (saw $d)"
+rc=0; d=$(births); [ "$d" = 1 ] || rc=1; check "$rc" "exactly one speaker daemon was ever started (saw $d)"
 quiet 40
-no_overlap; check $? "no overlapping speech" "$(grep OVERLAP "$AUDIT" 2>/dev/null)"
-[ "$(says)" -ge 3 ]; check $? "all four sessions announced ($(says) utterances)"
+rc=0; no_overlap || rc=1; check "$rc" "no overlapping speech" "$(grep OVERLAP "$AUDIT" 2>/dev/null)"
+rc=0; [ "$(says)" -ge 3 ] || rc=1; check "$rc" "all four sessions announced ($(says) utterances)"
 
 echo
 echo "T1b urgent items are spoken before routine ones"
@@ -192,10 +208,10 @@ echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
 printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
 for i in 1 2 3 4 5 6; do
   echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
-  hook s1 alpha done
+  hook s1 alpha 'done'
 done
 quiet 40
-n=$(says); [ "$n" = 1 ]; check $? "collapsed to exactly one announcement (got $n)"
+rc=0; n=$(says); [ "$n" = 1 ] || rc=1; check "$rc" "collapsed to exactly one announcement (got $n)"
 
 # ---------------------------------------------------------------- T2b
 echo
@@ -208,11 +224,11 @@ printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
 # Only the end-to-end simulation surfaced it.
 for i in 1 2 3 4 5 6; do
   echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
-  hook s1 alpha done
+  hook s1 alpha 'done'
   sleep 0.3
 done
 quiet 40
-n=$(says); [ "$n" = 1 ]; check $? "a staggered burst is still one announcement (got $n)"
+rc=0; n=$(says); [ "$n" = 1 ] || rc=1; check "$rc" "a staggered burst is still one announcement (got $n)"
 
 echo
 echo "T2c six subagents 0.3s apart are one chime"
@@ -221,7 +237,7 @@ printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
 hook s1 alpha begin
 for i in 1 2 3 4 5 6; do hook s1 alpha subagent; sleep 0.3; done
 quiet 40
-n=$(chimes); [ "$n" = 1 ]; check $? "one tone for the whole batch (got $n)"
+rc=0; n=$(chimes); [ "$n" = 1 ] || rc=1; check "$rc" "one tone for the whole batch (got $n)"
 
 # ---------------------------------------------------------------- T3
 echo
@@ -230,10 +246,10 @@ fresh
 printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
 hook s1 alpha begin
 sleep 2
-hook s1 alpha done
+hook s1 alpha 'done'
 quiet 20
-n=$(says); [ "$n" = 0 ]; check $? "no speech for a short turn ($n utterances)"
-[ "$(chimes)" -ge 1 ]; check $? "but it still ticked ($(chimes) chimes)"
+rc=0; n=$(says); [ "$n" = 0 ] || rc=1; check "$rc" "no speech for a short turn ($n utterances)"
+rc=0; [ "$(chimes)" -ge 1 ] || rc=1; check "$rc" "but it still ticked ($(chimes) chimes)"
 
 # ---------------------------------------------------------------- T4
 echo
@@ -243,7 +259,7 @@ fresh
 hook s1 alpha error
 hook s1 alpha permission
 sleep 3
-n=$(( $(says) + $(chimes) )); [ "$n" = 0 ]; check $? "silent while muted ($n audio events)"
+rc=0; n=$(( $(says) + $(chimes) )); [ "$n" = 0 ] || rc=1; check "$rc" "silent while muted ($n audio events)"
 "$J/jarvisctl" unmute >/dev/null
 
 # ---------------------------------------------------------------- T5
@@ -253,8 +269,12 @@ fresh
 hook s1 alpha start
 hook s2 bravo start
 hook s2 bravo permission
-"$J/jarvisctl" status | grep -q 'BLOCKED ON APPROVAL'; check $? "status names the blocked session"
-"$J/jarvisctl" status | grep -q 'bravo'; check $? "and names which one it is"
+# Capture once, then match. Piping straight into `grep -q` closes the pipe as soon as
+# it matches, so the writer takes EPIPE and bash prints "write error: Broken pipe" —
+# harmless, but it is noise in every CI log for a test that passed.
+st_out=$("$J/jarvisctl" status 2>/dev/null)
+rc=0; printf '%s\n' "$st_out" | grep -q 'BLOCKED ON APPROVAL' || rc=1; check "$rc" "status names the blocked session"
+rc=0; printf '%s\n' "$st_out" | grep -q 'bravo' || rc=1; check "$rc" "and names which one it is"
 quiet 40
 
 # ---------------------------------------------------------------- T6
@@ -263,10 +283,10 @@ echo "T6  orphaned daemon stands down"
 fresh
 hook s1 alpha start
 sleep 1
-[ "$(live)" -ge 1 ]; check $? "a daemon is running"
+rc=0; [ "$(live)" -ge 1 ] || rc=1; check "$rc" "a daemon is running"
 rm -rf "$J/run/lock"
 sleep 2
-n=$(live); [ "$n" = 0 ]; check $? "it exited on its own after losing the lock ($n still live)"
+rc=0; n=$(live); [ "$n" = 0 ] || rc=1; check "$rc" "it exited on its own after losing the lock ($n still live)"
 
 # ---------------------------------------------------------------- T7
 echo
@@ -276,10 +296,10 @@ printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
 hook s1 alpha begin
 for i in 1 2 3 4 5 6; do hook s1 alpha subagent; done
 echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
-hook s1 alpha done
+hook s1 alpha 'done'
 quiet 40
-grep -q '6 specialists' "$AUDIT"; check $? "the completion names the specialist count" "$(grep SAY_START "$AUDIT" | tail -1)"
-n=$(says); [ "$n" -le 2 ]; check $? "six subagent events did not become six announcements (got $n)"
+rc=0; grep -q '6 specialists' "$AUDIT" || rc=1; check "$rc" "the completion names the specialist count" "$(grep SAY_START "$AUDIT" | tail -1)"
+rc=0; n=$(says); [ "$n" -le 2 ] || rc=1; check "$rc" "six subagent events did not become six announcements (got $n)"
 
 # ---------------------------------------------------------------- T8
 echo
@@ -288,9 +308,9 @@ fresh
 printf '{"session_id":"aaaaaaaa-1111-2222-3333-444444444444"}' | "$J/jarvis.sh" start >/dev/null
 printf '{"session_id":"bbbbbbbb-5555-6666-7777-888888888888"}' | "$J/jarvis.sh" start >/dev/null
 n=$(ls "$HOME/.claude/jarvis/state/active" | wc -l | tr -d ' ')
-[ "$n" = 2 ]; check $? "tracked as two sessions, not merged (got $n)"
+rc=0; [ "$n" = 2 ] || rc=1; check "$rc" "tracked as two sessions, not merged (got $n)"
 ords=$(cat "$HOME/.claude/jarvis/state/active"/* | sed 's/.*|//' | sort -u | wc -l | tr -d ' ')
-[ "$ords" = 2 ]; check $? "given distinct chime pitches (got $ords distinct)"
+rc=0; [ "$ords" = 2 ] || rc=1; check "$rc" "given distinct chime pitches (got $ords distinct)"
 quiet 40
 
 # ---------------------------------------------------------------- T9
@@ -305,8 +325,8 @@ quiet 30
 # Assert on the render LOG, not on the spoken words. The first version grepped the
 # audit for phrases like "task complete"; when the wording was shortened the grep
 # stopped matching and the test passed unconditionally. The log records the mode.
-grep -q ' done ' "$J/log" 2>/dev/null; [ $? = 1 ]; check $? "the stale completion was never rendered" "$(cat "$J/log" 2>/dev/null)"
-grep -q ' idle ' "$J/log" 2>/dev/null; check $? "but the fresh item that woke it was" "$(cat "$J/log" 2>/dev/null)"
+rc=0; grep -q ' done ' "$J/log" 2>/dev/null; [ $? = 1 ] || rc=1; check "$rc" "the stale completion was never rendered" "$(cat "$J/log" 2>/dev/null)"
+rc=0; grep -q ' idle ' "$J/log" 2>/dev/null || rc=1; check "$rc" "but the fresh item that woke it was" "$(cat "$J/log" 2>/dev/null)"
 
 # ---------------------------------------------------------------- T11
 echo
@@ -314,7 +334,7 @@ echo "T11 the chime finishes before the speech starts"
 fresh
 printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
 echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
-hook s1 alpha done
+hook s1 alpha 'done'
 quiet 30
 # Overlapped, the chime's energy lands on the vowel formants of the first word —
 # which is the project name, the one part that has to be understood. The motif ends
@@ -327,13 +347,13 @@ if [ -n "$lastchime" ] && [ -n "$firstsay" ]; then
 else
   bad "speech starts after the last tone" "missing events: chime=$lastchime say=$firstsay"
 fi
-n=$(chimes); [ "$n" = 2 ]; check $? "the completion is a two-note motif ($n tones)"
+rc=0; n=$(chimes); [ "$n" = 2 ] || rc=1; check "$rc" "the completion is a two-note motif ($n tones)"
 
 # ---------------------------------------------------------------- T10
 echo
 echo "T10 hooks are silent on stdout and stderr"
 fresh
-for m in start begin done permission idle subagent error end; do
+for m in start begin 'done' permission idle subagent error end; do
   out=$(JARVIS_SESSION_KEY=q1 JARVIS_SESSION_NAME=quiet "$J/jarvis.sh" "$m" </dev/null 2>&1)
   if [ -n "$out" ]; then bad "$m produced output" "$out"; else ok "$m is silent"; fi
 done
@@ -354,11 +374,11 @@ for i in 1 2 3 4; do hook s$i proj$i end; done
 wait_for Goodbye "$AUDIT" 30
 quiet 40
 n=$(grep -c 'Goodbye' "$AUDIT" 2>/dev/null); n=${n:-0}
-[ "$n" = 1 ]; check $? "exactly one goodbye spoken (got $n)" "$(grep SAY_START "$AUDIT")"
+rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "exactly one goodbye spoken (got $n)" "$(grep SAY_START "$AUDIT")"
 # The log must agree with what was actually said. Three suppressed byes were still
 # being logged, so `jarvisctl log` and the simulation both reported four farewells.
 b=$(grep -c ' bye ' "$J/log" 2>/dev/null); b=${b:-0}
-[ "$b" = 1 ]; check $? "and the log records exactly one (got $b)" "$(cat "$J/log")"
+rc=0; [ "$b" = 1 ] || rc=1; check "$rc" "and the log records exactly one (got $b)" "$(cat "$J/log")"
 
 echo
 echo "T13 a new session re-arms the farewell"
@@ -368,7 +388,7 @@ quiet 40
 hook s1 proj1 end
 wait_for Goodbye "$AUDIT" 30
 n=$(grep -c 'Goodbye' "$AUDIT" 2>/dev/null); n=${n:-0}
-[ "$n" = 1 ]; check $? "the next close says goodbye again (got $n)"
+rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "the next close says goodbye again (got $n)"
 
 # ---------------------------------------------------------------- T14
 echo
@@ -384,7 +404,7 @@ quiet 40
 "$J/jarvisctl" mute 1 >/dev/null
 : > "$AUDIT"
 sleep 12                      # four nag intervals
-n=$(( $(says) + $(chimes) )); [ "$n" = 0 ]; check $? "silent through four nag intervals ($n audio events)"
+rc=0; n=$(( $(says) + $(chimes) )); [ "$n" = 0 ] || rc=1; check "$rc" "silent through four nag intervals ($n audio events)"
 "$J/jarvisctl" unmute >/dev/null
 unset JARVIS_NAG_AFTER JARVIS_NAG
 
@@ -402,14 +422,14 @@ hook s1 alpha permission
 # the first. Roughly 25-30s here, whatever the thresholds are set to.
 wait_for ' escalate ' "$J/log" 90
 n=$(grep -c ' escalate ' "$J/log" 2>/dev/null); n=${n:-0}
-[ "$n" = 1 ]; check $? "escalated once (got $n)" "$(cat "$J/log")"
+rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "escalated once (got $n)" "$(cat "$J/log")"
 g=$(grep -c ' nag ' "$J/log" 2>/dev/null); g=${g:-0}
-[ "$g" -ge 1 ]; check $? "and nagged first ($g nags)"
+rc=0; [ "$g" -ge 1 ] || rc=1; check "$rc" "and nagged first ($g nags)"
 # Repeating an escalation turns the most important alert in the set into background
 # noise, which is the one thing it cannot afford to become.
 sleep 22
 n=$(grep -c ' escalate ' "$J/log" 2>/dev/null); n=${n:-0}
-[ "$n" = 1 ]; check $? "and does not escalate again (still $n)"
+rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "and does not escalate again (still $n)"
 unset JARVIS_NAG_AFTER JARVIS_NAG JARVIS_ESCALATE
 
 echo
@@ -424,7 +444,7 @@ hook s1 alpha begin        # what a granted permission looks like: the next prom
 : > "$J/log"
 sleep 25
 n=$(grep -cE ' (escalate|nag) ' "$J/log" 2>/dev/null); n=${n:-0}
-[ "$n" = 0 ]; check $? "silent once unblocked ($n reminders)" "$(cat "$J/log")"
+rc=0; [ "$n" = 0 ] || rc=1; check "$rc" "silent once unblocked ($n reminders)" "$(cat "$J/log")"
 unset JARVIS_NAG_AFTER JARVIS_NAG JARVIS_ESCALATE
 
 # ---------------------------------------------------------------- T16
@@ -444,13 +464,13 @@ chmod +x "$J/hooks.d/10-log.sh" "$J/hooks.d/20-hangs.sh" "$J/hooks.d/30-fails.sh
 printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
 echo $(( $(date +%s) - 300 )) > "$HOME/.claude/jarvis/state/start/s1"
 echo 4 > "$HOME/.claude/jarvis/state/subs/s1"
-hook s1 alpha done
+hook s1 alpha 'done'
 wait_for 'done alpha' "$SB/hookargs.log" 30
-grep -q 'done alpha 300:4 1' "$SB/hookargs.log"; check $? "the extension got mode, name, extra and ordinal" "$(cat "$SB/hookargs.log")"
+rc=0; grep -q 'done alpha 300:4 1' "$SB/hookargs.log" || rc=1; check "$rc" "the extension got mode, name, extra and ordinal" "$(cat "$SB/hookargs.log")"
 # And the next announcement still happens, despite the hanging hook.
 : > "$AUDIT"
 hook s1 alpha error
-wait_for SAY_START "$AUDIT" 30; check $? "a hanging extension does not stall the queue"
+rc=0; wait_for SAY_START "$AUDIT" 30 || rc=1; check "$rc" "a hanging extension does not stall the queue"
 rm -rf "$J/hooks.d"
 
 # ---------------------------------------------------------------- teardown

@@ -54,14 +54,72 @@ jv_rate_espeak(){ printf '%s' "${JARVIS_RATE:-172}"; }   # espeak already speaks
 # DIFFERENT voices rather than four pitches of the same one. Voice identity is far more
 # identifiable than pitch — you do not have to remember what session 3 sounded like, you
 # just recognise it — so this is the strongest distinguishing cue available.
+# A user-supplied speech engine, tried before anything built in.
+#
+# The built-in voices are what an operating system happens to ship, and on macOS that
+# is a 2005-era synthesiser. Local neural engines are now dramatically better — and
+# still entirely offline, no account and no API — but they all have different CLIs, so
+# rather than guess at each one this takes a command template with two placeholders:
+#
+#   {out}   a .wav path to write
+#   {text}  the words to speak
+#
+# Kokoro is the one to reach for (82M parameters, MOS ~4.2, good British voices):
+#   JARVIS_TTS_CMD='kokoro-tts --voice bm_george --output {out} "{text}"'
+# Piper is faster and smaller but noticeably more robotic:
+#   JARVIS_TTS_CMD='piper --model /path/en_GB-alan-medium.onnx --output_file {out} <<< "{text}"'
+#
+# Anything that writes a WAV works. If the command fails the built-in voice still
+# speaks — a broken template must not make the layer go silent.
+jv_say_external() {
+  [ -n "${JARVIS_TTS_CMD:-}" ] || return 1
+  local t="$1" w cmd
+  w=$(mktemp "${TMPDIR:-/tmp}/jv-tts-XXXXXX").wav
+  # Substituted rather than eval'd with the text inline, so quotes and apostrophes in
+  # an announcement cannot break the command or run anything unintended.
+  cmd=${JARVIS_TTS_CMD//\{out\}/$w}
+  # {text} becomes a REFERENCE to an exported variable, never the text itself. An
+  # announcement is ordinary English — "that's everything, sir" — and interpolating it
+  # into a command line would let an apostrophe break the command, or worse.
+  cmd=${cmd//\{text\}/\$JV_TTS_TEXT}
+  export JV_TTS_TEXT="$t"
+  local ok=1
+  if eval "$cmd" >/dev/null 2>&1 && [ -s "$w" ]; then
+    jv_play_now "$w"
+    ok=0
+  fi
+  unset JV_TTS_TEXT
+  rm -f "$w"
+  return "$ok"
+}
+
 jv_say() {
   local t="$1" voice="${2:-${JARVIS_VOICE:-}}"
   # macOS-only inline markup. Elsewhere it would be READ ALOUD as "bracket bracket
   # s l n c", so it is stripped rather than left to embarrass itself.
   [ "$JV_OS" = macos ] || t=$(printf '%s' "$t" | sed 's/\[\[[^]]*\]\]//g; s/  */ /g')
+
+  # A user-supplied engine wins over anything built in, on every platform. It is only
+  # ever configured deliberately, and it is configured precisely because the built-in
+  # voice was not good enough.
+  if [ -n "${JARVIS_TTS_CMD:-}" ]; then
+    # macOS markup would be read aloud by any other engine.
+    local ext; ext=$(printf '%s' "$t" | sed 's/\[\[[^]]*\]\]//g; s/  */ /g')
+    jv_say_external "$ext" && return 0
+  fi
+
   case "$JV_OS" in
     macos)
-      say -v "${voice:-Daniel}" -r "${JARVIS_RATE:-172}" "$t" 2>/dev/null ;;
+      # An empty voice, or the literal "system", means: pass no -v at all and let `say`
+      # use the System Voice. That is the ONLY way to reach the Siri voices — they
+      # cannot be selected with -v, and they are far and away the most natural thing
+      # macOS has. Everything shipped by default is the "compact" set, which is a
+      # 2005-era synthesiser and sounds like one.
+      if [ -z "$voice" ] || [ "$voice" = system ]; then
+        say -r "${JARVIS_RATE:-172}" "$t" 2>/dev/null
+      else
+        say -v "$voice" -r "${JARVIS_RATE:-172}" "$t" 2>/dev/null
+      fi ;;
     windows)
       [ -n "$JV_PS" ] || return 0
       local q; q=$(jv_psquote "$t")
@@ -117,10 +175,22 @@ jv_voice_list() {
   return 0
 }
 jv_voice_exists() {
+  # "system" is not a voice name, it is an instruction to use the System Voice.
+  [ -z "$1" ] || [ "$1" = system ] && return 0
   local list; list=$(jv_voice_list)
   # No enumeration available: do not claim the voice is missing.
   [ -z "$list" ] && return 0
   printf '%s\n' "$list" | grep -qxF "$1"
+}
+
+# Which installed voices are the good ones. macOS ships only "compact" voices — a
+# 2005-era synthesiser — and the Enhanced, Premium and Siri downloads are free and
+# roughly three times more natural. Windows Desktop voices are the same story against
+# the newer "Natural" ones. If this comes back empty, the layer will sound robotic no
+# matter what else is tuned, so `doctor` says so loudly.
+jv_hq_voices() {
+  jv_voice_list | grep -iE '\((Enhanced|Premium)\)|^Siri|Natural' 2>/dev/null
+  return 0
 }
 
 # ---------------------------------------------------------------------- audio
@@ -174,6 +244,10 @@ jv_notify() {
 # What `jarvisctl doctor` prints. Names the backend actually selected, because "no
 # sound" is otherwise indistinguishable from "wrong backend chosen".
 jv_backend_say() {
+  if [ -n "${JARVIS_TTS_CMD:-}" ]; then
+    echo "JARVIS_TTS_CMD (${JARVIS_TTS_CMD%% *}) — local engine, overrides the built-in voice"
+    return
+  fi
   case "$JV_OS" in
     macos) echo "say (${JARVIS_VOICE:-Daniel})" ;;
     linux-piper) : ;;

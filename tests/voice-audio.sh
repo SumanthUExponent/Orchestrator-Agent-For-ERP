@@ -50,13 +50,13 @@ echo "P2  the platform layer is the ONLY place that names an OS tool"
 # If an OS call leaks back into speaker.sh the layer stops being portable, and the
 # breakage appears on someone else's machine rather than here.
 leak=$(grep -nE '^[^#]*\b(afplay|osascript|say -v|paplay|aplay|powershell)' "$V/speaker.sh" "$V/jarvis.sh" 2>/dev/null | grep -v 'jv_' || true)
-[ -z "$leak" ]; chk $? "no OS-specific call outside platform.sh" "$leak"
+rc=0; [ -z "$leak" ] || rc=1; chk "$rc" "no OS-specific call outside platform.sh" "$leak"
 
 echo
 echo "P3  installed tones and the installed motif table agree"
 . "$J/tones/motifs.sh"
 missing=""; total=0
-for k in boot done approve nag err idle tick sub bye; do
+for k in boot 'done' approve nag err idle tick sub bye; do
   for o in 1 2 3 4; do
     var="MOTIF_${k}_${o}"; seq="${!var-}"
     [ -z "$seq" ] && { missing="$missing $k/$o:EMPTY"; continue; }
@@ -66,7 +66,7 @@ for k in boot done approve nag err idle tick sub bye; do
     done
   done
 done
-[ -z "$missing" ]; chk $? "all $total referenced notes are present" "$missing"
+rc=0; [ -z "$missing" ] || rc=1; chk "$rc" "all $total referenced notes are present" "$missing"
 
 echo
 echo "P4  the Linux and Windows branches actually invoke something"
@@ -87,6 +87,7 @@ probe() {  # probe <os> <call> -> the logged invocation
     . "$J/platform.sh"
     JV_OS="$1"
     # Re-resolve the PowerShell handle now that the stub is on PATH.
+    # shellcheck disable=SC2034  # read by jv_say/jv_play_now after platform.sh is sourced
     for c in powershell.exe pwsh.exe powershell; do have "$c" && { JV_PS="$c"; break; }; done
     eval "$2" ) >/dev/null 2>&1
   # Poll rather than sleep. The banner is deliberately fire-and-forget — backgrounded
@@ -125,18 +126,72 @@ out=$( ( export PATH="$SB/empty:/usr/bin:/bin"; mkdir -p "$SB/empty"
          . "$J/config.sh"; . "$J/platform.sh"; JV_OS=linux
          jv_say "hello"; jv_play_now "/nonexistent.wav"; jv_notify "a" "b" ) 2>&1 )
 rc=$?
-[ "$rc" = 0 ]; chk $? "exit 0 with no engine present (rc=$rc)"
-[ -z "$out" ]; chk $? "and no output" "$out"
+rc=0; [ "$rc" = 0 ] || rc=1; chk "$rc" "exit 0 with no engine present (rc=$rc)"
+rc=0; [ -z "$out" ] || rc=1; chk "$rc" "and no output" "$out"
 
 r=$(probe unknown 'jv_say "x"')
-[ -z "$r" ]; chk $? "an unrecognised platform calls nothing at all" "$r"
+rc=0; [ -z "$r" ] || rc=1; chk "$rc" "an unrecognised platform calls nothing at all" "$r"
+
+echo
+echo "P6  a local neural engine can replace the built-in voice"
+# The built-in voices are whatever the OS ships, and what macOS ships is a 2005-era
+# synthesiser. JARVIS_TTS_CMD is the way out — but it must not become a way to break
+# the layer, so a failing template has to fall back rather than go silent.
+cat > "$SB/faketts" <<'TTS'
+#!/usr/bin/env bash
+out=""; txt=""
+while [ $# -gt 0 ]; do case "$1" in --output) out="$2"; shift 2 ;; *) txt="$1"; shift ;; esac; done
+printf '%s\n' "$txt" >> "$SBDIR/tts.log"
+printf 'RIFF$\000\000\000WAVEfmt \020\000\000\000\001\000\001\000D\254\000\000\210X\001\000\002\000\020\000data\000\000\000\000' > "$out"
+TTS
+chmod +x "$SB/faketts"
+
+: > "$SB/tts.log"
+( export SBDIR="$SB"
+  . "$J/config.sh"; . "$J/platform.sh"
+  JARVIS_TTS_CMD="$SB/faketts --output {out} \"{text}\""
+  jv_say "Done, sir. Four minutes." ) >/dev/null 2>&1
+rc=0; grep -qF 'Done, sir. Four minutes.' "$SB/tts.log" || rc=1
+chk "$rc" "the engine received the announcement verbatim" "$(cat "$SB/tts.log")"
+
+# Apostrophes and quotes are ordinary in these phrasings ("that's everything, sir"),
+# and the template is substituted rather than interpolated precisely so they cannot
+# break the command or run anything unintended.
+: > "$SB/tts.log"
+( export SBDIR="$SB"
+  . "$J/config.sh"; . "$J/platform.sh"
+  JARVIS_TTS_CMD="$SB/faketts --output {out} \"{text}\""
+  jv_say "That's everything, sir; \$(touch $SB/PWNED) done." ) >/dev/null 2>&1
+rc=0; [ -e "$SB/PWNED" ] && rc=1
+chk "$rc" "a shell metacharacter in the text is not executed" "$(cat "$SB/tts.log")"
+
+# A template that fails must fall through to the built-in voice.
+out=$( ( export SBDIR="$SB"
+         . "$J/config.sh"; . "$J/platform.sh"
+         JARVIS_TTS_CMD="/nonexistent-engine --output {out} \"{text}\""
+         jv_say "fallback test" ) 2>&1 )
+rc=$?
+chk "$rc" "a broken engine falls back instead of erroring (rc=$rc)"
+rc=0; [ -z "$out" ] || rc=1
+chk "$rc" "and stays quiet on stdout" "$out"
+
+rc=0
+(
+  . "$J/config.sh"; . "$J/platform.sh"
+  # shellcheck disable=SC2034  # read by jv_backend_say, inside platform.sh
+  JARVIS_TTS_CMD="/tmp/x --output {out} {text}"
+  case "$(jv_backend_say)" in *JARVIS_TTS_CMD*) exit 0 ;; *) exit 1 ;; esac
+) || rc=1
+chk "$rc" "doctor reports the external engine, not the built-in voice"
 
 # --------------------------------------------------------------------- names
 echo
 echo "N1  a directory basename comes out sayable"
 spoken_of() (
   export JARVIS_LIB=1
-  . "$J/config.sh"; [ -n "${2:-}" ] && JARVIS_NAMES="$2"
+  . "$J/config.sh"
+  # shellcheck disable=SC2034  # read by spoken(), inside speaker.sh
+  [ -n "${2:-}" ] && JARVIS_NAMES="$2"
   . "$J/platform.sh"; . "$J/speaker.sh"
   spoken "$1"
 )
@@ -181,7 +236,7 @@ else
         ' "$SB/len.wav" ;;
     esac
   }
-  budget() { local d; d=$(measure "$3"); awk -v d="$d" -v m="$2" 'BEGIN{exit (d<=m)?0:1}'; chk $? "$1 = ${d}s (budget ${2}s)"; }
+  rc=0; budget() { local d; d=$(measure "$3"); awk -v d="$d" -v m="$2" 'BEGIN{exit (d<=m)?0:1}' || rc=1; chk "$rc" "$1 = ${d}s (budget ${2}s)"; }
   budget "done, solo, no crew " 2.2 "Done, sir. 4 minutes."
   budget "done, solo, swarm   " 3.4 "Done, sir. 6 specialists, 4 minutes."
   budget "approval, solo      " 1.8 "Your approval, sir."

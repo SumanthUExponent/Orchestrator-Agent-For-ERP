@@ -123,31 +123,96 @@ Note what it deliberately does *not* flag: two agents sharing a skill. That is t
 
 ## Install
 
+**Requirements:** Node 18 or newer, and git. Nothing else — no `npm install`, no
+dependencies. On Windows you also need a bash: [Git for
+Windows](https://gitforwindows.org) or WSL. Claude Code itself is assumed.
+
 ```bash
 git clone https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP.git
 cd Orchestrator-Agent-For-ERP
 
 node scripts/orchestrator.mjs install              # dry run — shows the plan, writes nothing
-node scripts/orchestrator.mjs install --apply      # install skills AND the 45 agents
-node scripts/orchestrator.mjs health               # verify skills
+node scripts/orchestrator.mjs install --apply      # install the skills AND the 45 agents
+node scripts/orchestrator.mjs health               # verify the skills
 node scripts/orchestrator.mjs doctor               # verify the swarm
-
-node scripts/orchestrator.mjs voice --apply        # optional: give every session a voice
 ```
 
-Skills land in `~/.claude/skills`, agents in `~/.claude/agents` (override with `CLAUDE_SKILLS_DIR` / `CLAUDE_AGENTS_DIR`).
+Skills land in `~/.claude/skills`, agents in `~/.claude/agents` (override with
+`CLAUDE_SKILLS_DIR` / `CLAUDE_AGENTS_DIR`).
 
-**Restart Claude Code after installing.** Agent definitions are read at session start — until then they are on disk and invisible.
+**Restart Claude Code afterwards.** Agent definitions are read at session start — until
+then they are on disk and invisible.
 
-Nothing to install first; Node 18+ is all you need.
+**Upgrading?** Existing agents are skipped by name, so a plain `--apply` over an
+existing install writes nothing and any re-tiering silently never lands. Use `--force`.
 
-Optional third-party skill packs are declared in `registry/overlay.yaml` and fetched only when asked:
+Optional third-party skill packs are declared in `registry/overlay.yaml` and fetched
+only when asked:
 
 ```bash
 node scripts/orchestrator.mjs install --apply --external
 ```
 
-Those are **not vendored** — they are other people's work under their own licences, resolved from source so upstream fixes reach you.
+Those are **not vendored** — they are other people's work under their own licences,
+resolved from source so upstream fixes reach you.
+
+### Adding the voice layer
+
+```bash
+node scripts/orchestrator.mjs voice               # dry run — shows every hook it will register
+node scripts/orchestrator.mjs voice --apply
+jarvisctl doctor                                  # names the backends it found on your machine
+```
+
+It runs on macOS, Linux and Windows and needs one speech engine and one audio player.
+macOS and Windows already have both. On Linux, install them:
+
+| | Debian / Ubuntu | Fedora | Arch |
+|---|---|---|---|
+| speech | `apt install espeak-ng` | `dnf install espeak-ng` | `pacman -S espeak-ng` |
+| audio | `apt install pulseaudio-utils` *or* `alsa-utils` | `dnf install pulseaudio-utils` | `pacman -S libpulse` |
+| banners *(optional)* | `apt install libnotify-bin` | `dnf install libnotify` | `pacman -S libnotify` |
+
+**Do this before you judge how it sounds.** Every voice macOS ships by default is the
+"compact" set — a 2005-era synthesiser. It sounds mechanical because it *is*, and no
+amount of tuning fixes a bad synthesiser. Two ways out, both free and both entirely
+offline:
+
+```bash
+jarvisctl voices --setup     # macOS: opens the free Siri / Premium downloads
+```
+
+Download a Siri or Premium English (UK) voice (100–500 MB, roughly three times more
+natural), set it as your System Voice, then put `JARVIS_VOICE="system"` in
+`~/.claude/jarvis/config.sh`. A Siri voice cannot be selected by name — `"system"`
+tells JARVIS to omit the `-v` flag, which is what makes `say` use it.
+
+Or point it at a local neural engine, on any platform:
+
+```bash
+# in ~/.claude/jarvis/config.sh — {out} is a .wav to write, {text} is what to say
+JARVIS_TTS_CMD='kokoro-tts --voice bm_george --output {out} "{text}"'
+```
+
+[Kokoro](https://github.com/hexgrad/kokoro) is the one to reach for: 82M parameters,
+and the best quality-per-megabyte available locally.
+[Piper](https://github.com/rhasspy/piper) is faster and smaller but noticeably more
+robotic. Anything that writes a WAV works. Nothing leaves your machine — no account, no
+API — and if the command fails the built-in voice still speaks, because a broken
+template must never make the whole layer go quiet.
+
+`jarvisctl doctor` tells you which of these you are on, and says so loudly if you are
+still on a compact voice.
+
+`jarvisctl doctor` tells you exactly what it found and what to install if it found
+nothing. Nothing here talks to a server: the speech is your operating system's, and the
+chimes are synthesised on your machine at install time.
+
+**Windows notes.** Run the installer from any shell, but the hooks are written to
+invoke `bash`, so Git Bash or WSL must be on your PATH. `jarvisctl` is not symlinked
+onto PATH there — call it as `~/.claude/jarvis/jarvisctl`. Desktop banners need the
+[BurntToast](https://github.com/Windos/BurntToast) module; without it the speech still
+works and the banner is skipped.
 
 ## The voice layer
 
@@ -296,9 +361,9 @@ drainer and take every future announcement with it (a test starts a hook that ha
 to a dashboard, whatever you like.
 
 **Everything runs locally.** No API, no network, no account. Speech is the operating
-system's own synthesiser, or [Piper](https://github.com/rhasspy/piper) if you point
-`JARVIS_PIPER_MODEL` at a voice — a local neural model, and on Linux the difference
-between an assistant and a 1990s speech card.
+system's own synthesiser, or any local neural engine you point `JARVIS_TTS_CMD` at.
+See [the voice-quality note](#adding-the-voice-layer) — it is the single biggest thing
+you can change about how this sounds.
 
 The installer **merges** into `settings.json` rather than replacing it: the
 orchestrator's own routing gate and context-pack hooks live in the same arrays, and
@@ -409,11 +474,11 @@ Known gaps, stated plainly:
   any of it carries over music at your volume. `jarvisctl chimes` auditions the lot and
   `jarvisctl demo` plays a full four-session working day; the motif definitions are at
   the top of `scripts/tones.mjs`.
-- **Only the macOS path has been run on real hardware.** The Linux and Windows branches
-  are dispatch-tested — the tools are stubbed, the platform forced, and the invocation
-  asserted — which proves the right backend is called with the right arguments, not
-  that the result sounds right. Phrase-length budgets skip where there is no TTS engine
-  that renders to a file.
+- **Linux and Windows are covered by CI, not by ears.** Every suite runs on
+  ubuntu-latest, windows-latest and macos-latest across Node 18/20/22, with a real
+  speech engine and a real audio backend installed on the Linux job — which is how the
+  three portability defects that shipped in the first cut were found. What CI cannot
+  judge is whether the result *sounds* right on those platforms.
 - **Nothing fires when a permission prompt is granted.** Claude Code has no such
   event, so pending state is cleared on the next `Stop` or prompt submission
   instead. The alternative — hooking `PostToolUse` — would spawn a process on every
