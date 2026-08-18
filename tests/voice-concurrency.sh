@@ -637,6 +637,81 @@ check "$rc" "and names that something is outstanding"
 rc=0; [ -e "$HOME/.claude/jarvis/state/day" ] && rc=1
 check "$rc" "and clears the tally, so tomorrow starts fresh"
 
+# ---------------------------------------------------------------- T20
+echo
+echo "T20 the end-of-session briefing"
+fresh
+rm -rf "$J/briefings"
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+ST="$HOME/.claude/jarvis/state"
+
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: schema is in\nHEADS-UP: the submit hook now fires on amend"}'
+say_hook subagent '{"last_assistant_message":"VOICE: fixtures exported\nPENDING: permissions matrix needs an Auditor role"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+quiet 40
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: all tests pass\nPENDING: the offline sync path is untested"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+quiet 40
+
+rc=0; grep -qF 'the submit hook now fires on amend' "$ST/heads/s1" || rc=1
+check "$rc" "a HEADS-UP is collected" "$(cat "$ST/heads/s1" 2>/dev/null)"
+n=$(grep -c '' "$ST/todo/s1" 2>/dev/null); n=${n:-0}
+rc=0; [ "$n" = 2 ] || rc=1; check "$rc" "PENDING accumulates ACROSS turns (got $n)" "$(cat "$ST/todo/s1" 2>/dev/null)"
+n=$(grep -c '' "$ST/done/s1" 2>/dev/null); n=${n:-0}
+rc=0; [ "$n" -ge 2 ] || rc=1; check "$rc" "and so does what was done (got $n)"
+
+: > "$AUDIT"; : > "$J/log"
+say_hook end '{}'
+rc=0; wait_for ' brief ' "$J/log" 40 || rc=1
+check "$rc" "closing the session speaks a briefing" "$(cat "$J/log")"
+# Poll for the speech, not for the log line: the log is written at the START of render,
+# so it is present a debounce and a chime before anything is spoken.
+rc=0; wait_for 'permissions matrix needs an Auditor role' "$AUDIT" 40 || rc=1
+check "$rc" "and it names what is still pending" "$(grep SAY_START "$AUDIT" | head -2)"
+# What was DONE is deliberately not spoken: it was already announced turn by turn, and
+# the person hearing this is closing a terminal.
+rc=0; grep -q 'fixtures exported' "$AUDIT" && rc=1
+check "$rc" "but not everything already announced turn by turn"
+quiet 40
+
+b=$(ls "$J/briefings" 2>/dev/null | wc -l | tr -d ' ')
+rc=0; [ "$b" -ge 1 ] || rc=1; check "$rc" "a full record is written to disk ($b file)"
+f=$(ls "$J/briefings"/* 2>/dev/null | head -1)
+for want in 'DONE' 'HEADS UP' 'PENDING' 'fixtures exported' 'offline sync path'; do
+  rc=0; grep -qF "$want" "$f" || rc=1
+  check "$rc" "the record contains \"$want\""
+done
+rc=0; "$J/jarvisctl" brief 2>/dev/null | grep -qF 'offline sync path' || rc=1
+check "$rc" "and jarvisctl brief prints it"
+
+echo
+echo "T20b a session that finished cleanly says nothing on the way out"
+fresh
+rm -rf "$J/briefings"
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: reviewed the hooks, nothing to change"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+quiet 40
+: > "$J/log"
+say_hook end '{}'
+quiet 40
+n=$(grep -c ' brief ' "$J/log" 2>/dev/null); n=${n:-0}
+rc=0; [ "$n" = 0 ] || rc=1; check "$rc" "nothing outstanding, so nothing spoken ($n)" "$(cat "$J/log")"
+rc=0; ls "$J/briefings"/* >/dev/null 2>&1 || rc=1
+check "$rc" "but the record is written anyway"
+
+echo
+echo "T20c the session's lists do not leak into the next one"
+rc=0; [ -e "$ST/todo/s1" ] && rc=1; check "$rc" "pending cleared on close"
+rc=0; [ -e "$ST/done/s1" ] && rc=1; check "$rc" "done cleared on close"
+rc=0; [ -e "$ST/heads/s1" ] && rc=1; check "$rc" "heads-up cleared on close"
+
 # ---------------------------------------------------------------- teardown
 echo
 stop_daemon

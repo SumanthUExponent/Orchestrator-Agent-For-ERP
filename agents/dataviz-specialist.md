@@ -75,7 +75,7 @@ You cannot address the user. Escalate to: **orchestrator**.
 Never finish with "done". Return these fields:
 
 - **summary** — One paragraph. What was done, in plain terms.
-- **voice** — One clause, under twelve words, emitted as a final line reading "VOICE: <clause>". It is spoken aloud to someone who is not looking at the screen, so it must say what CHANGED and contain no paths or identifiers.
+- **voice** — One clause, under ten words, emitted as a final line reading "VOICE: <clause>". It is spoken aloud to someone who is not looking at the screen, so it must say what CHANGED and contain no paths or identifiers. Two optional companions, same rules, read back at the end of the session: "PENDING: <clause>" for work not finished, and "HEADS-UP: <clause>" for a consequence someone should know before it surprises them.
 - **handoff** — What the next agent or the orchestrator needs to continue.
 
 Structured fields, not an essay. The orchestrator reads these to decide what happens next; prose it has to parse is a failure of the protocol.
@@ -107,3 +107,24 @@ If you changed nothing, say that plainly: `VOICE: nothing to change in the retro
 
 This line is not a courtesy. Without it the announcement falls back to "task complete",
 which tells the listener only that time passed.
+
+### Two more lines, when they apply
+
+```
+PENDING: permissions matrix still needs an Auditor role
+HEADS-UP: the submit hook now fires on amend as well
+```
+
+Same rules — one clause, plain words, no paths. They are read back **at the end of the
+session**, which is a different audience again: someone deciding whether they can walk
+away, or picking the work up tomorrow having forgotten the detail.
+
+- **PENDING** is work you did not finish, or that someone else must pick up. It is the
+  only thing in your handoff that can still be acted on later, so it is the part read
+  aloud last. An empty pending list is a good outcome, not a missing field — omit the
+  line entirely rather than writing "none".
+- **HEADS-UP** is a consequence somebody should know before it surprises them. A
+  behaviour that changed, an assumption you had to make, a thing now wired differently.
+  Not a risk register; one sentence someone would thank you for.
+
+Omit either when it does not apply. Both are optional; `VOICE` is not.

@@ -285,6 +285,13 @@ render() {
       fi
       banner "$name" "Error" ;;
 
+    brief)
+      # Spoken as a session closes, and only when something is still outstanding. It is
+      # priority 3 — ahead of the farewell, behind anything urgent — so a session that is
+      # shutting down still gets its say before "all sessions closed".
+      motif idle "$ord"
+      speak "$(spoken "$name") closing$SIR. [[slnc 150]] $extra." ;;
+
     bye)
       # Reaching here at all means this session won the farewell — see the guard at
       # the top of render(). mkdir is the atomic test-and-set; `nactive -eq 0` alone

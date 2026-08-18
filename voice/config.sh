@@ -128,6 +128,12 @@ JARVIS_COUNT_SUBAGENTS="${JARVIS_COUNT_SUBAGENTS:-1}"
 # Blocked approvals, errors and escalations always speak. Those are actionable.
 JARVIS_SPEAK_WITHOUT_SUMMARY="${JARVIS_SPEAK_WITHOUT_SUMMARY:-auto}"
 
+# Speak what is still outstanding as each session closes: "N S T closing, sir. Pending:
+# the permissions matrix still needs an Auditor role." A session that finished cleanly
+# says nothing — the farewell already reports the totals. The FULL record is always
+# written either way; read it with `jarvisctl brief`. 0 disables the spoken part.
+JARVIS_BRIEF="${JARVIS_BRIEF:-1}"
+
 # One line at the very end of the day, when the last session closes: how many turns
 # there were across ALL sessions, and whether anything is still outstanding. 0 disables.
 JARVIS_DAY_DIGEST="${JARVIS_DAY_DIGEST:-1}"

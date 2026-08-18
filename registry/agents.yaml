@@ -712,9 +712,12 @@ protocol:
   fields:
     summary: One paragraph. What was done, in plain terms.
     voice: >
-      One clause, under twelve words, emitted as a final line reading
+      One clause, under ten words, emitted as a final line reading
       "VOICE: <clause>". It is spoken aloud to someone who is not looking at
       the screen, so it must say what CHANGED and contain no paths or identifiers.
+      Two optional companions, same rules, read back at the end of the session:
+      "PENDING: <clause>" for work not finished, and "HEADS-UP: <clause>" for a
+      consequence someone should know before it surprises them.
     files_changed: Exact paths. Empty if none.
     decisions: Architectural or implementation choices worth carrying forward.
     findings: For review agents — what was discovered, one line each.

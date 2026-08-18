@@ -16,7 +16,8 @@ J="$HOME/.claude/jarvis"
 [ -f "$J/config.sh" ] && . "$J/config.sh"
 
 Q="$J/queue"; S="$J/state"
-mkdir -p "$Q" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" "$J/run" 2>/dev/null
+mkdir -p "$Q" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" \
+         "$S/done" "$S/todo" "$S/heads" "$J/briefings" "$J/run" 2>/dev/null
 
 MODE="$1"
 
@@ -49,8 +50,14 @@ esac
 # The result is filtered to an ALLOWLIST, not escaped. It is about to be handed to a
 # speech synthesiser and carried through a pipe-delimited queue line, and an agent's
 # output is not a trusted input — so anything that is not plain speech is dropped.
-voice_note() {
-  case "$IN" in *VOICE:*) ;; *) return 1 ;; esac
+# marker_note <MARKER>  — pull one clause out of the hook payload.
+#
+# VOICE is the outcome, spoken at the end of the turn. PENDING and HEADS-UP are
+# optional and are read back at the END OF THE SESSION, where the audience is someone
+# deciding whether they can walk away, or picking the work up tomorrow.
+marker_note() {
+  local marker="$1"
+  case "$IN" in *"$marker":*) ;; *) return 1 ;; esac
   # One sed, because matching a literal backslash in a bash glob is ambiguous — `\\n`
   # inside a pattern reads as an escaped `n`, so an earlier attempt truncated at the
   # first letter n instead of at the encoded newline. sed's semantics here are exact.
@@ -60,7 +67,7 @@ voice_note() {
   # anything that is not plain speech is dropped rather than quoted.
   local v
   v=$(printf '%s' "$IN" \
-      | sed -n '/VOICE:/{ s/.*VOICE:[[:space:]]*//; s/\\n.*//; s/".*//; p; }' \
+      | sed -n "/$marker:/{ s/.*$marker:[[:space:]]*//; s/\\\\n.*//; s/\".*//; p; }" \
       | tail -1 \
       | tr -cd "A-Za-z0-9 .,;:'-" \
       | tr -s ' ')
@@ -69,6 +76,21 @@ voice_note() {
   v="${v:0:140}"
   [ ${#v} -ge 3 ] || return 1
   printf '%s' "$v"
+}
+
+voice_note() { marker_note VOICE; }
+
+# Append a clause to a per-session list, without duplicates. The same PENDING item
+# repeated by three agents across four turns is one item, not twelve.
+remember() {
+  local file="$1" line="$2" n=0
+  [ -z "$line" ] && return 0
+  if [ -r "$file" ]; then
+    grep -qxF "$line" "$file" 2>/dev/null && return 0
+    n=$(grep -c '' "$file" 2>/dev/null); n=${n:-0}
+  fi
+  [ "$n" -lt 8 ] && printf '%s\n' "$line" >> "$file"
+  return 0
 }
 
 NAME="${JARVIS_SESSION_NAME:-$(basename "$PWD")}"
@@ -206,6 +228,10 @@ case "$MODE" in
 
     # What to actually say. Specialist notes first; failing that, a marker the main
     # thread left in its own final message.
+    # The main thread can leave these too, not only the specialists.
+    remember "$S/todo/$KEY"  "$(marker_note 'PENDING' 2>/dev/null)"
+    remember "$S/heads/$KEY" "$(marker_note 'HEADS-UP' 2>/dev/null)"
+
     SUMMARY=""
     if [ "${JARVIS_SUMMARY:-1}" = "1" ]; then
       if [ -s "$S/notes/$KEY" ]; then
@@ -234,6 +260,7 @@ case "$MODE" in
         SUMMARY=$(voice_note) || SUMMARY=""
       fi
     fi
+    [ -n "$SUMMARY" ] && remember "$S/done/$KEY" "$SUMMARY"
     rm -f "$S/notes/$KEY"
 
     # A completion with nothing to report is the announcement that makes this feel
@@ -280,6 +307,8 @@ case "$MODE" in
     echo $(( n + 1 )) > "$S/subs/$KEY"
     # Whatever this specialist wanted said. Capped: a swarm run can dispatch a dozen,
     # and a dozen clauses is a paragraph nobody asked to have read to them.
+    remember "$S/todo/$KEY"  "$(marker_note 'PENDING' 2>/dev/null)"
+    remember "$S/heads/$KEY" "$(marker_note 'HEADS-UP' 2>/dev/null)"
     if note=$(voice_note); then
       # Guard the file before redirecting into it. A redirect that cannot open its target
       # is reported by the SHELL, so `2>/dev/null` on the command never suppresses it —
@@ -302,7 +331,38 @@ case "$MODE" in
     enqueue 0 err "" ;;
 
   end|bye)                          # SessionEnd
-    rm -f "$S/active/$KEY" "$S/start/$KEY" "$S/pending/$KEY" "$S/subs/$KEY" "$S/notes/$KEY"
+    # The briefing is written in full and spoken in part, deliberately. Everything the
+    # session achieved is worth having on record; only what is still outstanding is worth
+    # reading aloud to someone who is closing the terminal.
+    BRIEF="$J/briefings/$(date +%Y-%m-%d)-$NAME.txt"
+    {
+      printf '%s  %s\n\n' "$(date '+%Y-%m-%d %H:%M')" "$NAME"
+      if [ -s "$S/done/$KEY" ]; then
+        printf 'DONE\n'; sed 's/^/  - /' "$S/done/$KEY"; printf '\n'
+      fi
+      if [ -s "$S/heads/$KEY" ]; then
+        printf 'HEADS UP\n'; sed 's/^/  - /' "$S/heads/$KEY"; printf '\n'
+      fi
+      if [ -s "$S/todo/$KEY" ]; then
+        printf 'PENDING\n'; sed 's/^/  - /' "$S/todo/$KEY"; printf '\n'
+      fi
+    } >> "$BRIEF" 2>/dev/null
+
+    # Spoken form: pending first, because it is the only thing that can still be acted
+    # on; then one heads-up. A session that finished cleanly says nothing at all — the
+    # farewell already reports the day's totals.
+    SPOKEN=""
+    if [ "${JARVIS_BRIEF:-1}" = "1" ]; then
+      if [ -s "$S/todo/$KEY" ]; then
+        SPOKEN="Pending: $(head -2 "$S/todo/$KEY" 2>/dev/null | tr '\n' ';' | sed 's/;$//; s/;/. And /g')"
+      elif [ -s "$S/heads/$KEY" ]; then
+        SPOKEN="Heads up: $(head -1 "$S/heads/$KEY" 2>/dev/null)"
+      fi
+    fi
+    [ -n "$SPOKEN" ] && enqueue 3 brief "$SPOKEN"
+
+    rm -f "$S/active/$KEY" "$S/start/$KEY" "$S/pending/$KEY" "$S/subs/$KEY" "$S/notes/$KEY" \
+          "$S/done/$KEY" "$S/todo/$KEY" "$S/heads/$KEY"
     enqueue 6 bye "" ;;
 
   *)
