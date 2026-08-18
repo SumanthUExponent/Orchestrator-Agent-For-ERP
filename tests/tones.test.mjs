@@ -159,6 +159,18 @@ describe('meaning is carried by shape', () => {
   test('startup rises', () => assert.ok(dir('boot') > 0));
   test('error falls', () => assert.ok(dir('err') < 0, 'bad news that rises reads as good news'));
   test('shutdown falls', () => assert.ok(dir('bye') < 0));
+  test('escalation is the loudest thing in the set, and unmistakable', () => {
+    // It fires once, after the nags are spent, for a session that has been stopped for
+    // minutes while the others work. If it does not stand out it has failed.
+    const gains = Object.entries(MOTIFS).map(([k, m]) => [k, m.gain]);
+    const max = Math.max(...gains.map(([, g]) => g));
+    assert.equal(MOTIFS.escalate.gain, max, 'escalation is not the loudest motif');
+    assert.ok(MOTIFS.escalate.notes.length >= 5, 'fewer than five taps is not unmistakable');
+    assert.equal(MOTIFS.escalate.transpose, false, 'escalation should not vary by session');
+    // Alternating, not repeating: three taps at one pitch is already the approval.
+    const ns = MOTIFS.escalate.notes.map(([n]) => n);
+    assert.ok(new Set(ns).size >= 2, 'escalation is a flat repeat, same shape as approval');
+  });
   test('approval repeats one pitch, so it reads as insistence not news', () => {
     const ns = MOTIFS.approve.notes.map(([n]) => n);
     assert.equal(new Set(ns).size, 1);

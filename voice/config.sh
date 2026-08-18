@@ -4,6 +4,24 @@
 # Edit this file to change the defaults for every session.
 
 JARVIS_VOICE="${JARVIS_VOICE:-Daniel}"            # `jarvisctl voices` to audition
+
+# One voice per parallel session, pipe-separated, in start order. Four sessions in four
+# voices is far easier to tell apart than four pitches of one voice — you recognise a
+# voice without having to remember what slot 3 sounded like. Names that are not
+# installed fall back to JARVIS_VOICE, and `jarvisctl doctor` says which did.
+# Leave empty to use JARVIS_VOICE for everything.
+#   macOS:   "Daniel|Karen|Reed (English (UK))|Sandy (English (UK))"
+#            Run `jarvisctl voices` and paste the names EXACTLY as listed — the
+#            qualifier is part of the name, and `say` silently falls back to a US
+#            voice for a name it does not have.
+#   Windows: "Microsoft George Desktop|Microsoft Hazel Desktop"
+JARVIS_VOICES="${JARVIS_VOICES:-}"
+
+# Linux: piper is a local neural voice — no network, no API — and it is the difference
+# between an assistant and a 1990s speech card. Install piper, download a voice, and
+# point this at the .onnx model. Without it the fallback is espeak, which works but
+# sounds like hardware from 1994.
+JARVIS_PIPER_MODEL="${JARVIS_PIPER_MODEL:-}"
 JARVIS_RATE="${JARVIS_RATE:-172}"                 # wpm. 165-180 reads as composed
 JARVIS_ADDRESS="${JARVIS_ADDRESS:-sir}"           # "" for none
 JARVIS_VOLUME="${JARVIS_VOLUME:-0.7}"             # chime volume, 0.0-1.0
@@ -21,6 +39,11 @@ JARVIS_STALE="${JARVIS_STALE:-50}"
 # fourth waits silently. Re-announce this many times, at this interval.
 JARVIS_NAG="${JARVIS_NAG:-2}"
 JARVIS_NAG_AFTER="${JARVIS_NAG_AFTER:-70}"
+
+# After the nags are spent and a session is STILL blocked, escalate once: the loudest
+# motif in the set, the duration spoken aloud, and a banner. Once only — repeating it
+# would turn the most important alert into background noise. 0 disables.
+JARVIS_ESCALATE="${JARVIS_ESCALATE:-300}"
 
 # SubagentStop fires once per specialist. With a swarm dispatching batches of
 # four that is four announcements for one batch, so speech is NOT the default:

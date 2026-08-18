@@ -194,7 +194,8 @@ What that buys, beyond not overlapping:
 | Six completions collapse to one | A burst is debounced 1.2s, then the newest is spoken and the rest deleted |
 | Completions older than 50s are dropped | An announcement 90s late is noise, not information |
 | Session name spoken only when 2+ are live | With one session, "frappe-bench, finished" is padding; with four it is the message |
-| Each session gets its own chime pitch | Transposed in start order, so you know *which* session before the sentence gets there |
+| Each session gets its own voice and chime pitch | Set `JARVIS_VOICES` and four parallel sessions speak in four different voices. Voice identity beats pitch: you recognise it without having to remember what slot 3 sounded like |
+| A blocked session escalates once | After the nags are spent, the loudest motif in the set, the duration spoken aloud, and a banner. Once only — repeating it would make the most important alert in the set background noise |
 | Two sessions in one directory stay distinct | Keyed on `session_id`, not `$PWD` |
 
 It is swarm-aware. `SubagentStop` fires once per specialist, so a batch of four would
@@ -271,8 +272,31 @@ Queued announcements: 0
 Speaker: running (pid 51749)
 ```
 
-`jarvisctl` also has `doctor`, `log`, `mute <min>`, `unmute`, `reset` and `voices`.
-Everything is tunable in `config.sh`, which an upgrade will not overwrite.
+`jarvisctl report` speaks where everything stands, blocked sessions first — the
+announcements tell you what just *changed*, which is not the question you have after
+twenty minutes away from the desk:
+
+```
+$ jarvisctl report
+4 sessions, sir. Blocked: C R M, blocked for 8 minutes.
+Working: frappe bench, 6 minutes, exponent utilities, 9 seconds. Idle: N S T.
+```
+
+`jarvisctl` also has `doctor`, `log`, `mute <min>`, `unmute`, `reset`, `voices`,
+`chimes` and `demo`. Everything is tunable in `config.sh`, which an upgrade will not
+overwrite.
+
+**Extensions.** Anything executable in `~/.claude/jarvis/hooks.d/` receives every event
+— mode, session, extra, ordinal — after it has been announced. It is backgrounded with
+its output discarded and its exit status ignored, so a script there can never stall the
+drainer and take every future announcement with it (a test starts a hook that hangs for
+45 seconds and asserts the queue keeps moving). Flash a lamp when a session blocks, post
+to a dashboard, whatever you like.
+
+**Everything runs locally.** No API, no network, no account. Speech is the operating
+system's own synthesiser, or [Piper](https://github.com/rhasspy/piper) if you point
+`JARVIS_PIPER_MODEL` at a voice — a local neural model, and on Linux the difference
+between an assistant and a 1990s speech card.
 
 The installer **merges** into `settings.json` rather than replacing it: the
 orchestrator's own routing gate and context-pack hooks live in the same arrays, and
@@ -293,9 +317,9 @@ first, writes atomically, and refuses to touch a `settings.json` it cannot parse
 | `agents [--apply]` | Generate `agents/*.md` from the registry. |
 | `doctor` | Audit the agent roster. |
 | `voice [--apply] [--force]` | Install the voice layer and its eight hooks. Dry run by default. |
-| `npm test` | Routing, execution-plan, installer, voice-installer and tone-synthesis suites (95 tests). |
+| `npm test` | Routing, execution-plan, installer, voice-installer and tone-synthesis suites (96 tests). |
 | `npm run test:audio` | Platform backends, installed-tone integrity, name handling, phrase-length budgets (27 checks). |
-| `npm run test:voice` | The above plus the concurrency harness (34 checks, stubbed audio). |
+| `npm run test:voice` | The above plus the concurrency harness (40 checks, stubbed audio). |
 | `npm run test:all` | Everything. |
 
 ## Health check
@@ -354,6 +378,7 @@ voice/platform.sh          every OS-specific call, and nothing else
 voice/jarvisctl            status, doctor, log, mute, reset, voices, chimes, demo
 voice/demo.sh              narrated four-session simulation
 voice/config.sh            tunables; not overwritten by an upgrade
+voice/hooks.d/             extension point: any executable gets every event
 scripts/tones.mjs          motif definitions and the tone synthesiser
 skills/                    in-tree skills
 tests/                     regression suites
@@ -364,8 +389,8 @@ tests/voice-concurrency.sh voice behaviour under genuine parallel load
 
 ## Status and limits
 
-Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, the cross-platform voice layer, 95
-passing regression tests plus 61 audio and concurrency checks.
+Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, the cross-platform voice layer, 96
+passing regression tests plus 67 audio and concurrency checks.
 
 Known gaps, stated plainly:
 

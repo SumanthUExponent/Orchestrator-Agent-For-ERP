@@ -129,6 +129,15 @@ export function installVoice({ root, apply = false, force = false, target = jarv
   // repository and guarantees they match the motif table that ships with them.
   const tones = generate({ target, apply });
 
+  // The extension point. Created empty with its contract documented, because a hook
+  // directory nobody knows exists is not an extension point.
+  if (apply) {
+    const hd = path.join(target, 'hooks.d');
+    fs.mkdirSync(hd, { recursive: true });
+    const readme = path.join(from, 'hooks.d', 'README');
+    if (fs.existsSync(readme)) fs.copyFileSync(readme, path.join(hd, 'README'));
+  }
+
   let existing = {};
   if (fs.existsSync(settings)) {
     try {

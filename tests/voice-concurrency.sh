@@ -372,6 +372,71 @@ n=$(( $(says) + $(chimes) )); [ "$n" = 0 ]; check $? "silent through four nag in
 "$J/jarvisctl" unmute >/dev/null
 unset JARVIS_NAG_AFTER JARVIS_NAG
 
+# ---------------------------------------------------------------- T15
+echo
+echo "T15 a long-blocked session escalates — once"
+fresh
+export JARVIS_NAG_AFTER=2 JARVIS_NAG=1 JARVIS_ESCALATE=7
+hook s1 alpha start
+quiet 30
+: > "$J/log"
+hook s1 alpha permission
+# check_nags runs from the daemon's IDLE loop, once every 10s of quiet — and the nag
+# it fires first resets that counter, so the escalation lands on the second sweep, not
+# the first. Roughly 25-30s here, whatever the thresholds are set to.
+wait_for ' escalate ' "$J/log" 90
+n=$(grep -c ' escalate ' "$J/log" 2>/dev/null); n=${n:-0}
+[ "$n" = 1 ]; check $? "escalated once (got $n)" "$(cat "$J/log")"
+g=$(grep -c ' nag ' "$J/log" 2>/dev/null); g=${g:-0}
+[ "$g" -ge 1 ]; check $? "and nagged first ($g nags)"
+# Repeating an escalation turns the most important alert in the set into background
+# noise, which is the one thing it cannot afford to become.
+sleep 22
+n=$(grep -c ' escalate ' "$J/log" 2>/dev/null); n=${n:-0}
+[ "$n" = 1 ]; check $? "and does not escalate again (still $n)"
+unset JARVIS_NAG_AFTER JARVIS_NAG JARVIS_ESCALATE
+
+echo
+echo "T15b answering the prompt stops the escalation"
+fresh
+export JARVIS_NAG_AFTER=2 JARVIS_NAG=1 JARVIS_ESCALATE=6
+hook s1 alpha start
+quiet 30
+hook s1 alpha permission
+sleep 2
+hook s1 alpha begin        # what a granted permission looks like: the next prompt
+: > "$J/log"
+sleep 25
+n=$(grep -cE ' (escalate|nag) ' "$J/log" 2>/dev/null); n=${n:-0}
+[ "$n" = 0 ]; check $? "silent once unblocked ($n reminders)" "$(cat "$J/log")"
+unset JARVIS_NAG_AFTER JARVIS_NAG JARVIS_ESCALATE
+
+# ---------------------------------------------------------------- T16
+echo
+echo "T16 hooks.d extensions receive events and cannot break the daemon"
+fresh
+mkdir -p "$J/hooks.d"
+printf '#!/bin/bash\necho "$1 $2 $3 $4" >> "%s/hookargs.log"\n' "$SB" > "$J/hooks.d/10-log.sh"
+# A hook that hangs, one that fails, one that is not executable. None may affect the
+# announcements: a user script that could stall the drainer would take every future
+# announcement down with it.
+printf '#!/bin/bash\nsleep 45\n'      > "$J/hooks.d/20-hangs.sh"
+printf '#!/bin/bash\nexit 3\n'        > "$J/hooks.d/30-fails.sh"
+printf '#!/bin/bash\nexit 0\n'        > "$J/hooks.d/40-not-exec.sh"
+chmod +x "$J/hooks.d/10-log.sh" "$J/hooks.d/20-hangs.sh" "$J/hooks.d/30-fails.sh"
+: > "$SB/hookargs.log"
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+echo $(( $(date +%s) - 300 )) > "$HOME/.claude/jarvis/state/start/s1"
+echo 4 > "$HOME/.claude/jarvis/state/subs/s1"
+hook s1 alpha done
+wait_for 'done alpha' "$SB/hookargs.log" 30
+grep -q 'done alpha 300:4 1' "$SB/hookargs.log"; check $? "the extension got mode, name, extra and ordinal" "$(cat "$SB/hookargs.log")"
+# And the next announcement still happens, despite the hanging hook.
+: > "$AUDIT"
+hook s1 alpha error
+wait_for SAY_START "$AUDIT" 30; check $? "a hanging extension does not stall the queue"
+rm -rf "$J/hooks.d"
+
 # ---------------------------------------------------------------- teardown
 echo
 pkill -f 'jarvis/speaker.sh' 2>/dev/null

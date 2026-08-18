@@ -157,7 +157,7 @@ case "$MODE" in
 
   permission|approve)               # Notification / permission_prompt
     mark_active
-    printf '%s|%s|0\n' "$NOW" "$NAME" > "$S/pending/$KEY"
+    printf '%s|%s|0|0\n' "$NOW" "$NAME" > "$S/pending/$KEY"
     enqueue 0 approve "" ;;
 
   idle)                             # Notification / idle_prompt

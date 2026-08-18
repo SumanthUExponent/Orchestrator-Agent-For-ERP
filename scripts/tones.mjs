@@ -54,6 +54,10 @@ const MOTIFS = {
   approve: { gain: 0.85, notes: [[4, 0], [4, 0.13], [4, 0.26]], transpose: true },
   nag:     { gain: 0.95, notes: [[7, 0], [7, 0.10], [7, 0.20]], transpose: true },
   err:     { gain: 1.00, notes: [[3, 0], [-4, 0.16]], dark: true, transpose: false },
+  // Escalation: a session blocked long enough that the nags have run out. Five taps,
+  // the loudest thing in the set, alternating high and low so it cannot be mistaken
+  // for any of the others. It should be mildly annoying — that is its function.
+  escalate: { gain: 1.00, notes: [[12, 0], [5, 0.11], [12, 0.22], [5, 0.33], [12, 0.44]], transpose: false },
   idle:    { gain: 0.38, notes: [[0, 0], [0, 0.14]], transpose: true },
   tick:    { gain: 0.28, notes: [[7, 0]], transpose: true },
   // High and quiet, not low and quiet. At -5 semitones this sat at 783Hz with 84% of

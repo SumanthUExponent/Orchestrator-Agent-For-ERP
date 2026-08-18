@@ -6,6 +6,7 @@
 #   test              walk every alert type, chime and speech, as it really fires
 #   chimes            audition every motif back to back, and the four session pitches
 #   demo              narrated simulation of four parallel sessions, end to end
+#   report            speak where every session stands right now
 #   log [n]           the last n announcements
 #   mute <minutes> / unmute
 #   reset             clear all state (orphan daemons stand down on their own)
@@ -28,22 +29,21 @@ running() {
   [ -n "$p" ] && kill -0 "$p" 2>/dev/null && { echo "$p"; return 0; }
   return 1
 }
-# Daemon births, from the daemon's own ledger. A duplicate that spawned and died
-# between two samples is invisible to any point-in-time check, but it cannot hide
-# from a count of births.
+# The invariant is not "one daemon has ever started" — the ledger spans every
+# generation, so on a machine that has been up for a week that number means nothing.
+# It is "two were never alive AT THE SAME TIME". Replaying the ledger as a running
+# count answers exactly that, and it stays true across restarts.
 births() { local n; n=$(grep -c ' start$' "$J/run/daemons.log" 2>/dev/null); echo "${n:-0}"; }
+max_concurrent() {
+  awk '$3=="start"{c++} $3=="exit"{c--} c>m{m=c} END{print m+0}' "$J/run/daemons.log" 2>/dev/null || echo 0
+}
 
-# Is this voice actually installed? Neither obvious test works:
-#   say -v X -o /dev/null "t"   fails with -241 for EVERY voice, valid or not
-#   say -v X -o file.aiff "t"   succeeds for a voice that does not exist, because
-#                               `say` silently falls back to the system default
-# So a typo in config.sh yields an American voice, no error anywhere, and nothing
-# to grep for. The name has to be matched against the installed list instead.
-# The locale column is the only reliable delimiter — voice names contain both
-# spaces and parentheses ("Eddy (Chinese (China mainland))"), and the gap before
-# the locale is sometimes a single space.
-voice_list() { say -v '?' 2>/dev/null | sed -E 's/ +[a-z]{2}(_[A-Z]{2})? +#.*//'; }
-voice_exists() { voice_list | grep -qxF "$1"; }
+# Neither obvious test works: `say -v X -o /dev/null` fails with -241 for EVERY voice,
+# and `say -v X -o file.aiff` SUCCEEDS for one that does not exist, because say falls
+# back to the default. So an exit code can never validate a voice name.
+# Enumeration lives in platform.sh — see the note there on why an exit code cannot
+# validate a voice name.
+voice_exists() { jv_voice_exists "$1"; }
 
 case "${1:-status}" in
   status)
@@ -111,6 +111,19 @@ case "${1:-status}" in
       ck 1 "tones: none generated — run: node scripts/orchestrator.mjs voice --apply"
     fi
 
+    if [ -n "${JARVIS_VOICES:-}" ]; then
+      ( export JARVIS_LIB=1; . "$J/speaker.sh"
+        i=1; while [ "$i" -le 4 ]; do
+          v="JV_V$i"; got="${!v-}"
+          want=$(printf '%s' "$JARVIS_VOICES" | cut -d'|' -f"$i")
+          [ -z "$want" ] && want="(wraps)"
+          if [ -n "$got" ] && [ "$got" = "$want" ]; then echo "  ok    session $i voice: $got"
+          elif [ -n "$got" ]; then echo "  note  session $i voice: $got  (wanted \"$want\", not installed)"
+          else echo "  FAIL  session $i voice: unresolved"; fi
+          i=$(( i + 1 ))
+        done )
+    fi
+
     if [ "${JV_OS:-}" = macos ]; then
       V="${JARVIS_VOICE:-Daniel}"
       if voice_exists "$V"; then
@@ -129,15 +142,53 @@ case "${1:-status}" in
     if p=$(running); then ck 0 "speaker running (pid $p)"; else ck 0 "speaker idle (starts on demand)"; fi
     # The lock's whole purpose. If two ever started, the mutex is broken and
     # parallel sessions will talk over each other again.
-    b=$(births)
-    if [ "$b" -le 1 ]; then ck 0 "daemon births this generation: $b (lock holding)"
-    else ck 1 "$b daemons have started — the lock is not holding; report this"; fi
+    m=$(max_concurrent); b=$(births)
+    if [ "${m:-0}" -le 1 ]; then ck 0 "lock holding — never more than 1 daemon at once (across $b start${b:+s})"
+    else ck 1 "$m daemons were alive simultaneously — the lock is NOT holding; report this"; fi
     echo
     if [ "$fail" = 0 ]; then echo "Healthy. New sessions will speak; already-open ones need a restart."
     else echo "$fail problem(s). Scripts and hooks: node scripts/orchestrator.mjs voice --apply --force"
          echo "                 Voice: set JARVIS_VOICE in ~/.claude/jarvis/config.sh to an installed name"; fi
     [ "$fail" = 0 ] && exit 0 || exit 1
     ;;
+
+  report)
+    # A spoken situation report, on demand. The announcements tell you what just
+    # CHANGED; this tells you where everything stands, which is the question you
+    # actually have after twenty minutes away from the desk.
+    export JARVIS_LIB=1
+    . "$J/speaker.sh"
+    now=$(date +%s)
+    n=$(ls "$S/active" 2>/dev/null | wc -l | tr -d ' ')
+    blocked=""; working=""; idle=""
+    join() { [ -z "$1" ] && printf '%s' "$2" || printf '%s, %s' "$1" "$2"; }
+    for f in "$S"/active/*; do
+      [ -e "$f" ] || continue
+      k=$(basename "$f"); IFS='|' read -r nm ord < "$f"
+      who=$(spoken "$nm")
+      st=$(cat "$S/start/$k" 2>/dev/null)
+      if [ -r "$S/pending/$k" ]; then
+        IFS='|' read -r pts pnm pn pe < "$S/pending/$k"
+        blocked=$(join "$blocked" "$who, blocked for $(dur $(( now - ${pts:-now} )))")
+      elif [ -n "$st" ]; then
+        working=$(join "$working" "$who, $(dur $(( now - st )))")
+      else
+        idle=$(join "$idle" "$who")
+      fi
+    done
+    case "$n" in
+      0) msg="Nothing running$SIR." ;;
+      1) msg="One session$SIR." ;;
+      *) msg="$n sessions$SIR." ;;
+    esac
+    # Blocked first, always. A report that buries the stopped session behind two
+    # working ones has reported everything and communicated nothing.
+    [ -n "$blocked" ] && msg="$msg Blocked: $blocked."
+    [ -n "$working" ] && msg="$msg Working: $working."
+    [ -n "$idle" ]    && msg="$msg Idle: $idle."
+    msg=$(printf '%s' "$msg" | tr -s ' ')
+    echo "$msg"
+    [ "${2:-}" = "--text" ] || jv_say "$msg" ;;
 
   log)
     tail -"${2:-25}" "$J/log" 2>/dev/null || echo "nothing announced yet" ;;
@@ -245,5 +296,5 @@ case "${1:-status}" in
       *) echo "Unsupported platform: $(uname -s)" ;;
     esac ;;
 
-  *) echo "usage: jarvisctl [status|doctor|test|chimes|demo|log [n]|mute <min>|unmute|reset|voices]"; exit 2 ;;
+  *) echo "usage: jarvisctl [status|doctor|report|test|chimes|demo|log [n]|mute <min>|unmute|reset|voices]"; exit 2 ;;
 esac

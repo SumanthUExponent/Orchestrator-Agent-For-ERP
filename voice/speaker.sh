@@ -20,9 +20,50 @@ mkdir -p "$Q" "$S/active" "$S/pending" 2>/dev/null
 
 SIR="${JARVIS_ADDRESS:-sir}"; [ -n "$SIR" ] && SIR=", $SIR"
 
+# Resolve one voice per session slot, ONCE. Four sessions in four different voices is a
+# stronger cue than four pitches of one voice: you recognise a voice without having to
+# remember what slot 3 sounded like.
+#
+# Resolved here rather than per announcement because validating a name costs a full
+# `say -v '?'` listing — and validating matters: `say` falls back to the US default for
+# a name it does not have, silently, so an uninstalled voice would give session 2 an
+# American accent with nothing anywhere to explain it.
+JV_V1=""; JV_V2=""; JV_V3=""; JV_V4=""
+resolve_voices() {
+  local want="${JARVIS_VOICES:-}" i=1 v
+  # Nothing configured: every slot uses the single voice, and there is nothing to
+  # validate. Skip the `say -v '?'` listing entirely — it is a process spawn on every
+  # daemon start to answer a question whose answer is already known, and it made the
+  # daemon a second slower to reach its first announcement.
+  if [ -z "$want" ]; then
+    JV_V1="${JARVIS_VOICE:-}"; JV_V2="$JV_V1"; JV_V3="$JV_V1"; JV_V4="$JV_V1"
+    return 0
+  fi
+  local rest="$want"
+  while [ "$i" -le 4 ]; do
+    v="${rest%%|*}"
+    case "$rest" in *\|*) rest="${rest#*|}" ;; *) rest="" ;; esac
+    [ -z "$v" ] && v="${JARVIS_VOICE:-}"
+    # Unavailable name -> the configured default. `doctor` reports which fell back.
+    jv_voice_exists "$v" || v="${JARVIS_VOICE:-}"
+    eval "JV_V$i=\"\$v\""
+    i=$(( i + 1 ))
+    [ -z "$rest" ] && rest="$want"
+  done
+}
+resolve_voices
+
+# voice_for <ordinal>
+voice_for() {
+  local o="${1:-1}" v
+  case "$o" in ''|*[!0-9]*) o=1 ;; esac
+  o=$(( (o - 1) % 4 + 1 ))
+  v="JV_V$o"; printf '%s' "${!v-}"
+}
+
 pick()    { local a=("$@"); printf '%s' "${a[$(( RANDOM % ${#a[@]} ))]}"; }
 nactive() { ls "$S/active" 2>/dev/null | wc -l | tr -d ' '; }
-speak()   { jv_say "$1"; }
+speak()   { jv_say "$1" "${SPEAK_VOICE:-}"; }
 banner()  { jv_notify "$1" "$2"; }
 
 # ---------------------------------------------------------------------- CHIMES
@@ -115,6 +156,9 @@ render() {
     { [ "$(nactive)" -eq 0 ] && mkdir "$J/run/farewell" 2>/dev/null; } || return 0
   fi
 
+  # The voice for this session slot, for as long as this announcement lasts.
+  local SPEAK_VOICE; SPEAK_VOICE=$(voice_for "$ord")
+
   # One line per announcement. This is what `jarvisctl log` shows and what the
   # concurrency tests assert against — the behaviour that matters is unobservable
   # otherwise, since the output is sound.
@@ -175,6 +219,15 @@ render() {
       fi
       banner "$name" "Approval required" ;;
 
+    escalate)
+      # The nags have run out and it is still blocked. This is the most expensive
+      # failure the whole layer exists to catch — a session that has been stopped for
+      # minutes while the others work — so it gets the loudest motif, a named duration,
+      # and a banner that stays on screen.
+      motif escalate 1
+      speak "$(spoken "$name") has been waiting $(dur "$extra")$SIR. [[slnc 200]] It is going nowhere without you."
+      banner "$name" "STILL BLOCKED - $(dur "$extra")" ;;
+
     nag)
       motif nag "$ord"
       speak "$(pick "$(spoken "$name") is still waiting$SIR." \
@@ -212,6 +265,18 @@ render() {
       motif bye 1
       speak "Goodbye$SIR." ;;
   esac
+
+  # Extension point. Anything executable in hooks.d gets the event after it has been
+  # announced: mode, session name, extra, ordinal. Backgrounded, output discarded, and
+  # its exit status ignored — a user script must never be able to stall or kill the
+  # daemon, because it would take every announcement down with it.
+  if [ -d "$J/hooks.d" ]; then
+    for h in "$J/hooks.d"/*; do
+      [ -f "$h" ] && [ -x "$h" ] || continue
+      ( "$h" "$mode" "$name" "$extra" "$ord" >/dev/null 2>&1 ) &
+    done
+  fi
+  return 0
 }
 
 # Re-announce sessions still blocked on approval. Driven from the idle loop, so it
@@ -223,15 +288,23 @@ check_nags() {
   now=$(date +%s)
   for f in "$S"/pending/*; do
     [ -e "$f" ] || continue
-    IFS='|' read -r ts nm n < "$f"
+    IFS='|' read -r ts nm n esc < "$f"
     case "$ts" in ''|*[!0-9]*) continue ;; esac
     case "$n"  in ''|*[!0-9]*) n=0 ;; esac
+    case "$esc" in ''|*[!0-9]*) esc=0 ;; esac
     age=$(( now - ts ))
+    ord=1
+    [ -r "$S/active/$(basename "$f")" ] && { read -r line < "$S/active/$(basename "$f")"; ord=${line##*|}; }
+
     if [ "$age" -ge $(( ${JARVIS_NAG_AFTER:-70} * (n + 1) )) ] && [ "$n" -lt "${JARVIS_NAG:-2}" ]; then
-      printf '%s|%s|%s\n' "$ts" "$nm" "$(( n + 1 ))" > "$f"
-      ord=1
-      [ -e "$S/active/$(basename "$f")" ] && { read -r line < "$S/active/$(basename "$f")"; ord=${line##*|}; }
+      printf '%s|%s|%s|%s\n' "$ts" "$nm" "$(( n + 1 ))" "$esc" > "$f"
       printf 'nag|%s||%s|%s|%s\n' "$nm" "$now" "$ord" "$(basename "$f")" > "$Q/1-$now-$$-$RANDOM"
+    elif [ "$esc" = 0 ] && [ "${JARVIS_ESCALATE:-300}" != "0" ] && [ "$age" -ge "${JARVIS_ESCALATE:-300}" ]; then
+      # Once only, and only after the nags are spent. Repeating an escalation turns the
+      # most important alert in the set into background noise, which is the one thing
+      # it cannot afford to become.
+      printf '%s|%s|%s|1\n' "$ts" "$nm" "$n" > "$f"
+      printf 'escalate|%s|%s|%s|%s|%s\n' "$nm" "$age" "$now" "$ord" "$(basename "$f")" > "$Q/0-$now-$$-$RANDOM"
     fi
   done
 }

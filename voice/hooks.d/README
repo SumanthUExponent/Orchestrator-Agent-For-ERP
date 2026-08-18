@@ -1,0 +1,16 @@
+Anything executable in this directory is run after each announcement, with:
+
+  $1  mode      boot | done | tick | approve | nag | escalate | idle | sub | err | bye
+  $2  session   the project name
+  $3  extra     done: "<elapsed>:<specialists>"   escalate: seconds blocked   else empty
+  $4  ordinal   the session slot, 1-4
+
+It is backgrounded, its output is discarded and its exit status ignored — a script here
+must never be able to stall the daemon, because that would take every announcement with
+it. Keep it fast and make it fail quietly.
+
+Example: flash a lamp when a session blocks on approval.
+
+    #!/bin/bash
+    [ "$1" = approve ] || [ "$1" = escalate ] || exit 0
+    curl -s -m 2 -X PUT http://hue.local/api/KEY/lights/3/state -d '{"alert":"lselect"}'
