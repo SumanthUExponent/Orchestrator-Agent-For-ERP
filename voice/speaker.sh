@@ -417,6 +417,10 @@ while :; do
     absorbed=0
     while [ "$absorbed" -lt 5 ]; do
       sleep 1.2
+      # Ownership is re-checked HERE as well as at the top of the loop. The debounce
+      # can hold this for six seconds, and an orphan that keeps announcing for six
+      # seconds after being replaced is exactly the overlap the lock exists to prevent.
+      [ "$(cat "$J/run/lock/pid" 2>/dev/null)" = "$$" ] || exit 0
       newest=""
       for g in "$Q"/[0-9]*; do
         [ -e "$g" ] || continue

@@ -78,12 +78,19 @@ jv_say_external() {
   # Substituted rather than eval'd with the text inline, so quotes and apostrophes in
   # an announcement cannot break the command or run anything unintended.
   cmd=${JARVIS_TTS_CMD//\{out\}/$w}
-  JV_TTS_TEXT="$t" cmd=${cmd//\{text\}/\$JV_TTS_TEXT}
-  if JV_TTS_TEXT="$t" eval "$cmd" >/dev/null 2>&1 && [ -s "$w" ]; then
-    jv_play_now "$w"; rm -f "$w"; return 0
+  # {text} becomes a REFERENCE to an exported variable, never the text itself. An
+  # announcement is ordinary English — "that's everything, sir" — and interpolating it
+  # into a command line would let an apostrophe break the command, or worse.
+  cmd=${cmd//\{text\}/\$JV_TTS_TEXT}
+  export JV_TTS_TEXT="$t"
+  local ok=1
+  if eval "$cmd" >/dev/null 2>&1 && [ -s "$w" ]; then
+    jv_play_now "$w"
+    ok=0
   fi
+  unset JV_TTS_TEXT
   rm -f "$w"
-  return 1
+  return "$ok"
 }
 
 jv_say() {

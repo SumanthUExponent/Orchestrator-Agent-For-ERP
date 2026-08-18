@@ -175,9 +175,13 @@ chk "$rc" "a broken engine falls back instead of erroring (rc=$rc)"
 rc=0; [ -z "$out" ] || rc=1
 chk "$rc" "and stays quiet on stdout" "$out"
 
-rc=0; ( . "$J/config.sh"; . "$J/platform.sh"
-        JARVIS_TTS_CMD="/tmp/x --output {out} {text}"
-        case "$(jv_backend_say)" in *JARVIS_TTS_CMD*) exit 0 ;; *) exit 1 ;; esac ) || rc=1
+rc=0
+(
+  . "$J/config.sh"; . "$J/platform.sh"
+  # shellcheck disable=SC2034  # read by jv_backend_say, inside platform.sh
+  JARVIS_TTS_CMD="/tmp/x --output {out} {text}"
+  case "$(jv_backend_say)" in *JARVIS_TTS_CMD*) exit 0 ;; *) exit 1 ;; esac
+) || rc=1
 chk "$rc" "doctor reports the external engine, not the built-in voice"
 
 # --------------------------------------------------------------------- names
