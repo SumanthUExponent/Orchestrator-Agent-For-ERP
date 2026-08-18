@@ -473,6 +473,80 @@ hook s1 alpha error
 rc=0; wait_for SAY_START "$AUDIT" 30 || rc=1; check "$rc" "a hanging extension does not stall the queue"
 rm -rf "$J/hooks.d"
 
+# ---------------------------------------------------------------- T17
+echo
+echo "T17 specialists' spoken summaries reach the announcement"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+# Every orchestrator agent is required to end with a VOICE: line. Stop and SubagentStop
+# both carry last_assistant_message, so the clause is picked up from the hook payload —
+# no transcript parsing, no model call, nothing leaving the machine.
+say_hook() { printf '%s' "$2" | JARVIS_SESSION_KEY=s1 JARVIS_SESSION_NAME=alpha "$J/jarvis.sh" "$1" >/dev/null 2>&1; }
+say_hook begin '{}'
+say_hook subagent '{"agent_type":"data-model-architect","last_assistant_message":"Long design text.\n\nVOICE: Vendor Audit schema is in\n"}'
+rc=0; grep -qF 'Vendor Audit schema is in' "$HOME/.claude/jarvis/state/notes/s1" || rc=1
+check "$rc" "a specialist's clause is captured" "$(cat "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null)"
+
+say_hook subagent '{"agent_type":"code-reviewer","last_assistant_message":"No marker at all in this reply."}'
+n=$(wc -l < "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null | tr -d ' ')
+rc=0; [ "$n" = 1 ] || rc=1; check "$rc" "an agent that emits none adds nothing ($n note)"
+
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+rc=0; wait_for 'Vendor Audit schema is in' "$AUDIT" 40 || rc=1
+check "$rc" "and it is spoken on completion" "$(grep SAY_START "$AUDIT" | tail -1)"
+# The count only ever existed because there was nothing better to say.
+rc=0; grep -q 'specialists' "$AUDIT" && rc=1
+check "$rc" "the specialist count is dropped when there is a summary"
+quiet 40
+
+echo
+echo "T17b a new turn starts with no inherited summary"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook subagent '{"last_assistant_message":"VOICE: stale note from the previous turn"}'
+say_hook begin '{}'
+rc=0; [ -s "$HOME/.claude/jarvis/state/notes/s1" ] && rc=1
+check "$rc" "notes cleared on the next prompt" "$(cat "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null)"
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{}'
+quiet 40
+rc=0; grep -q 'stale note' "$AUDIT" && rc=1
+check "$rc" "and a stale clause is never spoken" "$(grep SAY_START "$AUDIT")"
+
+echo
+echo "T17c a turn with no summary still announces"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+echo $(( $(date +%s) - 200 )) > "$HOME/.claude/jarvis/state/start/s1"
+say_hook 'done' '{"last_assistant_message":"I fixed it."}'
+rc=0; wait_for SAY_START "$AUDIT" 40 || rc=1
+check "$rc" "falls back to the short form rather than going silent"
+quiet 40
+
+echo
+echo "T17d agent output is not a trusted input"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: done | $(touch '"$SB"'/PWNED) and `id` \"q\" /etc/passwd"}'
+note=$(cat "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null)
+rc=0; [ -e "$SB/PWNED" ] && rc=1
+check "$rc" "a command substitution in a clause is not executed"
+case "$note" in *'|'*|*'$'*|*'`'*|*'"'*|*'/'*) bad "shell metacharacters are stripped" "kept: $note" ;;
+  *) ok "shell metacharacters are stripped (became: $note)" ;; esac
+
+echo
+echo "T17e a runaway clause cannot monopolise the speaker"
+fresh
+printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
+say_hook begin '{}'
+long=$(node -e 'process.stdout.write("word ".repeat(200))')
+say_hook subagent "{\"last_assistant_message\":\"VOICE: $long\"}"
+note=$(cat "$HOME/.claude/jarvis/state/notes/s1" 2>/dev/null); len=${#note}
+rc=0; [ "$len" -le 140 ] || rc=1
+check "$rc" "capped at 140 characters (got $len)"
+
 # ---------------------------------------------------------------- teardown
 echo
 stop_daemon

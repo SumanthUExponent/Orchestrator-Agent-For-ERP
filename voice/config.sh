@@ -78,6 +78,24 @@ JARVIS_SUBAGENT="${JARVIS_SUBAGENT:-chime}"
 # worktree prefix) is dropped.
 JARVIS_NAMES="${JARVIS_NAMES:-}"
 
+# Speak what the agents actually DID, rather than only that a turn ended.
+#
+# Every orchestrator agent is required to end its output with a line reading
+# "VOICE: <one clause>", and those clauses are collected and read out on completion:
+#
+#   without:  "Done, sir. Six specialists, four minutes."          3.5s
+#   with:     "Vendor Audit schema is in, sir. Four minutes."       2.8s
+#
+# The count of specialists disappears when there is a summary — it only ever existed
+# because there was nothing better to say. 0 disables and restores the short form.
+JARVIS_SUMMARY="${JARVIS_SUMMARY:-1}"
+
+# How many of those clauses to speak. One, by default, and deliberately: a swarm run can
+# dispatch a dozen, each clause costs roughly two seconds of speech, and `Stop` fires
+# after every turn. Two is a reasonable choice if you want more detail and can live with
+# announcements around four seconds instead of under three.
+JARVIS_SUMMARY_MAX="${JARVIS_SUMMARY_MAX:-1}"
+
 # Count the specialists a turn dispatched and mention it in the completion, so
 # "six specialists, four minutes" distinguishes a swarm run from a one-liner.
 JARVIS_COUNT_SUBAGENTS="${JARVIS_COUNT_SUBAGENTS:-1}"

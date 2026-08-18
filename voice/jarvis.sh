@@ -16,7 +16,7 @@ J="$HOME/.claude/jarvis"
 [ -f "$J/config.sh" ] && . "$J/config.sh"
 
 Q="$J/queue"; S="$J/state"
-mkdir -p "$Q" "$S/active" "$S/start" "$S/pending" "$S/subs" "$J/run" 2>/dev/null
+mkdir -p "$Q" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" "$J/run" 2>/dev/null
 
 MODE="$1"
 
@@ -34,6 +34,42 @@ case "$IN" in
     SID=${SID%%\"*}
     ;;
 esac
+
+# The spoken summary an agent left for us.
+#
+# Stop and SubagentStop both carry `last_assistant_message` — the agent's final text —
+# and the documentation is explicit that this is what hooks should read, because the
+# transcript file is written asynchronously and lags the conversation.
+#
+# Only the marker line is wanted, the marker is ASCII, and a newline inside a JSON
+# string is the two characters backslash-n. So the line is isolated by hand rather than
+# by parsing JSON: a `node` or `python3` spawn on a hook that fires after every turn and
+# every specialist is a cost paid constantly for a value already in reach.
+#
+# The result is filtered to an ALLOWLIST, not escaped. It is about to be handed to a
+# speech synthesiser and carried through a pipe-delimited queue line, and an agent's
+# output is not a trusted input — so anything that is not plain speech is dropped.
+voice_note() {
+  case "$IN" in *VOICE:*) ;; *) return 1 ;; esac
+  # One sed, because matching a literal backslash in a bash glob is ambiguous — `\\n`
+  # inside a pattern reads as an escaped `n`, so an earlier attempt truncated at the
+  # first letter n instead of at the encoded newline. sed's semantics here are exact.
+  #
+  # Then an ALLOWLIST, not an escape. This is about to be read aloud and carried through
+  # a pipe-delimited queue line, and an agent's output is not a trusted input, so
+  # anything that is not plain speech is dropped rather than quoted.
+  local v
+  v=$(printf '%s' "$IN" \
+      | sed -n '/VOICE:/{ s/.*VOICE:[[:space:]]*//; s/\\n.*//; s/".*//; p; }' \
+      | tail -1 \
+      | tr -cd "A-Za-z0-9 .,;:'-" \
+      | tr -s ' ')
+  v="${v# }"; v="${v% }"
+  # A runaway line would otherwise be read out for a minute.
+  v="${v:0:140}"
+  [ ${#v} -ge 3 ] || return 1
+  printf '%s' "$v"
+}
 
 NAME="${JARVIS_SESSION_NAME:-$(basename "$PWD")}"
 if [ -n "${JARVIS_SESSION_KEY:-}" ]; then KEY="$JARVIS_SESSION_KEY"
@@ -99,7 +135,7 @@ ordinal() {
 # Priority leads the filename so `sort` orders the queue: 0 urgent, 1 nag, 4+
 # routine. The epoch is a fixed 10 digits, so lexical sort is chronological.
 enqueue() {
-  printf '%s|%s|%s|%s|%s|%s\n' "$2" "$NAME" "$3" "$NOW" "$(ordinal)" "$KEY" \
+  printf '%s|%s|%s|%s|%s|%s|%s\n' "$2" "$NAME" "$3" "$NOW" "$(ordinal)" "$KEY" "${4:-}" \
     > "$Q/$1-$NOW-$$-$RANDOM" 2>/dev/null
 }
 
@@ -153,7 +189,7 @@ case "$MODE" in
   begin)                            # UserPromptSubmit — restart the clock
     mark_active
     echo "$NOW" > "$S/start/$KEY"
-    rm -f "$S/pending/$KEY" "$S/subs/$KEY" ;;
+    rm -f "$S/pending/$KEY" "$S/subs/$KEY" "$S/notes/$KEY" ;;
 
   done)                             # Stop
     # No "permission granted" event exists in Claude Code, so pending state is
@@ -167,8 +203,22 @@ case "$MODE" in
     [ "${JARVIS_COUNT_SUBAGENTS:-1}" = "1" ] && subs=$(cat "$S/subs/$KEY" 2>/dev/null)
     [ -z "$subs" ] && subs=0
     rm -f "$S/subs/$KEY"
+
+    # What to actually say. Specialist notes first; failing that, a marker the main
+    # thread left in its own final message.
+    SUMMARY=""
+    if [ "${JARVIS_SUMMARY:-1}" = "1" ]; then
+      if [ -s "$S/notes/$KEY" ]; then
+        max=${JARVIS_SUMMARY_MAX:-2}
+        SUMMARY=$(head -"$max" "$S/notes/$KEY" 2>/dev/null | tr '\n' ';' | sed 's/;$//; s/;/; /g')
+      else
+        SUMMARY=$(voice_note) || SUMMARY=""
+      fi
+    fi
+    rm -f "$S/notes/$KEY"
+
     if [ "$el" -lt "${JARVIS_MIN_SECONDS:-25}" ]; then enqueue 7 tick "$el"
-    else enqueue 5 'done' "$el:$subs"; fi ;;
+    else enqueue 5 'done' "$el:$subs" "$SUMMARY"; fi ;;
 
   permission|approve)               # Notification / permission_prompt
     mark_active
@@ -181,6 +231,12 @@ case "$MODE" in
   subagent|sub)                     # SubagentStop
     n=$(cat "$S/subs/$KEY" 2>/dev/null); [ -z "$n" ] && n=0
     echo $(( n + 1 )) > "$S/subs/$KEY"
+    # Whatever this specialist wanted said. Capped: a swarm run can dispatch a dozen,
+    # and a dozen clauses is a paragraph nobody asked to have read to them.
+    if note=$(voice_note); then
+      lines=$(wc -l < "$S/notes/$KEY" 2>/dev/null | tr -d ' '); [ -z "$lines" ] && lines=0
+      [ "$lines" -lt 8 ] && printf '%s\n' "$note" >> "$S/notes/$KEY"
+    fi
     case "${JARVIS_SUBAGENT:-chime}" in
       silent) exit 0 ;;
       speak)  enqueue 6 subspeak "$(( n + 1 ))" ;;
@@ -191,7 +247,7 @@ case "$MODE" in
     enqueue 0 err "" ;;
 
   end|bye)                          # SessionEnd
-    rm -f "$S/active/$KEY" "$S/start/$KEY" "$S/pending/$KEY" "$S/subs/$KEY"
+    rm -f "$S/active/$KEY" "$S/start/$KEY" "$S/pending/$KEY" "$S/subs/$KEY" "$S/notes/$KEY"
     enqueue 6 bye "" ;;
 
   *)

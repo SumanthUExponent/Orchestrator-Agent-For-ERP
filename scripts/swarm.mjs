@@ -159,6 +159,34 @@ Never finish with "done". Return these fields:
 ${handoffDoc}
 
 Structured fields, not an essay. The orchestrator reads these to decide what happens next; prose it has to parse is a failure of the protocol.
+
+## The spoken line — your LAST line, always
+
+End your output with exactly this, on its own line:
+
+\`\`\`
+VOICE: <one clause>
+\`\`\`
+
+A speech synthesiser reads it aloud to someone who is not looking at the screen, very
+often while three other sessions are running. That audience changes what a good summary
+is:
+
+- **One clause, under ten words.** Each word is roughly a fifth of a second of speech,
+  and the whole announcement has to land inside about three. Ten words spoken is already
+  longer than most people will wait to hear what changed.
+- **Say what CHANGED, not what you did.** "Vendor Audit schema is in, with three child
+  tables" — not "I have completed the data model design task as requested".
+- **No paths, no identifiers, no camelCase, no version numbers.** A file path read aloud
+  is unintelligible. Name the thing, not its location.
+- **Lead with the problem if there is one.** That is the part worth interrupting someone
+  for, and it is the reason this is spoken rather than written.
+- **Plain words only.** No markdown, no quotes, no pipe characters, no emoji.
+
+If you changed nothing, say that plainly: \`VOICE: nothing to change in the retrofit hooks\`.
+
+This line is not a courtesy. Without it the announcement falls back to "task complete",
+which tells the listener only that time passed.
 `;
 }
 
@@ -205,6 +233,9 @@ export function doctor({ root, readYaml, registry }) {
     if (!a.role) fail.push(`invalid: "${a.id}" has no role`);
     if (!a.tools.length) fail.push(`least privilege: "${a.id}" has no tools — it can do nothing`);
     if (!a.handoff.includes('handoff')) fail.push(`protocol: "${a.id}" omits the handoff field`);
+    // Without this the voice layer has nothing to say but "task complete", which
+    // reports only that time passed.
+    if (!a.handoff.includes('voice')) fail.push(`protocol: "${a.id}" omits the voice field — JARVIS would have nothing to announce`);
     if (!MODES.includes(a.mode)) fail.push(`invalid mode: "${a.id}" declares "${a.mode}", not one of ${MODES.join('|')}`);
     if (!TIERS.includes(a.model)) fail.push(`invalid tier: "${a.id}" declares model "${a.model}", not one of ${TIERS.join('|')}`);
     // `inherit` makes an agent silently as expensive as whatever model the session

@@ -158,9 +158,9 @@ spoken() {
   printf '%s' "${out# }"
 }
 
-# render <mode> <name> <extra> <ordinal>
+# render <mode> <name> <extra> <ordinal> [summary]
 render() {
-  local mode="$1" name="$2" extra="$3" ord="$4"
+  local mode="$1" name="$2" extra="$3" ord="$4" summary="${5:-}"
 
   # Resolve the once-only farewell BEFORE anything is logged. Closing a terminal fires
   # every session's SessionEnd, so four byes reach render and three of them are
@@ -178,7 +178,7 @@ render() {
   # One line per announcement. This is what `jarvisctl log` shows and what the
   # concurrency tests assert against — the behaviour that matters is unobservable
   # otherwise, since the output is sound.
-  printf '%s %-8s %-20s %s\n' "$(date +%H:%M:%S)" "$mode" "$name" "${extra:-—}" >> "$J/log" 2>/dev/null
+  printf '%s %-8s %-20s %-9s %s\n' "$(date +%H:%M:%S)" "$mode" "$name" "${extra:-—}" "${summary:-}" >> "$J/log" 2>/dev/null
   [ "$(wc -l < "$J/log" 2>/dev/null || echo 0)" -gt 500 ] && { tail -200 "$J/log" > "$J/log.t" 2>/dev/null && mv "$J/log.t" "$J/log"; }
 
   # Two registers, not one. Measured at rate 172, the original phrasings ran
@@ -213,16 +213,28 @@ render() {
       local crew=""
       [ "$subs" -ge 2 ] && crew=" $subs specialists,"
       motif 'done' "$ord"
-      if [ "$solo" = 1 ]; then
+      if [ -n "$summary" ]; then
+        # The summary IS the content, so the specialist count goes. That count only ever
+        # existed because there was nothing better to say than "time passed" — a run that
+        # can report "schema is in, all tests pass" does not need to also report that six
+        # agents were involved in it.
+        if [ "$solo" = 1 ]; then
+          speak "$summary$SIR. $(dur "$el")."
+        else
+          speak "$who: $summary$SIR. $(dur "$el")."
+        fi
+        banner "$name" "$summary  ($(dur "$el"))"
+      elif [ "$solo" = 1 ]; then
         speak "$(pick "Done$SIR.$crew $(dur "$el")." \
                       "Finished$SIR.$crew $(dur "$el")." \
                       "All done$SIR.$crew $(dur "$el").")"
+        banner "$name" "Complete - $(dur "$el")${crew:+ -$crew}"
       else
         speak "$(pick "$who done$SIR.$crew $(dur "$el")." \
                       "$who finished.$crew $(dur "$el")." \
                       "$who, all done.$crew $(dur "$el").")"
-      fi
-      banner "$name" "Complete - $(dur "$el")${crew:+ -$crew}" ;;
+        banner "$name" "Complete - $(dur "$el")${crew:+ -$crew}"
+      fi ;;
 
     approve)
       motif approve "$ord"
@@ -396,7 +408,7 @@ while :; do
   # `key` is unused but must be read: without it the trailing field would be appended
   # to `ord`, and the chime would land on the wrong session.
   # shellcheck disable=SC2034
-  IFS='|' read -r mode name extra born ord key <<< "$line"
+  IFS='|' read -r mode name extra born ord key summary <<< "$line"
 
   pri=${f%%-*}
   case "$born" in ''|*[!0-9]*) born=0 ;; esac
@@ -437,11 +449,11 @@ while :; do
       if [ -n "$nline" ]; then
         line="$nline"
         # shellcheck disable=SC2034
-        IFS='|' read -r mode name extra born ord key <<< "$line"
+        IFS='|' read -r mode name extra born ord key summary <<< "$line"
       fi
       absorbed=$(( absorbed + 1 ))
     done
   fi
 
-  render "$mode" "$name" "$extra" "$ord"
+  render "$mode" "$name" "$extra" "$ord" "$summary"
 done
