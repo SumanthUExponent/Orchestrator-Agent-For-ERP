@@ -15,14 +15,22 @@
     "pack": "node scripts/orchestrator.mjs pack",
     "doctor": "node scripts/orchestrator.mjs doctor",
     "install:skills": "node scripts/orchestrator.mjs install",
-    "test": "node --test tests/"
+    "install:voice": "node scripts/orchestrator.mjs voice",
+    "test": "node --test tests/",
+    "test:voice": "tests/voice-audio.sh && tests/voice-concurrency.sh",
+    "test:all": "node --test tests/ && tests/voice-audio.sh && tests/voice-concurrency.sh",
+    "test:audio": "tests/voice-audio.sh"
   },
   "comment": "No dependencies, deliberately. A tool that verifies a skill ecosystem should not require an npm install before it can run a security check.",
   "keywords": [
     "claude-code",
-    "skills",
-    "orchestration",
+    "erpnext",
     "frappe",
-    "erpnext"
+    "hooks",
+    "notifications",
+    "orchestration",
+    "skills",
+    "tts",
+    "voice"
   ]
 }

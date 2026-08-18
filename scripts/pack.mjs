@@ -29,11 +29,26 @@ const sh = (cmd, args, cwd) => {
   }
 };
 
-/** Bounded walk. Depth and count caps are the difference between a pack and a crawl. */
+/**
+ * Bounded walk. Depth and count caps are the difference between a pack and a crawl.
+ *
+ * Reports whether it stopped early. Without that flag a truncated scan rendered
+ * "DocTypes: none found" at a bench root holding thousands of them — the pack's whole
+ * job is to be the trusted shared context, so a confident wrong answer here is worse
+ * than no pack at all.
+ */
 function walk(root, { maxDepth = 5, maxFiles = 6000 } = {}) {
   const files = [];
+  let truncated = false;
   const rec = (dir, depth) => {
-    if (depth > maxDepth || files.length >= maxFiles) return;
+    if (depth > maxDepth) {
+      truncated = true;
+      return;
+    }
+    if (files.length >= maxFiles) {
+      truncated = true;
+      return;
+    }
     let entries = [];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -46,15 +61,18 @@ function walk(root, { maxDepth = 5, maxFiles = 6000 } = {}) {
       const rel = path.relative(root, full).split(path.sep).join('/');
       if (e.isDirectory()) rec(full, depth + 1);
       else files.push(rel);
-      if (files.length >= maxFiles) return;
+      if (files.length >= maxFiles) {
+        truncated = true;
+        return;
+      }
     }
   };
   rec(root, 0);
-  return files;
+  return { files, truncated };
 }
 
 export function collect(cwd = process.cwd()) {
-  const files = walk(cwd);
+  const { files, truncated } = walk(cwd);
   const isRepo = sh('git', ['rev-parse', '--is-inside-work-tree'], cwd) === 'true';
 
   // A Frappe app is a directory with hooks.py. That is the definition the framework
@@ -81,6 +99,7 @@ export function collect(cwd = process.cwd()) {
   return {
     cwd,
     fileCount: files.length,
+    truncated,
     apps,
     doctypes,
     reports,
@@ -107,7 +126,10 @@ function findBenchRoot(start) {
   return null;
 }
 
-const list = (label, arr) => (arr.length ? `- **${label}** (${arr.length}): ${arr.slice(0, CAP).join(', ')}${arr.length > CAP ? ` … +${arr.length - CAP} more` : ''}` : `- **${label}**: none found`);
+const list = (label, arr, truncated) =>
+  arr.length
+    ? `- **${label}** (${arr.length}${truncated ? '+, scan truncated' : ''}): ${arr.slice(0, CAP).join(', ')}${arr.length > CAP ? ` … +${arr.length - CAP} more` : ''}`
+    : `- **${label}**: ${truncated ? 'UNKNOWN — scan hit its limit before reaching them' : 'none found'}`;
 
 export function render(cwd = process.cwd()) {
   const p = collect(cwd);
@@ -129,7 +151,15 @@ export function render(cwd = process.cwd()) {
   }
   out.push(`- **Bench**: ${p.benchRoot ? `available at \`${p.benchRoot}\`` : 'none found — do not recommend bench commands'}`);
   out.push(`- **Tests present**: ${p.hasTests ? 'yes' : 'no'}`);
-  out.push('', '## Frappe surface', list('Apps', p.apps), list('DocTypes', p.doctypes), list('Reports', p.reports), list('Pages', p.pages));
+  if (p.truncated) {
+    out.push(
+      '',
+      `> **Scan truncated.** The walk stopped at its depth/file limit, so the lists below are`,
+      `> incomplete. Treat an empty list as UNKNOWN, not as absent. Re-run \`pack\` against a`,
+      `> narrower root (a single app rather than the bench) for a complete picture.`
+    );
+  }
+  out.push('', '## Frappe surface', list('Apps', p.apps, p.truncated), list('DocTypes', p.doctypes, p.truncated), list('Reports', p.reports, p.truncated), list('Pages', p.pages, p.truncated));
   if (p.git && p.git.recent.length) {
     out.push('', '## Recently touched (last 8 commits)', ...p.git.recent.map((f) => `- ${f}`));
   }

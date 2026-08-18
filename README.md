@@ -129,6 +129,8 @@ node scripts/orchestrator.mjs install              # dry run — shows the plan,
 node scripts/orchestrator.mjs install --apply      # install skills AND the 45 agents
 node scripts/orchestrator.mjs health               # verify skills
 node scripts/orchestrator.mjs doctor               # verify the swarm
+
+node scripts/orchestrator.mjs voice --apply        # optional: give every session a voice
 ```
 
 Skills land in `~/.claude/skills`, agents in `~/.claude/agents` (override with `CLAUDE_SKILLS_DIR` / `CLAUDE_AGENTS_DIR`).
@@ -145,6 +147,107 @@ node scripts/orchestrator.mjs install --apply --external
 
 Those are **not vendored** — they are other people's work under their own licences, resolved from source so upstream fixes reach you.
 
+## The voice layer
+
+Optional, and the reason it exists is parallelism. Running four sessions at once, the
+expensive failure is not a slow agent — it is a session sitting silently on a
+permission prompt while the other three work. You find out ten minutes later.
+
+`voice --apply` installs a J.A.R.V.I.S.-style butler that announces what every
+session is doing, so the terminal does not have to be watched:
+
+```bash
+node scripts/orchestrator.mjs voice          # dry run — shows every hook it will register
+node scripts/orchestrator.mjs voice --apply
+jarvisctl doctor                             # verify
+jarvisctl test                               # hear every alert
+```
+
+macOS only — it is built on `say`, `afplay` and `osascript`.
+
+**Nothing speaks from inside a hook.** That is the whole architecture. Two `say`
+calls on macOS do not queue, they play at once, so four sessions announcing
+themselves become four voices at once and no information. Instead the hook writes
+one queue file and exits in milliseconds; a single daemon holding an exclusive lock
+drains the queue and is the only process in the system that speaks.
+
+What that buys, beyond not overlapping:
+
+| Behaviour | Why |
+|---|---|
+| Blocked-on-approval jumps the queue | Priority leads the filename, so a stuck session is heard before a backlog of completions |
+| Nags every 70s while still blocked | No hook fires when a permission prompt goes unanswered, so the daemon re-checks |
+| Turns under 25s get a tick, not a sentence | `Stop` fires after **every** turn. Un-gated, asking the time is announced as a completed task |
+| Six completions collapse to one | A burst is debounced 1.2s, then the newest is spoken and the rest deleted |
+| Completions older than 50s are dropped | An announcement 90s late is noise, not information |
+| Session name spoken only when 2+ are live | With one session, "frappe-bench, finished" is padding; with four it is the message |
+| Each session gets its own chime pitch | Transposed in start order, so you know *which* session before the sentence gets there |
+| Two sessions in one directory stay distinct | Keyed on `session_id`, not `$PWD` |
+
+It is swarm-aware. `SubagentStop` fires once per specialist, so a batch of four would
+be four announcements — speech is therefore **not** the default for subagents. They
+chime, and the count is carried into the completion instead: *"task complete, sir.
+Six specialists, four minutes."* One line that distinguishes a swarm run from a
+one-line edit. Set `JARVIS_SUBAGENT=silent|chime|speak` in
+`~/.claude/jarvis/config.sh` to change that.
+
+### The chimes are measured, not chosen
+
+The first cut layered pairs of macOS system sounds 160ms apart. Analysing the actual
+audio showed that was wrong three ways, none of them audible as a *bug* — it would
+just have sounded cheap:
+
+- **Blow + Hero** are 1.40s and 1.06s long with their energy in the same 300–1000 Hz
+  band. Offset by 160ms they produce a sustained chord, not two notes.
+- **Submarine over Submarine** and **Basso over Basso** are the same file played
+  twice 160ms apart, which is comb filtering. It sounds like a fault.
+- **Tink + Pop** are 34 Hz apart in dominant pitch — under a semitone, close enough
+  to beat against each other.
+
+So the chimes are now one percussive atom, pitch-sequenced into motifs. Intervals
+over a single atom are exact, the timbre stays constant, and the *shape* carries the
+meaning: completion rises, error falls on a darker atom, approval is three insistent
+taps at one pitch, because rhythm is identifiable where absolute pitch is not.
+
+Three other things measurement settled:
+
+| Finding | Change |
+|---|---|
+| At its natural pitch the atom puts **95%** of its energy in 300–1000 Hz — exactly where a male voice's first two formants live, so the chime masked the vowels of the first word | Transposed up to where that is **7%**, and the motif now waits out its own audible span so speech starts *after* it |
+| Measured RMS differs **4.6×** across the system sounds, so at one fixed volume the *error* chime came out quieter than the routine completion | Per-atom gain correction, then a per-category multiplier. `afplay` accepts a gain above 1.0, which is what makes matching possible rather than only attenuating |
+| Announcements ran **4.4–5.4s each**, and `Stop` fires after every turn | Two registers. Alone, "Done, sir. Four minutes." is 1.67s; the project name is only worth its 1.1–1.6s when there is more than one session to tell apart |
+
+`say` also mangles directory basenames: `wt_nst` is a worktree prefix plus an
+initialism, and it reads as one nonsense syllable. Names are now normalised —
+underscores and hyphens to spaces, the `wt` prefix dropped, and a short vowel-less
+token spelled out, so `wt_nst` becomes "N S T". `JARVIS_NAMES="wt_nst=the N S T tree"`
+overrides any of it.
+
+To judge all of this by ear rather than by table:
+
+```bash
+jarvisctl chimes     # every motif back to back, then the four session pitches
+jarvisctl test       # every alert as it really fires, chime and speech
+```
+
+```
+$ jarvisctl status
+Active sessions: 2
+  [1] frappe-bench             idle
+  [2] wt_nst                   working 0m27s  ** BLOCKED ON APPROVAL **
+Queued announcements: 0
+Speaker: running (pid 51749)
+```
+
+`jarvisctl` also has `doctor`, `log`, `mute <min>`, `unmute`, `reset` and `voices`.
+Everything is tunable in `config.sh`, which an upgrade will not overwrite.
+
+The installer **merges** into `settings.json` rather than replacing it: the
+orchestrator's own routing gate and context-pack hooks live in the same arrays, and
+clobbering them would disable the swarm while appearing to succeed. It is idempotent
+(matched on the command string, so a moved install self-heals), backs the file up
+first, writes atomically, and refuses to touch a `settings.json` it cannot parse.
+
 ## Commands
 
 | Command | Does |
@@ -157,7 +260,11 @@ Those are **not vendored** — they are other people's work under their own lice
 | `pack [dir]` | Deterministic Context Pack. No model involved, so it costs nothing to regenerate. |
 | `agents [--apply]` | Generate `agents/*.md` from the registry. |
 | `doctor` | Audit the agent roster. |
-| `npm test` | Run the routing and execution-plan regression suites (40 tests). |
+| `voice [--apply] [--force]` | Install the voice layer and its eight hooks. Dry run by default. |
+| `npm test` | Routing, execution-plan, installer and voice-installer suites (74 tests). |
+| `npm run test:audio` | Audio-design assertions: motif rate tables, name handling, phrase-length budgets (24 checks). |
+| `npm run test:voice` | The above plus the concurrency harness (28 checks, stubbed audio). |
+| `npm run test:all` | Everything. |
 
 ## Health check
 
@@ -208,13 +315,21 @@ scripts/plan.mjs           execution planner — skills to agents, batches, tier
 scripts/pack.mjs           deterministic context pack
 scripts/swarm.mjs          agent generation and roster audit
 scripts/install.mjs        installer
+scripts/voice.mjs          voice-layer installer and settings.json merge
+voice/jarvis.sh            hook entry point — enqueues and exits, never speaks
+voice/speaker.sh           the single drainer: one lock, one voice
+voice/jarvisctl            status, doctor, log, mute, reset, voices
+voice/config.sh            tunables; not overwritten by an upgrade
 skills/                    in-tree skills
-tests/                     routing and execution-plan regression suites
+tests/                     regression suites
+tests/voice-audio.sh       motif rate tables, name handling, phrase-length budgets
+tests/voice-concurrency.sh voice behaviour under genuine parallel load
 ```
 
 ## Status and limits
 
-Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, 40 passing regression tests.
+Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, the voice layer, 74 passing regression
+tests plus 52 audio and concurrency checks.
 
 Known gaps, stated plainly:
 
@@ -223,6 +338,17 @@ Known gaps, stated plainly:
 - **The seven human gates have never been exercised end to end.** They are declared and every agent is generated with the refusal text; no run has yet crossed one and been stopped.
 - **No debugging skill in-tree.** A bug report routes toward the server and quality categories, but there is no investigation specialist to route *to*. The taxonomy will not invent a category with no member.
 - **Version compatibility is declared, not enforced.** `package.json` carries a version; per-skill compatibility ranges are not yet checked at install time.
+- **The voice layer is measured, but not heard.** Motif intervals, loudness matching,
+  the speech-band clearance, phrase lengths, the single-daemon lock and all eight
+  hooks are asserted by tests and were driven live on macOS. What no measurement
+  settles is taste: whether a rising fourth reads as "done" to *you*, whether four
+  transpositions two semitones apart are far enough apart in practice, and whether
+  any of it carries over music at your volume. `jarvisctl chimes` auditions the lot;
+  the tables are at the top of `speaker.sh`.
+- **Nothing fires when a permission prompt is granted.** Claude Code has no such
+  event, so pending state is cleared on the next `Stop` or prompt submission
+  instead. The alternative — hooking `PostToolUse` — would spawn a process on every
+  single tool call to buy a small amount of precision.
 - **The scorer is untuned.** Weights and thresholds are reasoned defaults, not fitted to a corpus. They live in `routing.yaml` precisely so they can be adjusted without touching the engine.
 
 ## Licence
