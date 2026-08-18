@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Platform and speech assertions for the voice layer.
 #
 # The motif tables, tone synthesis and loudness ordering are asserted in
@@ -75,10 +75,10 @@ echo "P4  the Linux and Windows branches actually invoke something"
 # alternative is shipping a Linux path nobody has ever executed.
 STUB="$SB/stub"; mkdir -p "$STUB"
 for tool in espeak-ng spd-say paplay aplay notify-send powershell.exe wslpath; do
-  printf '#!/bin/bash\necho "%s $*" >> "%s/calls.log"\n' "$tool" "$SB" > "$STUB/$tool"
+  printf '#!/usr/bin/env bash\necho "%s $*" >> "%s/calls.log"\n' "$tool" "$SB" > "$STUB/$tool"
   chmod +x "$STUB/$tool"
 done
-printf '#!/bin/bash\nprintf "C:\\\\fake\\\\%%s" "$(basename "$2")"\n' > "$STUB/wslpath"; chmod +x "$STUB/wslpath"
+printf '#!/usr/bin/env bash\nprintf "C:\\\\fake\\\\%%s" "$(basename "$2")"\n' > "$STUB/wslpath"; chmod +x "$STUB/wslpath"
 
 probe() {  # probe <os> <call> -> the logged invocation
   : > "$SB/calls.log"
@@ -151,12 +151,37 @@ t "wt_nst"             "the N S T tree"  "wt_nst=the N S T tree"  # explicit ove
 # ------------------------------------------------------------------- lengths
 echo
 echo "L1  announcements stay short — Stop fires after EVERY turn"
-if [ "$JV_OS" != macos ]; then
-  skip "speech-duration budgets (needs a TTS engine that renders to file)"
+# Rendering speech to a file is the only way to measure it, and every platform does it
+# differently. Where it can be done the budgets are enforced for real; where it cannot,
+# the checks skip rather than pretending to pass.
+speech_len=""
+case "$JV_OS" in
+  macos) have say && have afinfo && speech_len=macos ;;
+  linux) have espeak-ng && speech_len=espeak ;;
+esac
+if [ -z "$speech_len" ]; then
+  skip "speech-duration budgets (no TTS engine here that renders to a file)"
 else
-  speech_len() { say -v "${JARVIS_VOICE:-Daniel}" -r "${JARVIS_RATE:-172}" -o "$SB/len.aiff" "$1" 2>/dev/null
-                 afinfo "$SB/len.aiff" 2>/dev/null | awk -F': ' '/estimated duration/{printf "%.2f", $2}'; }
-  budget() { local d; d=$(speech_len "$3"); awk -v d="$d" -v m="$2" 'BEGIN{exit (d<=m)?0:1}'; chk $? "$1 = ${d}s (budget ${2}s)"; }
+  measure() {
+    case "$speech_len" in
+      macos)
+        say -v "${JARVIS_VOICE:-Daniel}" -r "${JARVIS_RATE:-172}" -o "$SB/len.aiff" "$1" 2>/dev/null
+        afinfo "$SB/len.aiff" 2>/dev/null | awk -F': ' '/estimated duration/{printf "%.2f", $2}' ;;
+      espeak)
+        # espeak-ng speaks noticeably faster than macOS `say` at the same nominal wpm,
+        # so the budgets below are enforced against whatever THIS engine produces —
+        # the point is that an announcement stays short, not that two engines agree.
+        espeak-ng -s "${JARVIS_RATE:-172}" -w "$SB/len.wav" "$1" 2>/dev/null
+        node -e '
+          const fs=require("fs"),b=fs.readFileSync(process.argv[1]);
+          let p=12,dataLen=0,rate=b.readUInt32LE(24),bytes=b.readUInt32LE(28);
+          while(p<b.length-8){const id=b.toString("ascii",p,p+4),sz=b.readUInt32LE(p+4);
+            if(id==="data"){dataLen=sz;break} p+=8+sz+(sz%2)}
+          process.stdout.write((dataLen/(bytes||rate*2)).toFixed(2));
+        ' "$SB/len.wav" ;;
+    esac
+  }
+  budget() { local d; d=$(measure "$3"); awk -v d="$d" -v m="$2" 'BEGIN{exit (d<=m)?0:1}'; chk $? "$1 = ${d}s (budget ${2}s)"; }
   budget "done, solo, no crew " 2.2 "Done, sir. 4 minutes."
   budget "done, solo, swarm   " 3.4 "Done, sir. 6 specialists, 4 minutes."
   budget "approval, solo      " 1.8 "Your approval, sir."

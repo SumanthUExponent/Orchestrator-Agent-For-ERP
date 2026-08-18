@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # JARVIS hook entry point. Runs on EVERY hook event, so it must stay cheap.
 #
 # It does not speak. It writes one queue file and exits. Speaking from inside the

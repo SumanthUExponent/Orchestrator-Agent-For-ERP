@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # The single drainer. Exactly one instance runs, holding an exclusive lock, and it
 # is the only process in the system that calls `say`. That is the entire reason
 # this is a daemon and not a function: macOS does not queue concurrent `say`

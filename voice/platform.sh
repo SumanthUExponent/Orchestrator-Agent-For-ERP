@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Platform abstraction. Everything that touches the operating system lives here, so
 # speaker.sh contains no `say` and no `afplay` and never asks what OS it is on.
 #

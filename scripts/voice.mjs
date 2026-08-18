@@ -71,12 +71,27 @@ export function stripJarvis(hooks) {
   return removed;
 }
 
+/**
+ * The command Claude Code will execute for a hook.
+ *
+ * On Windows this cannot be the bare path. `path.join` produces
+ * `C:\Users\me\.claude\jarvis\jarvis.sh`, and that string fails twice over: cmd.exe
+ * cannot execute a .sh at all, and a shell that CAN would read the backslashes as
+ * escapes. So the path is written with forward slashes — which Git Bash, WSL and
+ * PowerShell all accept — and `bash` is named explicitly, which works whether the hook
+ * is handed to cmd.exe or to a shell.
+ */
+export function hookCommand(script, arg, platform = process.platform) {
+  if (platform === 'win32') return `bash "${script.replace(/\\/g, '/')}" ${arg}`;
+  return `"${script}" ${arg}`;
+}
+
 /** Merge our hooks into a settings object, in place. Idempotent by construction. */
-export function mergeHooks(settings, script) {
+export function mergeHooks(settings, script, platform = process.platform) {
   const hooks = settings.hooks || (settings.hooks = {});
   const removed = stripJarvis(hooks);
   for (const h of HOOKS) {
-    const entry = { type: 'command', command: `"${script}" ${h.arg}` };
+    const entry = { type: 'command', command: hookCommand(script, h.arg, platform) };
     if (h.timeout) entry.timeout = h.timeout;
     (hooks[h.event] || (hooks[h.event] = [])).push({ matcher: h.matcher, hooks: [entry] });
   }

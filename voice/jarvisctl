@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # jarvisctl — inspect and control the voice layer.
 #
 #   status            which sessions are live, how long, which are blocked

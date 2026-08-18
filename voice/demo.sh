@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # A narrated simulation of a full working session across four parallel Claude Code
 # sessions. Every event goes through the real hook and the real daemon — nothing is
 # faked except the wall-clock, which is compressed: elapsed times are written
@@ -65,8 +65,10 @@ cat <<INTRO
 
 INTRO
 sleep 2
+# Stop any running daemon through the pid it recorded in its own lock. `pkill` is in
+# procps, which minimal Linux images and Git Bash do not always ship.
+dp=$(cat "$J/run/lock/pid" 2>/dev/null); [ -n "$dp" ] && kill "$dp" 2>/dev/null
 "$J/jarvisctl" reset >/dev/null 2>&1
-pkill -f 'jarvis/speaker.sh' 2>/dev/null
 sleep 1
 
 # ---------------------------------------------------------------- morning

@@ -1,5 +1,7 @@
 # Orchestrator Agent for ERP
 
+[![ci](https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP/actions/workflows/ci.yml/badge.svg)](https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP/actions/workflows/ci.yml)
+
 A sub-agent swarm for [Claude Code](https://claude.com/claude-code), tuned for Frappe/ERPNext development.
 
 45 specialist agents across 9 divisions, coordinated by an orchestrator, policed by passive governance agents that audit the swarm itself, and paced by a control plane whose entire job is to convene less of it.

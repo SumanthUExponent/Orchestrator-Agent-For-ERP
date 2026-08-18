@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Concurrency harness for the voice layer.
 #
 # The interesting failures here are invisible to a unit test and inaudible to one
@@ -32,28 +32,34 @@ node "$REPO/scripts/orchestrator.mjs" voice --apply >/dev/null 2>&1 || { echo "i
 AUDIT="$SB/audit.log"
 : > "$AUDIT"
 
-# Sub-second timestamps. macOS `date` has no %N and $EPOCHREALTIME needs bash 5,
-# which macOS does not ship; perl is always present.
+# Sub-second timestamps, and every obvious source is missing somewhere: macOS `date`
+# has no %N, $EPOCHREALTIME needs bash 5 which macOS does not ship, and perl is absent
+# from minimal Linux images. Try each in turn and fall back to whole seconds — the
+# overlap check needs ordering, not precision, so a coarser clock still answers it.
 cat > "$SB/bin/now" <<'STUB'
-#!/bin/bash
-perl -MTime::HiRes -e 'printf "%.3f\n", Time::HiRes::time()'
+#!/usr/bin/env bash
+if [ -n "${EPOCHREALTIME:-}" ]; then printf '%s\n' "${EPOCHREALTIME/,/.}"; exit 0; fi
+if command -v perl >/dev/null 2>&1; then perl -MTime::HiRes -e 'printf "%.3f\n", Time::HiRes::time()'; exit 0; fi
+if command -v python3 >/dev/null 2>&1; then python3 -c 'import time;print("%.3f"%time.time())'; exit 0; fi
+n=$(date +%N 2>/dev/null)
+case "$n" in ''|*[!0-9]*|N) printf '%s.000\n' "$(date +%s)" ;; *) printf '%s.%s\n' "$(date +%s)" "${n:0:3}" ;; esac
 STUB
 
 cat > "$SB/bin/say" <<STUB
-#!/bin/bash
+#!/usr/bin/env bash
 echo "\$($SB/bin/now) SAY_START \$*" >> $AUDIT
 sleep 1.2
 echo "\$($SB/bin/now) SAY_END" >> $AUDIT
 STUB
 
 cat > "$SB/bin/afplay" <<STUB
-#!/bin/bash
+#!/usr/bin/env bash
 echo "\$($SB/bin/now) AFPLAY \$*" >> $AUDIT
 sleep 0.2
 STUB
 
 cat > "$SB/bin/osascript" <<STUB
-#!/bin/bash
+#!/usr/bin/env bash
 echo "\$($SB/bin/now) BANNER \$*" >> $AUDIT
 STUB
 
@@ -100,9 +106,19 @@ wait_for() {
   done
   return 1
 }
+# pkill is in procps, which minimal Linux images and Git Bash do not always ship. The
+# lock records the daemon's own pid, so asking it is both more portable and more precise
+# than matching a command line.
+stop_daemon() {
+  local p; p=$(cat "$J/run/lock/pid" 2>/dev/null)
+  [ -n "$p" ] && kill "$p" 2>/dev/null
+  command -v pkill >/dev/null 2>&1 && pkill -f 'jarvis/speaker.sh' 2>/dev/null
+  return 0
+}
+
 fresh() {
   mkdir -p "$J/run"
-  pkill -f 'jarvis/speaker.sh' 2>/dev/null
+  stop_daemon
   # Wait for the death to be RECORDED, not merely requested. bash defers a trap
   # until the current foreground command returns, so a daemon sitting in its
   # `sleep 0.5` poll writes its exit line up to half a second after the signal.
@@ -416,13 +432,13 @@ echo
 echo "T16 hooks.d extensions receive events and cannot break the daemon"
 fresh
 mkdir -p "$J/hooks.d"
-printf '#!/bin/bash\necho "$1 $2 $3 $4" >> "%s/hookargs.log"\n' "$SB" > "$J/hooks.d/10-log.sh"
+printf '#!/usr/bin/env bash\necho "$1 $2 $3 $4" >> "%s/hookargs.log"\n' "$SB" > "$J/hooks.d/10-log.sh"
 # A hook that hangs, one that fails, one that is not executable. None may affect the
 # announcements: a user script that could stall the drainer would take every future
 # announcement down with it.
-printf '#!/bin/bash\nsleep 45\n'      > "$J/hooks.d/20-hangs.sh"
-printf '#!/bin/bash\nexit 3\n'        > "$J/hooks.d/30-fails.sh"
-printf '#!/bin/bash\nexit 0\n'        > "$J/hooks.d/40-not-exec.sh"
+printf '#!/usr/bin/env bash\nsleep 45\n'      > "$J/hooks.d/20-hangs.sh"
+printf '#!/usr/bin/env bash\nexit 3\n'        > "$J/hooks.d/30-fails.sh"
+printf '#!/usr/bin/env bash\nexit 0\n'        > "$J/hooks.d/40-not-exec.sh"
 chmod +x "$J/hooks.d/10-log.sh" "$J/hooks.d/20-hangs.sh" "$J/hooks.d/30-fails.sh"
 : > "$SB/hookargs.log"
 printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
@@ -439,7 +455,7 @@ rm -rf "$J/hooks.d"
 
 # ---------------------------------------------------------------- teardown
 echo
-pkill -f 'jarvis/speaker.sh' 2>/dev/null
+stop_daemon
 sleep 0.3
 if [ "$VERBOSE" = 1 ]; then echo "--- audit log ---"; cat "$AUDIT"; echo; fi
 printf 'RESULT: %s passed, %s failed\n' "$PASS" "$FAIL"
