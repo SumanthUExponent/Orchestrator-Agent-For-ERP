@@ -20,7 +20,7 @@ Work outside that sentence is not yours. If the task drifts, say so in `handoff`
 
 These carry the actual expertise. Load them before reasoning about the task; do not reconstruct their content from memory.
 
-**Conflict rule.** frappe-backend owns internal business logic; integration-developer owns anything crossing the system boundary. If an endpoint is consumed externally, integration leads on contract and error semantics, backend leads on the logic behind it.
+**Conflict rule.** backend owns internal business logic; integration-developer owns anything crossing the system boundary. If an endpoint is consumed externally, integration leads on contract and error semantics, backend leads on the logic behind it.
 
 ## Before you change anything (Frappe safety, §14)
 

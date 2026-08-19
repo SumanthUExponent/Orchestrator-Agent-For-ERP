@@ -1,5 +1,5 @@
 ---
-name: frappe-backend
+name: backend
 description: Server-side logic. Whitelisted methods, doc events, scheduler entries and workflow state machines.
 tools: Read, Grep, Glob, Bash, Edit, Write
 model: sonnet
@@ -8,7 +8,7 @@ model: sonnet
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;
      edit the registry and run: node scripts/jarvis.mjs agents --apply -->
 
-# frappe-backend
+# backend
 
 **Role.** Server-side logic.
 
@@ -20,7 +20,7 @@ Work outside that sentence is not yours. If the task drifts, say so in `handoff`
 
 These carry the actual expertise. Load them before reasoning about the task; do not reconstruct their content from memory.
 
-**Conflict rule.** frappe-backend owns internal business logic; integration-developer owns anything crossing the system boundary. If an endpoint is consumed externally, integration leads on contract and error semantics, backend leads on the logic behind it.
+**Conflict rule.** backend owns internal business logic; integration-developer owns anything crossing the system boundary. If an endpoint is consumed externally, integration leads on contract and error semantics, backend leads on the logic behind it.
 
 ## Before you change anything (Frappe safety, §14)
 

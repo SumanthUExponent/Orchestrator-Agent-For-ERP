@@ -134,14 +134,14 @@ agents:
       authority, exceptions — and the business rules that must hold.
     produces: [process_map, actors, business_rules, exceptions]
 
-  frappe-architect:
+  architect:
     role: System design before any code exists
     mode: active
     model: opus
     tools: [Read, Grep, Glob, Bash]
     skills: [frappe-enterprise-patterns]
     owns: >
-      The overall shape of a change — which app owns what, module boundaries, and how
+      The overall shape of a change — which module owns what, service boundaries, and how
       the pieces integrate. Produces a design; writes no implementation.
     requires: [requirements-analyst]
     produces: [architecture, app_ownership, integration_points]
@@ -155,8 +155,8 @@ agents:
     owns: >
       The entity graph and its dependency order — linked DocTypes before referencers,
       child tables before parents, states before workflow — plus the permission matrix
-      per role. Designs the schema; frappe-data builds it.
-    requires: [frappe-architect]
+      per role. Designs the schema; schema-builder builds it.
+    requires: [architect]
     produces: [entity_graph, dependency_order, permission_matrix]
 
   impact-analyst:
@@ -171,7 +171,7 @@ agents:
       Writes nothing.
 
   # ═══════════════════════════════════════════════════ DEVELOPMENT (6)
-  frappe-data:
+  schema-builder:
     role: Schema implementation
     mode: active
     model: sonnet
@@ -180,35 +180,35 @@ agents:
     owns: Building the DocTypes, child tables, fields and fixtures the data model specifies.
     requires: [data-model-architect]
 
-  frappe-backend:
+  backend:
     role: Server-side logic
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
     skills: [frappe-api, frappe-hooks, frappe-workflow, frappe-app-dev]
     owns: Whitelisted methods, doc events, scheduler entries and workflow state machines.
-    requires: [frappe-data]
+    requires: [schema-builder]
     conflicts_with: [integration-developer]
     conflict_rule: >
-      frappe-backend owns internal business logic; integration-developer owns anything
+      backend owns internal business logic; integration-developer owns anything
       crossing the system boundary. If an endpoint is consumed externally, integration
       leads on contract and error semantics, backend leads on the logic behind it.
 
-  frappe-frontend:
-    role: Desk and portal surfaces
+  frontend:
+    role: User-facing surfaces
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
-    skills: [frappe-ui-page, frappe-web-page, frappe-web-forms, frappe-desk-customization, frappe-frontend-development]
+    skills: [frappe-ui-page, frappe-web-page, frappe-web-forms, frappe-desk-customization, frontend-development]
     uses_design_system: true
     owns: >
-      Implementing interfaces inside Frappe — desk pages, portal pages, web forms,
-      client scripts. Owns HOW an interface is built; ui-designer owns what it should be.
+      Implementing interfaces — pages, forms, views and
+      client-side behaviour. Owns HOW an interface is built; ui-designer owns what it should be.
     conflicts_with: [ui-designer]
     conflict_rule: >
-      ui-designer decides what the interface should look like and do; frappe-frontend
-      decides how that is achieved within Frappe conventions. On feasibility disputes
-      frappe-frontend wins on mechanism, ui-designer wins on intent.
+      ui-designer decides what the interface should look like and do; frontend
+      decides how that is achieved within the stack conventions. On feasibility disputes
+      frontend wins on mechanism, ui-designer wins on intent.
 
   integration-developer:
     role: Traffic across the system boundary
@@ -219,9 +219,9 @@ agents:
     owns: >
       Connections to systems outside this one — outbound calls, inbound webhooks,
       auth, retry and failure handling at the boundary.
-    conflicts_with: [frappe-backend]
+    conflicts_with: [backend]
     conflict_rule: >
-      frappe-backend owns internal business logic; integration-developer owns anything
+      backend owns internal business logic; integration-developer owns anything
       crossing the system boundary. If an endpoint is consumed externally, integration
       leads on contract and error semantics, backend leads on the logic behind it.
 
@@ -237,7 +237,7 @@ agents:
     constraints: >
       safe_exec applies to every embedded script body. Never shorten an installer at the
       cost of idempotency, dependency order, or the safe_exec-mandated forms.
-    requires: [frappe-data]
+    requires: [schema-builder]
 
   reporting-developer:
     role: Reports and print output
@@ -273,10 +273,10 @@ agents:
     uses_design_system: true
     owns: >
       How a surface looks — hierarchy, typography, colour, spacing, and consistency with
-      the design system. Owns WHAT the interface should be; frappe-frontend owns how.
-    conflicts_with: [frappe-frontend]
+      the design system. Owns WHAT the interface should be; frontend owns how.
+    conflicts_with: [frontend]
     conflict_rule: >
-      See frappe-frontend. Intent belongs to design, mechanism to implementation.
+      See frontend. Intent belongs to design, mechanism to implementation.
 
   interaction-designer:
     role: Flow, state and feedback
