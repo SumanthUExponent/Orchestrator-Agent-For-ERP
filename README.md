@@ -1,70 +1,143 @@
 <div align="center">
 
-# JARVIS
+```
+  ██████   ████   █████   ██  ██  ██████   █████
+      ██  ██  ██  ██  ██  ██  ██    ██    ██    
+      ██  ██████  █████   ██  ██    ██     ████ 
+  ██  ██  ██  ██  ██ ██    ████     ██        ██
+   ████   ██  ██  ██  ██    ██    ██████  █████ 
+```
 
-**A swarm of 45 specialists, a butler who tells you which one needs you, and a control plane whose whole job is to convene less of it.**
+### Just A Rather Very Intelligent System
+
+**Forty-five specialists. One butler. Nothing dispatched without your say-so.**
 
 [![ci](https://github.com/SumanthUExponent/JARVIS-For-ERP/actions/workflows/ci.yml/badge.svg)](https://github.com/SumanthUExponent/JARVIS-For-ERP/actions/workflows/ci.yml)
-![zero dependencies](https://img.shields.io/badge/dependencies-0-000)
-![node](https://img.shields.io/badge/node-%E2%89%A518-000)
-![platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-000)
-![offline](https://img.shields.io/badge/speech-local%20only-000)
-
-*For [Claude Code](https://claude.com/claude-code). Tuned for Frappe/ERPNext work.*
+![dependencies](https://img.shields.io/badge/dependencies-none-1a1a1a?style=flat-square)
+![offline](https://img.shields.io/badge/speech-100%25%20local-1a1a1a?style=flat-square)
+![platforms](https://img.shields.io/badge/macOS%20·%20Linux%20·%20Windows-1a1a1a?style=flat-square)
+![gates](https://img.shields.io/badge/human%20gates-7-8b0000?style=flat-square)
 
 </div>
 
 ---
 
-> *"Sir, the checkout schema is in, with three line-item tables. Four minutes."*
+```console
+$ jarvisctl doctor
+
+  ok    jarvis.sh present
+  ok    speaker.sh present
+  ok    config.sh present
+  ok    settings.json is valid JSON
+  ok    hooks registered (11/10 events)
+  ok    tones: 80/80 notes present
+  ok    voice "Daniel" is installed
+  ok    speaker idle (starts on demand)
+  ok    lock holding — never more than 1 daemon at once (across 181 starts)
+
+  Healthy — the install is correct and it will speak.
+```
+
+```console
+$ jarvisctl status
+
+Active sessions: 4
+  [1] checkout           idle  ** BLOCKED ON APPROVAL **
+  [2] billing            working 3m55s
+  [3] wt-svc             working 11m02s
+  [4] shared-lib         working 5m22s
+Queued announcements: 0
+```
+
+<sub>Real output. Session names and paths changed — yours will be your own projects.</sub>
+
+## 🔊 He talks. That is the whole trick.
+
+You are running four sessions. Three are working. One has been sitting on a
+permission prompt for six minutes and you have no idea which.
+
+JARVIS knows, and JARVIS says so — out loud, by name, in a voice that never talks
+over itself:
+
+> 🔊 **“Approval needed on billing, sir. Production deployment.”**
 >
-> *"Approval needed on billing. Production deployment."*
+> 🔊 **“The checkout schema is in, with three line-item tables. Four minutes.”**
+>
+> 🔊 **“Trouble in wt-svc, sir. Four tests are failing on the refund path.”**
 
-You describe the work. JARVIS decides which specialists apply, what order they run
-in, what can run in parallel, and which gates the work must clear before anyone is
-allowed to call it done. Then it tells you — out loud, by name — which of your four
-open sessions is the one waiting on you.
+No screen. No notification you will swipe away. A sentence, in your ear, naming the
+one project that needs you.
 
-It has no dependencies, makes no network calls, and says nothing it has not measured.
+<table>
+<tr><td width="33%" valign="top">
 
-## Contents
+**🧠 The brain**
+
+Reads the request, picks the specialists, orders them, batches what can run at once,
+and prices the run before it starts.
+
+</td><td width="33%" valign="top">
+
+**🔊 The voice**
+
+One drainer, one lock, one sentence at a time. Four parallel sessions physically
+cannot talk over each other.
+
+</td><td width="33%" valign="top">
+
+**🚪 The gates**
+
+Seven things it will not do without you. Production. Dropped tables. Force pushes.
+It stops and says which.
+
+</td></tr>
+</table>
+
+## 🧭 Contents
 
 | | |
 |---|---|
-| [Why this exists](#why-this-exists) | the problem a plain agent list does not solve |
-| [How it works](#how-it-works) | route → plan → dispatch → gate |
-| [Speed](#speed-is-a-design-problem-not-a-model-problem) | why it is cheaper than an all-opus run |
-| [The swarm](#the-swarm) | 45 agents, 9 divisions, and who audits the author |
-| [Install](#install) | two commands |
-| [The voice layer](#the-voice-layer) | the half that talks |
-| [Commands](#commands) | everything you can type |
-| [Design decisions](#design-decisions-worth-knowing) | the ones that cost a cycle to learn |
-| [Status and limits](#status-and-limits) | what is not done |
+| [Why this exists](#-why-this-exists) | the problem a plain agent list does not solve |
+| [How it works](#-how-it-works) | route → plan → dispatch → gate |
+| [Speed](#-speed-is-a-design-problem-not-a-model-problem) | why it beats an all-opus run |
+| [The swarm](#-the-swarm) | 45 agents, 9 divisions, and who audits the author |
+| [Install](#-install) | two commands |
+| [The voice layer](#adding-the-voice-layer) | the half that talks |
+| [Commands](#-commands) | everything you can type |
+| [Design decisions](#-design-decisions-worth-knowing) | the ones that cost a cycle to learn |
+| [Status and limits](#-status-and-limits) | what is not done |
 
-## The shape of it
+## 🗺️ The shape of it
 
 ```mermaid
 flowchart LR
-  R["you describe<br/>the work"] --> ROUTE["route<br/><i>which skills</i>"]
-  ROUTE --> PLAN["plan<br/><i>which agents, what order,<br/>which tier</i>"]
-  PLAN --> GATE{"human<br/>gate?"}
-  GATE -->|"yes"| YOU["JARVIS says so,<br/>loudly, by name"]
+  R["you describe<br/>the work"] --> ROUTE["<b>route</b><br/><i>which skills</i>"]
+  ROUTE --> PLAN["<b>plan</b><br/><i>which agents · what order<br/>which tier · what it costs</i>"]
+  PLAN --> GATE{"one of the<br/>seven gates?"}
+  GATE -->|"yes"| YOU["🚪 <b>STOP</b><br/>JARVIS names the gate,<br/>loudly, and waits"]
   GATE -->|"no"| BATCH["parallel batches<br/>of specialists"]
   BATCH --> VERIFY["verify phase<br/><i>evidence, not assertion</i>"]
-  VERIFY --> VOICE["queue → one drainer → speech"]
+  VERIFY --> VOICE["queue → one drainer → 🔊"]
   YOU --> VOICE
 ```
 
-Two halves, one name. **JARVIS routing** picks and sequences the specialists.
-**JARVIS voice** is the only thing in the system allowed to speak, and it speaks from
-a single drainer so four parallel sessions never talk over each other.
+**Two halves, one name.** *JARVIS routing* picks and sequences the specialists.
+*JARVIS voice* is the only thing in the system permitted to speak, and it speaks from
+a single drainer holding an exclusive lock — which is why four sessions never collide.
 
-## What a plan looks like
+> [!NOTE]
+> The front page is allowed to be excited. **JARVIS is not.** The spoken register is
+> declared in `config.sh` and it is deliberately the opposite of this page: dry,
+> understated, economical, never cheerful, never apologetic, no exclamations. A test
+> enforces it. What you hear in your ear is a composed butler, not a trailer.
 
-```
-$ node scripts/jarvis.mjs plan "System Console installer for an Invoice DocType with approval workflow"
+## 📐 What a plan looks like
 
-Request: System Console installer for an Invoice DocType with approval workflow
+Nothing here dispatches. It prints, you decide.
+
+```console
+$ jarvis plan "System Console installer for an Invoice DocType with approval workflow"
+
 Effort: standard  ·  Gates: verify
 Skills routed: console-automation-engine, frappe-doctype, frappe-workflow
 
@@ -91,11 +164,30 @@ Cost
   Relative cost index: 54 vs 90 all-opus baseline (40% lower)
 ```
 
-`route` answers *which skills*. `plan` answers *which agents, in what batches, at
-which tier* — and tells you what the run cost. Nothing is dispatched by either:
-they print, you decide.
+Ask it to do something it should not, and it says so before anyone lifts a finger:
 
-## Why this exists
+```console
+$ jarvis plan "drop the audit table and rebuild it"
+
+Human approval required before this runs
+  ! destructive database changes
+  Nothing here dispatches on its own. This is the line a human signs.
+```
+
+Ask it to do something trivial, and it refuses to convene at all:
+
+```console
+$ jarvis plan "fix a typo in the readme"
+
+Effort: minimal
+  (none) — no agent claims the routed skills.
+  Answer this directly. Dispatching would cost more than the task.
+```
+
+That last one is a feature, not a shortfall. A swarm that assembles for a typo is a
+swarm nobody keeps switched on.
+
+## 🎯 Why this exists
 
 Once you have more than a dozen skills installed, three failures appear, and none is solved by adding more skills.
 
@@ -107,7 +199,7 @@ Once you have more than a dozen skills installed, three failures appear, and non
 
 This repository is the machinery for deciding *what not to load*, and for making that decision inspectable.
 
-## How it works
+## ⚙️ How it works
 
 ```
 request → effort mode → decision table ─┬─ matched → skills
@@ -126,7 +218,7 @@ request → effort mode → decision table ─┬─ matched → skills
 
 **Phases, not hardcoded pairs.** Every category carries a phase number. Ordering, parallelism and gates fall out of the phase table, so adding a skill never means editing a sequence by hand.
 
-## Speed is a design problem, not a model problem
+## ⚡ Speed is a design problem, not a model problem
 
 A swarm gets slow in ways that never show up as an error. Four of them, and what the repository does about each:
 
@@ -140,7 +232,7 @@ A swarm gets slow in ways that never show up as an error. Four of them, and what
 
 The cheapest fix is upstream of all four: **most requests should never reach the swarm at all.** That is what the `fast` effort mode and `fast-path-triage` are for.
 
-## The swarm
+## 🛠️ The swarm
 
 45 agents, generated from `registry/agents.yaml` — `agents/*.md` is build output, so adding an agent is a registry edit rather than 45 files to keep in sync.
 
@@ -177,7 +269,7 @@ Fails on agent theatre (an agent with no measurable responsibility), duplicate r
 
 Note what it deliberately does *not* flag: two agents sharing a skill. That is the design working — a skill is reusable expertise, an agent is an identity that consumes it.
 
-## Install
+## 📦 Install
 
 **Requirements:** Node 18 or newer, and git. Nothing else — no `npm install`, no
 dependencies. On Windows you also need a bash: [Git for
@@ -270,7 +362,7 @@ onto PATH there — call it as `~/.claude/jarvis/jarvisctl`. Desktop banners nee
 [BurntToast](https://github.com/Windos/BurntToast) module; without it the speech still
 works and the banner is skipped.
 
-## The voice layer
+## 🔊 The voice layer
 
 Optional, and the reason it exists is parallelism. Running four sessions at once, the
 expensive failure is not a slow agent — it is a session sitting silently on a
@@ -737,7 +829,7 @@ clobbering them would disable the swarm while appearing to succeed. It is idempo
 (matched on the command string, so a moved install self-heals), backs the file up
 first, writes atomically, and refuses to touch a `settings.json` it cannot parse.
 
-## Commands
+## 🎛️ Commands
 
 | Command | Does |
 |---|---|
@@ -755,7 +847,7 @@ first, writes atomically, and refuses to touch a `settings.json` it cannot parse
 | `npm run test:voice` | The above plus the concurrency harness (117 checks, stubbed audio). |
 | `npm run test:all` | Everything. |
 
-## Health check
+## 🩺 Health check
 
 ```
 $ node scripts/jarvis.mjs health
@@ -769,7 +861,7 @@ $ node scripts/jarvis.mjs health
 
 It catches: a skill declared in the overlay with no directory; a directory with no overlay entry (unroutable); unknown categories or modes; dependencies pointing at skills that do not exist; dependency cycles; asymmetric conflict declarations; two skills claiming the same trigger; and categories no skill claims.
 
-## Adding a skill
+## ➕ Adding a skill
 
 1. Drop the directory into `skills/`. Auto-discovery finds any `skills/<name>/SKILL.md`.
 2. Add an entry to `registry/overlay.yaml` — category, mode, priority, triggers, dependencies.
@@ -780,7 +872,7 @@ Step 2 is not optional: `health` reports an unregistered skill as an orphan, bec
 
 Orchestration metadata lives in the overlay rather than in each `SKILL.md` because third-party skills are not ours to edit. One source of truth; upstream stays pristine.
 
-## Design decisions worth knowing
+## 🧩 Design decisions worth knowing
 
 **No runtime dependencies.** A tool whose job is verifying a skill ecosystem should not require an `npm install` before it can run a security check. The cost is a small YAML subset reader that throws rather than mis-parsing.
 
@@ -790,7 +882,7 @@ Orchestration metadata lives in the overlay rather than in each `SKILL.md` becau
 
 **Verification is never optimised away.** Effort caps can drop an optional skill; they cannot drop a validation skill. A plan that fits a budget by skipping its tests has not saved anything.
 
-## Repository layout
+## 🗂️ Repository layout
 
 ```
 jarvis/SKILL.md      the skill Claude Code loads
@@ -822,7 +914,7 @@ tests/context.test.mjs     handoff documents: compaction capture, secrets, caps,
 tests/voice-concurrency.sh voice behaviour under genuine parallel load
 ```
 
-## Status and limits
+## 📋 Status and limits
 
 Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, the cross-platform voice layer, spoken
 agent summaries, end-of-session briefings, the daily log, 105 passing regression tests
@@ -854,6 +946,6 @@ Known gaps, stated plainly:
   single tool call to buy a small amount of precision.
 - **The scorer is untuned.** Weights and thresholds are reasoned defaults, not fitted to a corpus. They live in `routing.yaml` precisely so they can be adjusted without touching the engine.
 
-## Licence
+## ⚖️ Licence
 
 MIT — see [LICENSE](LICENSE). Third-party skill packs referenced by the external manifest remain under their own licences and are not redistributed here.
