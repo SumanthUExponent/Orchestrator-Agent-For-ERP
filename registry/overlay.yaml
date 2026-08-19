@@ -38,6 +38,14 @@ skills:
     triggers: [resume, where were we, catch me up]
     recommended_before: [module-planner]
 
+  load-context:
+    category: session
+    mode: conditional
+    condition: a prior session for this project left open threads
+    priority: 25
+    triggers: [load context, what was i working on, pick up where we left off, open threads, previous session]
+    recommended_before: [context-keeper, module-planner]
+
   module-planner:
     category: planning
     mode: mandatory
@@ -55,7 +63,7 @@ skills:
     category: data-model
     mode: active
     priority: 90
-    triggers: [doctype, add field, data model, child table]
+    triggers: [doctype, add field, data model, child table, form field, table column, schema change, add a field, data entity]
     recommended_after: [module-planner]
     recommended_before: [frappe-workflow, frappe-api]
 
@@ -160,7 +168,7 @@ skills:
 # ------------------------------------------------- third-party skills (§15)
 # NOT vendored. These are other people's work under their own licences; the
 # installer resolves them from source so upstream fixes reach you and the
-# redistribution question never arises. All optional — the orchestrator degrades
+# redistribution question never arises. All optional — JARVIS degrades
 # to its in-tree set when they are absent.
 external:
   frappe-skills:

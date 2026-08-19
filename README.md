@@ -1,30 +1,157 @@
-# Orchestrator Agent for ERP
-
-[![ci](https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP/actions/workflows/ci.yml/badge.svg)](https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP/actions/workflows/ci.yml)
-
-A sub-agent swarm for [Claude Code](https://claude.com/claude-code), tuned for Frappe/ERPNext development.
-
-45 specialist agents across 9 divisions, coordinated by an orchestrator, policed by passive governance agents that audit the swarm itself, and paced by a control plane whose entire job is to convene less of it.
-
-You describe the work. The orchestrator decides which specialist skills apply, what order they run in, what can run in parallel, and which gates the work must clear before it can be called done.
+<div align="center">
 
 ```
-$ node scripts/orchestrator.mjs plan "System Console installer for a Vendor Audit DocType with approval workflow"
+  ██████   ████   █████   ██  ██  ██████   █████
+      ██  ██  ██  ██  ██  ██  ██    ██    ██    
+      ██  ██████  █████   ██  ██    ██     ████ 
+  ██  ██  ██  ██  ██ ██    ████     ██        ██
+   ████   ██  ██  ██  ██    ██    ██████  █████ 
+```
+
+### Just A Rather Very Intelligent System
+
+**Forty-five specialists. One butler. Nothing dispatched without your say-so.**
+
+[![ci](https://github.com/SumanthUExponent/JARVIS-For-ERP/actions/workflows/ci.yml/badge.svg)](https://github.com/SumanthUExponent/JARVIS-For-ERP/actions/workflows/ci.yml)
+![dependencies](https://img.shields.io/badge/dependencies-none-1a1a1a?style=flat-square)
+![offline](https://img.shields.io/badge/speech-100%25%20local-1a1a1a?style=flat-square)
+![platforms](https://img.shields.io/badge/macOS%20·%20Linux%20·%20Windows-1a1a1a?style=flat-square)
+![gates](https://img.shields.io/badge/human%20gates-7-8b0000?style=flat-square)
+
+</div>
+
+---
+
+```console
+$ jarvisctl doctor
+
+  ok    jarvis.sh present
+  ok    speaker.sh present
+  ok    config.sh present
+  ok    settings.json is valid JSON
+  ok    hooks registered (11/10 events)
+  ok    tones: 80/80 notes present
+  ok    voice "Daniel" is installed
+  ok    speaker idle (starts on demand)
+  ok    lock holding — never more than 1 daemon at once (across 181 starts)
+
+  Healthy — the install is correct and it will speak.
+```
+
+```console
+$ jarvisctl status
+
+Active sessions: 4
+  [1] checkout           idle  ** BLOCKED ON APPROVAL **
+  [2] billing            working 3m55s
+  [3] wt-svc             working 11m02s
+  [4] shared-lib         working 5m22s
+Queued announcements: 0
+```
+
+<sub>Real output. Session names and paths changed — yours will be your own projects.</sub>
+
+## 🔊 He talks. That is the whole trick.
+
+You are running four sessions. Three are working. One has been sitting on a
+permission prompt for six minutes and you have no idea which.
+
+JARVIS knows, and JARVIS says so — out loud, by name, in a voice that never talks
+over itself:
+
+> 🔊 **“Approval needed on billing, sir. Production deployment.”**
+>
+> 🔊 **“The checkout schema is in, with three line-item tables. Four minutes.”**
+>
+> 🔊 **“Trouble in wt-svc, sir. Four tests are failing on the refund path.”**
+
+No screen. No notification you will swipe away. A sentence, in your ear, naming the
+one project that needs you.
+
+<table>
+<tr><td width="33%" valign="top">
+
+**🧠 The brain**
+
+Reads the request, picks the specialists, orders them, batches what can run at once,
+and prices the run before it starts.
+
+</td><td width="33%" valign="top">
+
+**🔊 The voice**
+
+One drainer, one lock, one sentence at a time. Four parallel sessions physically
+cannot talk over each other.
+
+</td><td width="33%" valign="top">
+
+**🚪 The gates**
+
+Seven things it will not do without you. Production. Dropped tables. Force pushes.
+It stops and says which.
+
+</td></tr>
+</table>
+
+## 🧭 Contents
+
+| | |
+|---|---|
+| [Why this exists](#-why-this-exists) | the problem a plain agent list does not solve |
+| [How it works](#-how-it-works) | route → plan → dispatch → gate |
+| [Speed](#-speed-is-a-design-problem-not-a-model-problem) | why it beats an all-opus run |
+| [The swarm](#-the-swarm) | 45 agents, 9 divisions, and who audits the author |
+| [Install](#-install) | two commands |
+| [The voice layer](#adding-the-voice-layer) | the half that talks |
+| [Commands](#-commands) | everything you can type |
+| [Design decisions](#-design-decisions-worth-knowing) | the ones that cost a cycle to learn |
+| [Status and limits](#-status-and-limits) | what is not done |
+
+## 🗺️ The shape of it
+
+```mermaid
+flowchart LR
+  R["you describe<br/>the work"] --> ROUTE["<b>route</b><br/><i>which skills</i>"]
+  ROUTE --> PLAN["<b>plan</b><br/><i>which agents · what order<br/>which tier · what it costs</i>"]
+  PLAN --> GATE{"one of the<br/>seven gates?"}
+  GATE -->|"yes"| YOU["🚪 <b>STOP</b><br/>JARVIS names the gate,<br/>loudly, and waits"]
+  GATE -->|"no"| BATCH["parallel batches<br/>of specialists"]
+  BATCH --> VERIFY["verify phase<br/><i>evidence, not assertion</i>"]
+  VERIFY --> VOICE["queue → one drainer → 🔊"]
+  YOU --> VOICE
+```
+
+**Two halves, one name.** *JARVIS routing* picks and sequences the specialists.
+*JARVIS voice* is the only thing in the system permitted to speak, and it speaks from
+a single drainer holding an exclusive lock — which is why four sessions never collide.
+
+> [!NOTE]
+> The front page is allowed to be excited. **JARVIS is not.** The spoken register is
+> declared in `config.sh` and it is deliberately the opposite of this page: dry,
+> understated, economical, never cheerful, never apologetic, no exclamations. A test
+> enforces it. What you hear in your ear is a composed butler, not a trailer.
+
+## 📐 What a plan looks like
+
+Nothing here dispatches. It prints, you decide.
+
+```console
+$ jarvis plan "System Console installer for an Invoice DocType with approval workflow"
 
 Effort: standard  ·  Gates: verify
 Skills routed: console-automation-engine, frappe-doctype, frappe-workflow
 
 Execution plan
   Batch 1  (phase 2)
-       - requirements-analyst   sonnet  required by frappe-architect
+       - requirements-analyst   sonnet  required by architect
   Batch 2  (phase 2)
-       - frappe-architect       opus    required by data-model-architect
+       - architect              opus    required by data-model-architect
   Batch 3  (phase 2)
        - data-model-architect   opus    via frappe-doctype
   Batch 4  (phase 2)
-       - frappe-data            sonnet  required by frappe-backend
+       - schema-builder         sonnet  required by backend
   Batch 5  (phase 2)
-       - frappe-backend         sonnet  via frappe-workflow
+       - backend                sonnet  via frappe-workflow
   Batch 6  (phase 4)
        - console-deployer       opus    via console-automation-engine
 
@@ -37,9 +164,30 @@ Cost
   Relative cost index: 54 vs 90 all-opus baseline (40% lower)
 ```
 
-`route` answers *which skills*. `plan` answers *which agents, in what batches, at which tier* — and tells you what the run cost.
+Ask it to do something it should not, and it says so before anyone lifts a finger:
 
-## Why this exists
+```console
+$ jarvis plan "drop the audit table and rebuild it"
+
+Human approval required before this runs
+  ! destructive database changes
+  Nothing here dispatches on its own. This is the line a human signs.
+```
+
+Ask it to do something trivial, and it refuses to convene at all:
+
+```console
+$ jarvis plan "fix a typo in the readme"
+
+Effort: minimal
+  (none) — no agent claims the routed skills.
+  Answer this directly. Dispatching would cost more than the task.
+```
+
+That last one is a feature, not a shortfall. A swarm that assembles for a typo is a
+swarm nobody keeps switched on.
+
+## 🎯 Why this exists
 
 Once you have more than a dozen skills installed, three failures appear, and none is solved by adding more skills.
 
@@ -51,7 +199,7 @@ Once you have more than a dozen skills installed, three failures appear, and non
 
 This repository is the machinery for deciding *what not to load*, and for making that decision inspectable.
 
-## How it works
+## ⚙️ How it works
 
 ```
 request → effort mode → decision table ─┬─ matched → skills
@@ -70,13 +218,13 @@ request → effort mode → decision table ─┬─ matched → skills
 
 **Phases, not hardcoded pairs.** Every category carries a phase number. Ordering, parallelism and gates fall out of the phase table, so adding a skill never means editing a sequence by hand.
 
-## Speed is a design problem, not a model problem
+## ⚡ Speed is a design problem, not a model problem
 
 A swarm gets slow in ways that never show up as an error. Four of them, and what the repository does about each:
 
 **Everything ran on the biggest model.** Agents that said `model: inherit` silently cost whatever the session cost, so all 39 ran on Opus — nobody chose that, it was the default leaking through. Tiers are now explicit and `inherit` is gone: **12 opus, 31 sonnet, 2 haiku**. Opus is reserved for output that is a design decision with blast radius — a schema, an architecture, a review that gates a deploy. `doctor` fails an unknown tier and warns on any agent that goes back to inheriting.
 
-**Every agent rediscovered the same repository.** Five dispatches meant five identical scans for the same `hooks.py` and the same DocType list. `orchestrator.mjs pack` answers that once with commands rather than a model, so the shared context costs **zero tokens**; `context-broker` adds only the judgement a command cannot have — which of those files matter here.
+**Every agent rediscovered the same repository.** Five dispatches meant five identical scans for the same `hooks.py` and the same DocType list. `jarvis.mjs pack` answers that once with commands rather than a model, so the shared context costs **zero tokens**; `context-broker` adds only the judgement a command cannot have — which of those files matter here.
 
 **The parallelism was theoretical.** The phase table said what could run concurrently and nothing acted on it. `plan` emits actual batches, guaranteeing no agent shares a batch with something it `requires`, capped at four abreast.
 
@@ -84,15 +232,15 @@ A swarm gets slow in ways that never show up as an error. Four of them, and what
 
 The cheapest fix is upstream of all four: **most requests should never reach the swarm at all.** That is what the `fast` effort mode and `fast-path-triage` are for.
 
-## The swarm
+## 🛠️ The swarm
 
 45 agents, generated from `registry/agents.yaml` — `agents/*.md` is build output, so adding an agent is a registry edit rather than 45 files to keep in sync.
 
 | Division | Agents |
 |---|---|
-| Orchestration | `orchestrator-deep`, `delivery-orchestrator`, `research-orchestrator` |
-| Planning | `requirements-analyst`, `business-analyst`, `frappe-architect`, `data-model-architect`, `impact-analyst` |
-| Development | `frappe-data`, `frappe-backend`, `frappe-frontend`, `integration-developer`, `console-deployer`, `reporting-developer` |
+| Orchestration | `jarvis-deep`, `delivery-orchestrator`, `research-orchestrator` |
+| Planning | `requirements-analyst`, `business-analyst`, `architect`, `data-model-architect`, `impact-analyst` |
+| Development | `schema-builder`, `backend`, `frontend`, `integration-developer`, `console-deployer`, `reporting-developer` |
 | UI/UX | `ux-researcher`, `ui-designer`, `interaction-designer`, `mobile-ux`, `accessibility` |
 | Data | `data-analyst`, `data-scientist`, `dataviz-specialist` |
 | Quality | `test-engineer`, `uat-coordinator`, `qa-engineer`, `code-reviewer`, `performance-analyst` |
@@ -105,7 +253,7 @@ The cheapest fix is upstream of all four: **most requests should never reach the
 
 They are constrained accordingly. A control agent holds no `Write` or `Edit` tool and `doctor` fails the build if one appears — the moment it can build, it stops being cheaper than the specialist it was meant to replace. `quality-sentinel` may reduce review effort but never to zero on schema, deployment, security, or anything a specialist flagged as risky in its own handoff. `result-synthesizer` may merge a duplicate finding but may never drop one for brevity, and surfaces contradictions as contradictions rather than averaging them into a position no agent held.
 
-**Where the orchestrator lives, and why it matters.** A Claude Code sub-agent cannot address the user — only the main thread can. So human-approval gates, live observability and conflict escalation stay in the orchestrator **skill** running in the main thread; that is the only surface which can both dispatch agents and talk to you. The three orchestrator *sub-agents* exist for delegated work needing no mid-flight decision, and they are mute by design: they return a question in `handoff` rather than guess.
+**Where JARVIS lives, and why it matters.** A Claude Code sub-agent cannot address the user — only the main thread can. So human-approval gates, live observability and conflict escalation stay in the JARVIS **skill** running in the main thread; that is the only surface which can both dispatch agents and talk to you. The three coordinator *sub-agents* exist for delegated work needing no mid-flight decision, and they are mute by design: they return a question in `handoff` rather than guess.
 
 **Every agent returns fields, not prose** — `summary`, `files_changed`, `decisions`, `findings`, `risks`, `testing`, `remaining`, `handoff`. An agent that finishes with "done" has failed the protocol.
 
@@ -114,31 +262,31 @@ They are constrained accordingly. A control agent holds no `Write` or `Edit` too
 ### Governance that audits its own author
 
 ```bash
-node scripts/orchestrator.mjs doctor
+node scripts/jarvis.mjs doctor
 ```
 
 Fails on agent theatre (an agent with no measurable responsibility), duplicate responsibilities, asymmetric conflicts, broken dependencies and missing protocol fields. It caught three defects in this repository's own registry during the build — including three ghost agents left by renames, since a stale agent still installs and can still be dispatched.
 
 Note what it deliberately does *not* flag: two agents sharing a skill. That is the design working — a skill is reusable expertise, an agent is an identity that consumes it.
 
-## Install
+## 📦 Install
 
 **Requirements:** Node 18 or newer, and git. Nothing else — no `npm install`, no
 dependencies. On Windows you also need a bash: [Git for
 Windows](https://gitforwindows.org) or WSL. Claude Code itself is assumed.
 
 ```bash
-git clone https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP.git
-cd Orchestrator-Agent-For-ERP
+git clone https://github.com/SumanthUExponent/JARVIS-For-ERP.git
+cd JARVIS-For-ERP
 
-node scripts/orchestrator.mjs install              # dry run — shows the plan, writes nothing
-node scripts/orchestrator.mjs install --apply      # install the skills AND the 45 agents
-node scripts/orchestrator.mjs health               # verify the skills
-node scripts/orchestrator.mjs doctor               # verify the swarm
+node scripts/jarvis.mjs install              # dry run — shows the plan, writes nothing
+node scripts/jarvis.mjs install --apply      # install the skills AND the 45 agents
+node scripts/jarvis.mjs health               # verify the skills
+node scripts/jarvis.mjs doctor               # verify the swarm
 ```
 
 Skills land in `~/.claude/skills`, agents in `~/.claude/agents` (override with
-`CLAUDE_SKILLS_DIR` / `CLAUDE_AGENTS_DIR`).
+`JARVIS_SKILLS_DIR` / `JARVIS_AGENTS_DIR`).
 
 **Restart Claude Code afterwards.** Agent definitions are read at session start — until
 then they are on disk and invisible.
@@ -150,7 +298,7 @@ Optional third-party skill packs are declared in `registry/overlay.yaml` and fet
 only when asked:
 
 ```bash
-node scripts/orchestrator.mjs install --apply --external
+node scripts/jarvis.mjs install --apply --external
 ```
 
 Those are **not vendored** — they are other people's work under their own licences,
@@ -159,8 +307,8 @@ resolved from source so upstream fixes reach you.
 ### Adding the voice layer
 
 ```bash
-node scripts/orchestrator.mjs voice               # dry run — shows every hook it will register
-node scripts/orchestrator.mjs voice --apply
+node scripts/jarvis.mjs voice               # dry run — shows every hook it will register
+node scripts/jarvis.mjs voice --apply
 jarvisctl doctor                                  # names the backends it found on your machine
 ```
 
@@ -214,7 +362,7 @@ onto PATH there — call it as `~/.claude/jarvis/jarvisctl`. Desktop banners nee
 [BurntToast](https://github.com/Windos/BurntToast) module; without it the speech still
 works and the banner is skipped.
 
-## The voice layer
+## 🔊 The voice layer
 
 Optional, and the reason it exists is parallelism. Running four sessions at once, the
 expensive failure is not a slow agent — it is a session sitting silently on a
@@ -224,8 +372,8 @@ permission prompt while the other three work. You find out ten minutes later.
 session is doing, so the terminal does not have to be watched:
 
 ```bash
-node scripts/orchestrator.mjs voice          # dry run — shows every hook it will register
-node scripts/orchestrator.mjs voice --apply
+node scripts/jarvis.mjs voice          # dry run — shows every hook it will register
+node scripts/jarvis.mjs voice --apply
 jarvisctl doctor                             # verify
 jarvisctl test                               # hear every alert
 ```
@@ -260,7 +408,7 @@ What that buys, beyond not overlapping:
 | Turns under 25s get a tick, not a sentence | `Stop` fires after **every** turn. Un-gated, asking the time is announced as a completed task |
 | Six completions collapse to one | A burst is debounced 1.2s, then the newest is spoken and the rest deleted |
 | Completions older than 50s are dropped | An announcement 90s late is noise, not information |
-| Session name spoken only when 2+ are live | With one session, "frappe-bench, finished" is padding; with four it is the message |
+| Session name spoken only when 2+ are live | With one session, "checkout, finished" is padding; with four it is the message |
 | One voice, always | Four parallel sessions do **not** get four voices. Four voices read as four different *people*; the point is one assistant with an eye on everything, naming the session it is talking about |
 | **Every announcement names its session** | Not conditionally. Sessions sharing a directory get the ordinal too — *"frappe bench two"* — and that ordinal is the same number as the chime pitch, so the two cues reinforce each other |
 | The name never changes mid-session | Fixed when the session registers. `cd` into a subdirectory and it is still the project you know it as |
@@ -280,7 +428,7 @@ chime, and what they *found* is carried into the completion instead. Set
 Every agent in the swarm is required to end its output with one line:
 
 ```
-VOICE: Vendor Audit schema is in, three child tables
+VOICE: Invoice schema is in, three child tables
 ```
 
 Those clauses are collected as each specialist finishes, and read out on completion:
@@ -288,7 +436,7 @@ Those clauses are collected as each specialist finishes, and read out on complet
 | | |
 |---|---|
 | without | *"Done, sir. Six specialists, four minutes."* — 3.5s, and it reports only that time passed |
-| with | *"Vendor Audit schema is in, sir. Four minutes."* — 2.8s, and it reports what changed |
+| with | *"Invoice schema is in, sir. Four minutes."* — 2.8s, and it reports what changed |
 
 The specialist count disappears when there is a summary, because that count was never
 information — it was a proxy for "something substantial happened", added because there
@@ -357,12 +505,12 @@ Two further things follow from that:
 
 ```
 Active sessions: 3
-  [1] frappe-bench             working 4m12s
-      /Users/you/frappe-bench
-  [2] wt_nst                   idle
-      /Users/you/wt_nst
-  [3] frappe-bench             working 0m18s   ** BLOCKED ON APPROVAL **
-      /Users/you/frappe-bench
+  [1] checkout             working 4m12s
+      /Users/you/checkout
+  [2] wt_svc                   idle
+      /Users/you/wt_svc
+  [3] checkout             working 0m18s   ** BLOCKED ON APPROVAL **
+      /Users/you/checkout
 ```
 
 The cost is measured: a word of speech is about 0.38s, and naming the session plus the
@@ -379,11 +527,11 @@ left pending when each session closed.
 ```markdown
 # Daily log — 2026-08-18
 
-- **09:12** · `frappe-bench` · 4m · Vendor Audit schema and fixtures done
-- **10:02** · `wt_nst` · 6m · 3 specialists · Material Movement schema is in
-- **11:40** · `wt_nst` · 1m · **PROBLEM** four tests failing on the refund path
+- **09:12** · `checkout` · 4m · Invoice schema and fixtures done
+- **10:02** · `wt_svc` · 6m · 3 specialists · shipment schema is in
+- **11:40** · `wt_svc` · 1m · **PROBLEM** four tests failing on the refund path
 
-### 18:40 · `wt_nst` closed
+### 18:40 · `wt_svc` closed
 - **Heads up** · submit hook now fires on amend
 - **Pending** · permissions matrix needs an Auditor role
 ```
@@ -417,15 +565,15 @@ jarvisctl daily [2026-08-18]   # the raw log for a day
 Last worked: 2026-08-18  —  6 turns across 3 project(s)
 
 PROJECTS
-  frappe-bench                 3 turns
-  wt_nst                       2 turns
+  checkout                 3 turns
+  wt_svc                       2 turns
 
 DONE
-  - Vendor Audit schema and fixtures done  (frappe-bench)
-  - Material Movement schema is in  (wt_nst)
+  - Invoice schema and fixtures done  (checkout)
+  - shipment schema is in  (wt_svc)
 
 PROBLEMS REPORTED
-  - four tests failing on the refund path  (wt_nst)
+  - four tests failing on the refund path  (wt_svc)
 
 STILL PENDING
   - permissions matrix needs an Auditor role
@@ -440,13 +588,110 @@ literal yesterday has no log at all. Today's own log is never reported back as y
 Outstanding items come last, because they are the only part you can act on and the eye
 lands on the end of a briefing.
 
+### The handoff document — one file per session
+
+The daily log answers *what did I do today*. It cannot answer *what was that session
+for, what did we decide, and what is still open* — which is what a **new** session needs
+before it can be useful. That is a different document with a different shape, and it is
+written per session, as the session runs.
+
+```
+~/checkout/Referencedocs/CLI-Session-Context/     (JARVIS_CTX_DIR)
+├── README.md          the naming and structure rules, written once
+├── INDEX.md           one row per session — read this first
+└── sessions/
+    └── 2026-08/
+        ├── 2026-08-19--checkout--durable-session-context--6655d427.md
+        └── .journal/
+            └── 2026-08-19--checkout--durable-session-context--6655d427.jsonl
+```
+
+The short id is the first eight characters of the session id, which is **also the prefix
+of the raw transcript** under `~/.claude/projects/`. That is how you get from a document
+back to the conversation that produced it.
+
+The name comes from the **first prompt**, not from the session title. The title is
+written asynchronously and does not exist for the first several turns, so naming from it
+would mean creating the file under a placeholder and renaming it later — and a rename
+races every append already in flight. The title is recorded in the front matter instead,
+where being late costs nothing.
+
+Sections are in a fixed order and the order is the argument: Objective, **Decisions**,
+Files touched, Gotchas, Compaction snapshots, Turn log, **Open threads last** — because
+open threads are the only part you can act on, and the eye lands on the end of a
+document.
+
+#### Compaction is where context is actually lost
+
+Not session closure. Compaction happens repeatedly inside one long session and it is
+silent, so a `PreCompact` hook snapshots the window that is about to be discarded and a
+`PostCompact` hook records what survived.
+
+`PreCompact`'s payload does **not** carry the conversation. It carries
+`transcript_path` — a pointer. So the snapshot is built by reading the transcript window
+since the last watermark, which means repeated compactions capture **disjoint** windows
+rather than re-reading everything, and the cost is proportional to new content rather
+than to a transcript that can reach twenty megabytes.
+
+Everything in a snapshot is deterministic and free: files edited, commands run, prompts,
+markers, how much was dropped. The one thing deterministic extraction cannot recover is
+a decision's *reasoning* — so that, and only that, is an optional Haiku pass, detached so
+it never blocks a turn, floored so a small window is not worth a request, and capped per
+day. **When a cap bites it is written into the document**, because a snapshot with no
+reasoning and no explanation reads as "there was nothing to say", which is a different
+and much worse claim.
+
+#### The journal is the truth; the markdown is a view
+
+```
+hook (bash, hot)  ──►  <session>.jsonl   append-only, one printf, no process spawn
+context.mjs (cold) ──►  <session>.md     rendered projection, temp + rename
+```
+
+`Stop` fires after every turn, so it stays pure bash — one extra `write()` beside the
+daily-log line it was already writing. `node` is reached only at compaction, at session
+end, and by the sweep at the next `SessionStart`. A process killed at any instant loses
+at most the event in flight: the journal is line-delimited so a torn final line is one
+lost event rather than an unreadable file, and `rename` gives the markdown no state
+between "the previous valid render" and "the next one".
+
+A session left `active` by a closed terminal or a reboot is marked `abandoned` by that
+sweep, so the index never claims work is in flight forever.
+
+#### Reading it back
+
+```bash
+jarvisctl context              # what is still open on this project
+jarvisctl context <path>       # ...on another one
+jarvisctl context --speak      # read the open threads aloud
+jarvisctl context --reindex    # rebuild INDEX.md from the documents
+/load-context <name>           # pull one document into a conversation
+```
+
+`SessionStart` injects a **pointer**, never contents: at most three lines naming recent
+sessions for this project that still have open threads. Whether that is worth the tokens
+is the reader's decision, not the hook's.
+
+#### What never reaches these files
+
+Credentials. Every string is filtered on the way in — API keys, PATs, AWS keys, JWTs,
+bearer tokens, private-key headers and `SOMETHING_SECRET = …` assignments including
+prefixed names. Files whose path looks like `.env`, `*.pem`, `*.key` or `credentials`
+have their **path recorded and their contents never read**. `tests/context.test.mjs`
+asserts it against a fixture seeded with every shape.
+
+Two quality rules that keep the file worth its tokens: it is **capped** — past
+`JARVIS_CTX_MAX_LINES` the turn log is compressed from the old end while decisions,
+gotchas, threads and snapshots are never dropped — and a session that did nothing
+**produces no file at all**. Silence is the correct record for "nothing happened".
+
 ### The end-of-session briefing
 
 Two optional lines sit alongside the required one, and they are read back when the
 session closes rather than when the turn ends:
 
 ```
-VOICE:    Material Movement schema is in
+VOICE:    shipment schema is in
 PENDING:  permissions matrix still needs an Auditor role
 HEADS-UP: the submit hook now fires on amend as well
 ```
@@ -464,7 +709,7 @@ picking the work up tomorrow having forgotten the detail. So the split is:
 
 ```
 $ jarvisctl brief
-== 2026-08-18-wt_nst.txt
+== 2026-08-18-wt_svc.txt
   DONE
     - DocTypes built and fixtures exported
     - all twenty two tests pass
@@ -524,10 +769,10 @@ Three other things measurement settled:
 | Measured RMS differs **4.6×** across the macOS system sounds, so at one fixed volume the *error* chime came out quieter than the routine completion | Each tone is normalised then scaled by its category, so loudness tracks importance. A test reads the generated WAVs back and asserts an urgent alert is never quieter than a routine one |
 | Announcements ran **4.4–5.4s each**, and `Stop` fires after every turn | Two registers. Alone, "Done, sir. Four minutes." is 1.67s; the project name is only worth its 1.1–1.6s when there is more than one session to tell apart |
 
-`say` also mangles directory basenames: `wt_nst` is a worktree prefix plus an
+`say` also mangles directory basenames: `wt_svc` is a worktree prefix plus an
 initialism, and it reads as one nonsense syllable. Names are now normalised —
 underscores and hyphens to spaces, the `wt` prefix dropped, and a short vowel-less
-token spelled out, so `wt_nst` becomes "N S T". `JARVIS_NAMES="wt_nst=the N S T tree"`
+token spelled out, so `wt_svc` becomes "N S T". `JARVIS_NAMES="wt_svc=the N S T tree"`
 overrides any of it.
 
 To judge all of this by ear rather than by table:
@@ -546,8 +791,8 @@ sessions said goodbye four times.
 ```
 $ jarvisctl status
 Active sessions: 2
-  [1] frappe-bench             idle
-  [2] wt_nst                   working 0m27s  ** BLOCKED ON APPROVAL **
+  [1] checkout             idle
+  [2] wt_svc                   working 0m27s  ** BLOCKED ON APPROVAL **
 Queued announcements: 0
 Speaker: running (pid 51749)
 ```
@@ -579,12 +824,12 @@ See [the voice-quality note](#adding-the-voice-layer) — it is the single bigge
 you can change about how this sounds.
 
 The installer **merges** into `settings.json` rather than replacing it: the
-orchestrator's own routing gate and context-pack hooks live in the same arrays, and
+JARVIS's own routing gate and context-pack hooks live in the same arrays, and
 clobbering them would disable the swarm while appearing to succeed. It is idempotent
 (matched on the command string, so a moved install self-heals), backs the file up
 first, writes atomically, and refuses to touch a `settings.json` it cannot parse.
 
-## Commands
+## 🎛️ Commands
 
 | Command | Does |
 |---|---|
@@ -596,16 +841,16 @@ first, writes atomically, and refuses to touch a `settings.json` it cannot parse
 | `pack [dir]` | Deterministic Context Pack. No model involved, so it costs nothing to regenerate. |
 | `agents [--apply]` | Generate `agents/*.md` from the registry. |
 | `doctor` | Audit the agent roster. |
-| `voice [--apply] [--force]` | Install the voice layer and its eight hooks. Dry run by default. |
-| `npm test` | Routing, execution-plan, installer, voice-installer and tone-synthesis suites (105 tests). |
+| `voice [--apply] [--force]` | Install the voice layer and its ten hooks. Dry run by default. |
+| `npm test` | Routing, execution-plan, installer, voice-installer, tone-synthesis and session-context suites (134 tests). |
 | `npm run test:audio` | Platform backends, installed-tone integrity, name handling, phrase-length budgets (35 checks). |
 | `npm run test:voice` | The above plus the concurrency harness (117 checks, stubbed audio). |
 | `npm run test:all` | Everything. |
 
-## Health check
+## 🩺 Health check
 
 ```
-$ node scripts/orchestrator.mjs health
+$ node scripts/jarvis.mjs health
 
 ✓ Skills discovered: 20        ✓ Invalid metadata: 0
 ✓ Skills registered: 20        ✓ Routing conflicts: 0
@@ -616,18 +861,18 @@ $ node scripts/orchestrator.mjs health
 
 It catches: a skill declared in the overlay with no directory; a directory with no overlay entry (unroutable); unknown categories or modes; dependencies pointing at skills that do not exist; dependency cycles; asymmetric conflict declarations; two skills claiming the same trigger; and categories no skill claims.
 
-## Adding a skill
+## ➕ Adding a skill
 
 1. Drop the directory into `skills/`. Auto-discovery finds any `skills/<name>/SKILL.md`.
 2. Add an entry to `registry/overlay.yaml` — category, mode, priority, triggers, dependencies.
-3. `node scripts/orchestrator.mjs build && node scripts/orchestrator.mjs health`
+3. `node scripts/jarvis.mjs build && node scripts/jarvis.mjs health`
 4. Add a routing test if the skill introduces a new request shape.
 
 Step 2 is not optional: `health` reports an unregistered skill as an orphan, because a skill the router can never select is worse than one that is not installed — it looks present and never fires.
 
 Orchestration metadata lives in the overlay rather than in each `SKILL.md` because third-party skills are not ours to edit. One source of truth; upstream stays pristine.
 
-## Design decisions worth knowing
+## 🧩 Design decisions worth knowing
 
 **No runtime dependencies.** A tool whose job is verifying a skill ecosystem should not require an `npm install` before it can run a security check. The cost is a small YAML subset reader that throws rather than mis-parsing.
 
@@ -637,21 +882,22 @@ Orchestration metadata lives in the overlay rather than in each `SKILL.md` becau
 
 **Verification is never optimised away.** Effort caps can drop an optional skill; they cannot drop a validation skill. A plan that fits a budget by skipping its tests has not saved anything.
 
-## Repository layout
+## 🗂️ Repository layout
 
 ```
-orchestrator/SKILL.md      the skill Claude Code loads
+jarvis/SKILL.md      the skill Claude Code loads
 registry/taxonomy.yaml     categories and execution phases
 registry/overlay.yaml      per-skill orchestration metadata + external manifest
 registry/routing.yaml      decision table, composites, scorer weights, thresholds
 registry/agents.yaml       the 45 agents: mode, model tier, ownership, conflicts
-scripts/orchestrator.mjs   CLI: build, health, route, plan, pack, install, agents, doctor
+scripts/jarvis.mjs   CLI: build, health, route, plan, pack, install, agents, doctor
 scripts/route.mjs          routing engine — request to skills
 scripts/plan.mjs           execution planner — skills to agents, batches, tiers, cost
 scripts/pack.mjs           deterministic context pack
 scripts/swarm.mjs          agent generation and roster audit
 scripts/install.mjs        installer
 scripts/voice.mjs          voice-layer installer and settings.json merge
+scripts/context.mjs        session handoff documents: journal, render, index, snapshots
 voice/jarvis.sh            hook entry point — enqueues and exits, never speaks
 voice/speaker.sh           the single drainer: one lock, one voice
 voice/platform.sh          every OS-specific call, and nothing else
@@ -664,10 +910,11 @@ skills/                    in-tree skills
 tests/                     regression suites
 tests/tones.test.mjs       motif tables, pitch, measured loudness of the generated WAVs
 tests/voice-audio.sh       platform backends, installed tones, names, phrase budgets
+tests/context.test.mjs     handoff documents: compaction capture, secrets, caps, crash safety
 tests/voice-concurrency.sh voice behaviour under genuine parallel load
 ```
 
-## Status and limits
+## 📋 Status and limits
 
 Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, the cross-platform voice layer, spoken
 agent summaries, end-of-session briefings, the daily log, 105 passing regression tests
@@ -699,6 +946,6 @@ Known gaps, stated plainly:
   single tool call to buy a small amount of precision.
 - **The scorer is untuned.** Weights and thresholds are reasoned defaults, not fitted to a corpus. They live in `routing.yaml` precisely so they can be adjusted without touching the engine.
 
-## Licence
+## ⚖️ Licence
 
 MIT — see [LICENSE](LICENSE). Third-party skill packs referenced by the external manifest remain under their own licences and are not redistributed here.

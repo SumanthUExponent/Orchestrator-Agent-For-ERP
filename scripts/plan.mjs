@@ -7,7 +7,7 @@
  * the parallelism in the phase table was usually not taken. Everything here is
  * mechanical, so it is free and it cannot drift from the registry.
  *
- * Nothing is dispatched from here. This prints a plan a human or the orchestrator
+ * Nothing is dispatched from here. This prints a plan a human or JARVIS
  * skill executes — same contract as route.mjs (§26).
  */
 
@@ -164,7 +164,7 @@ export function executionPlan(reg, request, opts = {}) {
 
 export function render(reg, request, opts = {}) {
   if (!String(request || '').trim()) {
-    console.log('usage: orchestrator.mjs plan "<request>"');
+    console.log('usage: jarvis.mjs plan "<request>"');
     return 2;
   }
   const p = executionPlan(reg, request, opts);

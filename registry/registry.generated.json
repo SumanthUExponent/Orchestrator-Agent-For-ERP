@@ -1,8 +1,8 @@
 {
   "registryVersion": 1,
   "counts": {
-    "discovered": 20,
-    "registered": 20,
+    "discovered": 21,
+    "registered": 21,
     "external": 3
   },
   "categories": {
@@ -249,7 +249,7 @@
     {
       "id": "frappe-doctype",
       "name": "frappe-doctype",
-      "description": "Use when creating a new DocType, adding fields to an existing DocType, or modeling a data entity. Scaffolds JSON, Python controller, permissions, and fixtures.",
+      "description": "Use when creating a new DocType, adding fields to an existing DocType, or modeling a data entity. Also the right skill when the request says form, field, column, table or schema rather than DocType. Scaffolds JSON, Python controller, permissions, and fixtures.",
       "category": "data-model",
       "mode": "active",
       "priority": 90,
@@ -258,7 +258,12 @@
         "doctype",
         "add field",
         "data model",
-        "child table"
+        "child table",
+        "form field",
+        "table column",
+        "schema change",
+        "add a field",
+        "data entity"
       ],
       "requires": [],
       "recommended_before": [
@@ -461,6 +466,31 @@
       "conflicts_with": [],
       "conflict_rule": null,
       "condition": null
+    },
+    {
+      "id": "load-context",
+      "name": "load-context",
+      "description": "Pull a previous session's handoff document into this conversation. Use when the user says \"load context\", \"/load-context\", \"what was I working on\", \"pick up where we left off\", \"resume <project>\", or when a SessionStart pointer named a prior session with open threads and the user asks to see it. Reads a file; changes nothing.",
+      "category": "session",
+      "mode": "conditional",
+      "priority": 25,
+      "phase": 0,
+      "triggers": [
+        "load context",
+        "what was i working on",
+        "pick up where we left off",
+        "open threads",
+        "previous session"
+      ],
+      "requires": [],
+      "recommended_before": [
+        "context-keeper",
+        "module-planner"
+      ],
+      "recommended_after": [],
+      "conflicts_with": [],
+      "conflict_rule": null,
+      "condition": "a prior session for this project left open threads"
     },
     {
       "id": "module-planner",

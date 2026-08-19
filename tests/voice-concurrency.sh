@@ -24,10 +24,10 @@ mkdir -p "$J" "$SB/bin"
 # Install through the REAL installer rather than copying files by hand. Hand-copying
 # missed platform.sh and the generated tones the moment those were introduced, and the
 # harness would have gone on testing an install nobody ships.
-export CLAUDE_JARVIS_DIR="$J"
-export CLAUDE_SETTINGS_FILE="$SB/settings.json"
-echo '{}' > "$CLAUDE_SETTINGS_FILE"
-node "$REPO/scripts/orchestrator.mjs" voice --apply >/dev/null 2>&1 || { echo "install failed"; exit 1; }
+export JARVIS_DIR="$J"
+export JARVIS_SETTINGS_FILE="$SB/settings.json"
+echo '{}' > "$JARVIS_SETTINGS_FILE"
+node "$REPO/scripts/jarvis.mjs" voice --apply >/dev/null 2>&1 || { echo "install failed"; exit 1; }
 
 AUDIT="$SB/audit.log"
 : > "$AUDIT"
@@ -494,7 +494,7 @@ echo
 echo "T17 specialists' spoken summaries reach the announcement"
 fresh
 printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
-# Every orchestrator agent is required to end with a VOICE: line. Stop and SubagentStop
+# Every JARVIS agent is required to end with a VOICE: line. Stop and SubagentStop
 # both carry last_assistant_message, so the clause is picked up from the hook payload —
 # no transcript parsing, no model call, nothing leaving the machine.
 say_hook begin '{}'
@@ -898,6 +898,44 @@ bad=$(grep -vcE '^(#|$|- \*\*[0-9]|### |- \*\*(Pending|Heads up)\*\*)' "$DAY" 2>
 rc=0; [ "$bad" = 0 ] || rc=1; check "$rc" "no interleaved or malformed lines ($bad)"
 d=$(grep -o 'writer number [0-9]' "$DAY" 2>/dev/null | sort -u | grep -c .); d=${d:-0}
 rc=0; [ "$d" = 8 ] || rc=1; check "$rc" "all eight are distinct, none overwritten (got $d)"
+quiet 40
+
+echo
+echo "T24i eight sessions appending LONG log entries do not interleave"
+# The LOG marker is deliberately the longest thing written -- up to 380 characters,
+# against a VOICE clause capped at 140. That matters here and nowhere else: the
+# atomicity of file_append rests on ONE printf staying inside PIPE_BUF, which is 512
+# bytes on macOS, the smallest of the three platforms. Eight writers at 380 characters
+# is the case that would expose a torn write if the bound were wrong.
+fresh; rm -rf "$J/daily"
+LONGLOG="Added the three child tables to Vendor Audit in apps/exponent_utilities and wired the submit hook, then reran the suite. Chose a child table over a linked DocType because the rows are never queried independently of the parent, which also keeps the fixture export flat."
+for i in 1 2 3 4 5 6 7 8; do
+  ( printf 'p%s|%s\n' "$i" "$i" > "$ST/active/c$i"
+    echo $(( $(date +%s) - 200 )) > "$ST/start/c$i"
+    printf '%s' "{\"last_assistant_message\":\"VOICE: writer number $i finished\\nLOG: entry $i. $LONGLOG\\n\",\"hook_event_name\":\"Stop\"}" \
+      | JARVIS_SESSION_KEY="c$i" JARVIS_SESSION_NAME="proj$i" "$J/jarvis.sh" 'done' >/dev/null 2>&1 ) &
+done
+wait
+
+logs=$(grep -c '^  - entry ' "$DAY" 2>/dev/null); logs=${logs:-0}
+rc=0; [ "$logs" = 8 ] || rc=1; check "$rc" "all eight LOG entries present (got $logs)"
+
+# A torn write shows up as a line that is neither a turn line, a log line, a header nor
+# blank -- i.e. one writer's bytes landing inside another writer's line.
+torn=$(grep -vcE '^(#|$|- \*\*[0-9]|  - entry [0-9]|### |- \*\*(Pending|Heads up)\*\*)' "$DAY" 2>/dev/null); torn=${torn:-0}
+rc=0; [ "$torn" = 0 ] || rc=1; check "$rc" "no torn or interleaved line ($torn)"
+
+# Every log entry must be WHOLE: same trailing words as the source, not a prefix of it.
+whole=$(grep -c 'keeps the fixture export flat' "$DAY" 2>/dev/null); whole=${whole:-0}
+rc=0; [ "$whole" = 8 ] || rc=1; check "$rc" "every LOG entry survived intact end to end (got $whole)"
+
+# And each is attributable: eight distinct entry numbers, none overwritten.
+dl=$(grep -o '^  - entry [0-9]' "$DAY" 2>/dev/null | sort -u | grep -c .); dl=${dl:-0}
+rc=0; [ "$dl" = 8 ] || rc=1; check "$rc" "eight distinct LOG entries (got $dl)"
+
+# The bound itself: no appended line may exceed PIPE_BUF.
+over=$(awk 'length($0) > 512 { n++ } END { print n+0 }' "$DAY" 2>/dev/null)
+rc=0; [ "${over:-0}" = 0 ] || rc=1; check "$rc" "no appended line exceeds PIPE_BUF 512 bytes (${over:-0} over)"
 quiet 40
 
 echo

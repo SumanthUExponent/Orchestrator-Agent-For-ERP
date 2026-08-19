@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readYaml, ROOT } from '../scripts/orchestrator.mjs';
+import { readYaml, ROOT } from '../scripts/jarvis.mjs';
 import { install } from '../scripts/install.mjs';
 
 let tmp;
@@ -22,17 +22,17 @@ let prevSkills;
 
 before(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-install-'));
-  prevAgents = process.env.CLAUDE_AGENTS_DIR;
-  prevSkills = process.env.CLAUDE_SKILLS_DIR;
-  process.env.CLAUDE_AGENTS_DIR = path.join(tmp, 'agents');
-  process.env.CLAUDE_SKILLS_DIR = path.join(tmp, 'skills');
+  prevAgents = process.env.JARVIS_AGENTS_DIR;
+  prevSkills = process.env.JARVIS_SKILLS_DIR;
+  process.env.JARVIS_AGENTS_DIR = path.join(tmp, 'agents');
+  process.env.JARVIS_SKILLS_DIR = path.join(tmp, 'skills');
 });
 
 after(() => {
-  if (prevAgents === undefined) delete process.env.CLAUDE_AGENTS_DIR;
-  else process.env.CLAUDE_AGENTS_DIR = prevAgents;
-  if (prevSkills === undefined) delete process.env.CLAUDE_SKILLS_DIR;
-  else process.env.CLAUDE_SKILLS_DIR = prevSkills;
+  if (prevAgents === undefined) delete process.env.JARVIS_AGENTS_DIR;
+  else process.env.JARVIS_AGENTS_DIR = prevAgents;
+  if (prevSkills === undefined) delete process.env.JARVIS_SKILLS_DIR;
+  else process.env.JARVIS_SKILLS_DIR = prevSkills;
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 

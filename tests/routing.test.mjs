@@ -1,5 +1,5 @@
 /**
- * Orchestrator test suite (§29).
+ * JARVIS routing test suite (§29).
  *
  * These are regression tests for ROUTING DECISIONS, not for prose. Every case
  * below corresponds to a defect found while building the engine — each one
@@ -10,7 +10,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { build, readYaml, ROOT } from '../scripts/orchestrator.mjs';
+import { build, readYaml, ROOT } from '../scripts/jarvis.mjs';
 import { plan } from '../scripts/route.mjs';
 
 const reg = build({ quiet: true });

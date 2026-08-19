@@ -64,8 +64,8 @@ jobs:
 
       - name: Registry and swarm health
         run: |
-          node scripts/orchestrator.mjs health
-          node scripts/orchestrator.mjs doctor
+          node scripts/jarvis.mjs health
+          node scripts/jarvis.mjs doctor
 
       # Only on one node version per OS: these are wall-clock heavy (real sleeps, real
       # daemon lifecycles) and they exercise shell behaviour, not the Node version.
@@ -80,10 +80,10 @@ jobs:
       - name: Install end to end, then verify with doctor
         if: matrix.node == '20'
         run: |
-          export CLAUDE_JARVIS_DIR="$HOME/.claude/jarvis"
-          export CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json"
-          mkdir -p "$HOME/.claude" && echo '{}' > "$CLAUDE_SETTINGS_FILE"
-          node scripts/orchestrator.mjs voice --apply
+          export JARVIS_DIR="$HOME/.claude/jarvis"
+          export JARVIS_SETTINGS_FILE="$HOME/.claude/settings.json"
+          mkdir -p "$HOME/.claude" && echo '{}' > "$JARVIS_SETTINGS_FILE"
+          node scripts/jarvis.mjs voice --apply
           "$HOME/.claude/jarvis/jarvisctl" doctor
           "$HOME/.claude/jarvis/jarvisctl" report --text
 
@@ -115,16 +115,23 @@ jobs:
       - name: Install, and check the hook command is executable here
         shell: bash
         run: |
-          export CLAUDE_JARVIS_DIR="$HOME/.claude/jarvis"
-          export CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json"
-          mkdir -p "$HOME/.claude" && echo '{}' > "$CLAUDE_SETTINGS_FILE"
-          node scripts/orchestrator.mjs voice --apply
-          node -e "
-            const fs=require('fs');
-            const s=JSON.parse(fs.readFileSync(process.env.CLAUDE_SETTINGS_FILE,'utf8'));
+          export JARVIS_DIR="$HOME/.claude/jarvis"
+          export JARVIS_SETTINGS_FILE="$HOME/.claude/settings.json"
+          mkdir -p "$HOME/.claude" && echo '{}' > "$JARVIS_SETTINGS_FILE"
+          node scripts/jarvis.mjs voice --apply
+          node --input-type=module -e "
+            const fs=await import('node:fs');
+            const url=await import('node:url');
+            // Derive the expected count from HOOKS instead of hardcoding it. The literal
+            // 8 went stale twice without anyone noticing until Windows CI failed: once
+            // when PreCompact/PostCompact were added, once for SubagentStart.
+            const { HOOKS }=await import(url.pathToFileURL('scripts/voice.mjs').href);
+            const s=JSON.parse(fs.readFileSync(process.env.JARVIS_SETTINGS_FILE,'utf8'));
             const cmds=Object.values(s.hooks).flatMap(g=>g.flatMap(x=>x.hooks.map(h=>h.command)));
-            const jarvis=cmds.filter(c=>c.includes('jarvis'));
-            if(jarvis.length!==8) throw new Error('expected 8 hooks, got '+jarvis.length);
+            // jarvis.sh, not 'jarvis' -- the routing skill now lives at a path that
+            // contains the word, and matching loosely counted it as a voice hook.
+            const jarvis=cmds.filter(c=>c.includes('jarvis.sh'));
+            if(jarvis.length!==HOOKS.length) throw new Error('expected '+HOOKS.length+' hooks, got '+jarvis.length);
             for(const c of jarvis){
               if(c.includes('\\\\')) throw new Error('backslash in hook command: '+c);
               if(!c.startsWith('bash ')) throw new Error('hook does not invoke bash: '+c);

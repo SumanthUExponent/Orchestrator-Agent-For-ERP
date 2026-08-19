@@ -12,12 +12,18 @@
 #
 # Always exits 0. A notification system that can block a tool call is a liability.
 
-J="$HOME/.claude/jarvis"
+# JARVIS_DIR, with the historical name as a fallback. The installer has always
+# honoured this variable; the runtime scripts did not, so an install anywhere but
+# the default silently found no config.sh, no tones and no state -- and said
+# nothing about it, because every lookup is guarded. CI installs to a temp dir,
+# which is how an audition that rendered ": . 4 minutes." got past a ceiling check.
+J="${JARVIS_DIR:-${CLAUDE_JARVIS_DIR:-$HOME/.claude/jarvis}}"
 [ -f "$J/config.sh" ] && . "$J/config.sh"
 
 Q="$J/queue"; S="$J/state"
-mkdir -p "$Q" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" \
-         "$S/done" "$S/todo" "$S/heads" "$S/cwd" "$J/briefings" "$J/daily" "$J/run" 2>/dev/null
+mkdir -p "$Q" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" "$S/inflight" "$S/swarm" \
+         "$S/done" "$S/todo" "$S/heads" "$S/cwd" "$S/ctxj" "$S/ctx" \
+         "$J/briefings" "$J/daily" "$J/run" 2>/dev/null
 
 MODE="$1"
 
@@ -65,8 +71,76 @@ esac
 # The clause is then filtered through an ALLOWLIST, not escaped. It is about to be read
 # aloud and carried through a pipe-delimited queue line, and agent output is not a
 # trusted input, so anything that is not plain speech is dropped.
+# Make word separators AUDIBLE before the allowlist deletes them.
+#
+# The allowlist below is `tr -cd`, which DELETES. It does not substitute. So an
+# identifier or a path arriving here unprepared does not lose its separators — it
+# loses its word boundaries, and the tokens either side fuse into one
+# unpronounceable blob:
+#
+#   apps/exponent_utilities/hooks.py  ->  appsexponentutilitieshooks.py
+#   frappe_exponent_crm schema is in  ->  frappeexponentcrm schema is in
+#   ~/.claude/statusline.sh: /bin/bash -> .claudestatusline.sh: binbash
+#
+# All three are real lines out of the daily log. This runs FIRST so the allowlist
+# only ever sees text that is already spoken words. It does not widen the
+# allowlist: every character it emits was already permitted.
+#
+# A handful of symbols carry meaning that deletion silently destroys, so they
+# become the word they stand for rather than nothing. "Typo cladue -> claude"
+# was being spoken as "Typo cladue claude", which reverses nothing and explains
+# nothing. One awk pass, because sed's handling of multibyte literals and of
+# escapes in the replacement differs between BSD and GNU.
+speakable_separators() {
+  awk '{
+    gsub(/→/,  " to ")   # a literal arrow: \x escapes are silently inert in BWK awk
+    gsub(/->/,  " to ")
+    gsub(/=>/,  " to ")
+    gsub(/&/,   " and ")
+    gsub(/%/,   " percent ")
+    gsub(/\+/, " plus ")
+    gsub(/[_\/\\|]/, " ")
+  } 1'
+}
+
+# Cap a clause without cutting a word in half.
+#
+# `${v:0:140}` cuts blind. Fourteen of the thirty entries in the daily log end
+# mid-word — "...and an appsapp cw" — which a synthesiser reads as a nonsense
+# syllable and then stops. Back off to the last space instead, and close the
+# clause so it does not trail off in mid-air.
+clip() {
+  local s="$1" max="${2:-140}"
+  if [ ${#s} -gt "$max" ]; then
+    s="${s:0:$max}"
+    case "$s" in *' '*) s="${s% *}" ;; esac
+  fi
+  # Trailing separators only. NO terminal full stop: the clause is a FRAGMENT that
+  # render() embeds in a frame -- "$who: $summary$SIR. $(dur)." -- so a self-terminated
+  # clause produces "schema is in., sir." Sentence punctuation belongs to the template
+  # that owns the whole sentence, not to the piece being dropped into it.
+  s="${s%"${s##*[!,;: ]}"}"
+  printf '%s' "$s"
+}
+
+# marker_note <MARKER> [doc]
+#
+# The optional second argument selects the FILTER, not the extraction. Everything
+# about finding the clause — the terminal-marker rule, the JSON unwrapping — is
+# identical and must stay in one place, but the two consumers need different text:
+#
+#   (default)  speech. `speakable_separators` then a hard ALLOWLIST, because the
+#              clause is about to be handed to a synthesiser and carried through a
+#              pipe-delimited queue line.
+#   doc        the handoff document. `apps/foo/hooks.py` must survive as a path;
+#              running it through the speech allowlist would render it "apps foo
+#              hooks.py", which is correct to SAY and useless to READ. Only the two
+#              characters that would corrupt a JSON line are dropped.
+#
+# DECISION and GOTCHA are document-only and are never spoken, so they always take
+# the second path.
 marker_note() {
-  local marker="$1" v
+  local marker="$1" v filter="${2:-speech}"
   case "$IN" in *"$marker":*) ;; *) return 1 ;; esac
   # A marker qualifies only if it is TERMINAL: every non-empty line after it is another
   # marker, or the JSON tail. That is precisely what the contract asks agents for, and it
@@ -89,51 +163,102 @@ marker_note() {
           { line[++n] = $0 }
           END {
             i = n
-            while (i > 0 && line[i] ~ /^["}\]]+,?$/) i--
-            while (i > 0 && line[i] ~ /^(VOICE|PENDING|HEADS-UP):/) {
+            # Skip the JSON tail. Two shapes, and only the first was handled:
+            #
+            #   last_assistant_message LAST   -> tail line is `"}`      matched
+            #   last_assistant_message FIRST  -> tail line is `","hook_event_name":"Stop"}`
+            #
+            # The second shape appears whenever the message ends with a newline AND any
+            # field follows it in the payload -- and then NO marker was ever harvested,
+            # for VOICE, PENDING, HEADS-UP, DECISION, GOTCHA and LOG alike. Silently:
+            # the hook exits 0 and the announcement falls back to the terse form. Every
+            # existing test happened to put the message last, so nothing caught it.
+            while (i > 0 && (line[i] ~ /^["}\]]+,?$/ || line[i] ~ /^",/)) i--
+            while (i > 0 && line[i] ~ /^(VOICE|PENDING|HEADS-UP|DECISION|GOTCHA|LOG|GATE):/) {
               if (out == "" && line[i] ~ "^" M ":") out = line[i]
               i--
             }
             if (out != "") { sub("^" M ":[ \t]*", "", out); print out }
           }' \
-      | sed 's/".*//' \
-      | tr -cd "A-Za-z0-9 .,;:'-" \
-      | tr -s ' ')
+      | sed 's/".*//')
+  # Held in a variable rather than a temp file: this runs on the `Stop` path, and a
+  # scratch file per marker per turn is exactly the kind of constant cost the rest of
+  # this file goes out of its way to avoid.
+  if [ "$filter" = doc ] || [ "$filter" = log ]; then
+    v=$(printf '%s' "$v" | tr -d '"\\' | tr -s ' ')
+  else
+    v=$(printf '%s' "$v" | speakable_separators | tr -cd "A-Za-z0-9 .,;:'-" | tr -s ' ')
+  fi
   v="${v# }"; v="${v% }"
-  # A runaway line would otherwise be read out for a minute.
-  v="${v:0:140}"
+  # A runaway line would otherwise be read out for a minute. The document tolerates
+  # more than an announcement does, but not without bound.
+  #
+  # LOG is deliberately the longest: it is written and never spoken, so it carries the
+  # reasoning the clause has no room for. The bound is not taste, it is the atomicity
+  # property in file_append -- ONE printf that cannot interleave with another session.
+  # PIPE_BUF is 512 bytes on macOS (the smallest of the platforms), and the daily-log
+  # prefix -- timestamp, session name, separators, all multi-byte middots -- costs up
+  # to about 70 of them. 380 characters of prose leaves headroom at every step.
+  case "$filter" in
+    log) v=$(clip "$v" 380) ;;
+    doc) v=$(clip "$v" 240) ;;
+    *)   v=$(clip "$v" 140) ;;
+  esac
   [ ${#v} -ge 3 ] || return 1
   printf '%s' "$v"
 }
 
-# The turn's own closing sentence, when no agent left a marker.
+# The turn's own summary, when no agent left a marker.
 #
-# The main thread emits no markers — a VOICE line in a reply is visible clutter for the
-# person reading it — so a chat where the work is done directly, with no specialists
-# dispatched, would otherwise never produce a summary at all. That is the COMMON case,
-# not the exception, and it is why nothing was ever spoken in an ordinary conversation.
+# The main thread emits no markers, so this is the ONLY source of a summary on an
+# ordinary turn -- the common case, not the exception.
 #
-# The opening sentence of the final message is a decent summary of a turn, and it costs
-# nothing: no model call, no marker, no clutter.
+# The selection logic lives in summarise.awk, which scores every candidate sentence
+# and returns the one that best reports an OUTCOME. It used to take the opening
+# sentence, which is cheap and was wrong most of the time: the opening of a reply is
+# usually meta-commentary ("I cannot restart myself from inside the session"), a
+# discourse opener ("Let me walk through what I found."), or a disclaimer.
+#
+# Returning 1 means "no summary", which yields the terse completion form. That is a
+# worse announcement than a good sentence and a much better one than a fragment read
+# out with confidence.
 first_sentence() {
-  local v
+  local v awkp="$J/summarise.awk"
+  # A partial upgrade must degrade, not error: no picker, no summary, terse form.
+  [ -r "$awkp" ] || return 1
   v=$(printf '%s' "$IN" \
-      | sed -n 's/.*"last_assistant_message":"//p' \
-      | awk '{gsub(/\\n/,"\n")} 1' \
-      | sed -e 's/^[[:space:]#>*`_-]*//' \
-      | sed -n '1,4p' \
-      | tr '\n' ' ' \
-      | sed 's/\([.!?]\)[[:space:]].*/\1/' \
+      | awk -f "$awkp" \
+      | speakable_separators \
       | tr -cd "A-Za-z0-9 .,;:'-" \
-      | tr -s ' ')
+      | tr -s ' ') || return 1
   v="${v# }"; v="${v% }"
-  v="${v:0:120}"
+  v=$(clip "$v" 120)
   # Too short to be a sentence, or so long it was never one.
   [ ${#v} -ge 12 ] || return 1
   printf '%s' "$v"
 }
 
 voice_note() { marker_note VOICE; }
+
+# The written record a specialist leaves behind, as distinct from what it says.
+#
+# The 45 specialists know far more than the one clause that gets spoken, and the daily
+# log is read rather than heard -- so this one keeps the paths, the identifiers, the
+# counts, and the WHY. Never spoken, never queued, never allowlisted for speech.
+log_note() { marker_note LOG log; }
+
+# The gate an agent REFUSED at, which is the authoritative signal.
+#
+# `plan` can only guess which of the seven a request crosses -- nothing in the planner
+# decides it, so its matcher is a keyword heuristic biased towards silence. THIS is the
+# real thing: the agent that actually hit the gate says so, on its way to escalating.
+#
+# Deliberately NOT validated against the seven here: the shell layer has no access to
+# registry/agents.yaml, and inventing a second copy of the list is how two lists start
+# disagreeing. The contract carries the seven names verbatim for agents to copy, and a
+# test asserts they are all present. What arrives is allowlist-filtered and budgeted
+# like any other clause.
+gate_note() { marker_note GATE; }
 
 # The permanent record of the day, as distinct from what gets announced.
 #
@@ -144,24 +269,35 @@ voice_note() { marker_note VOICE; }
 #
 # Append-only and written as it happens, not assembled at session end — a terminal that
 # is killed, or a machine that reboots, must not take the day with it.
-daily_append() {
-  local d f
-  d=$(date +%Y-%m-%d)
-  f="$J/daily/$d.md"
-  # Create the header atomically. Two sessions finishing a turn in the same instant would
-  # otherwise both find no file and both write one. noclobber makes the create-or-skip a
-  # single operation instead of a check followed by a write.
-  ( set -C; printf '# Daily log — %s\n\n' "$d" > "$f" ) 2>/dev/null
-  # The trailing newline is added HERE, not by the caller. Callers build their entry in a
-  # command substitution, and `$( )` strips trailing newlines — so a caller that ended its
-  # own line found the newline silently removed, and every entry in the file ran into the
-  # next one. Owning it at the sink means no caller can get it wrong.
-  #
-  # ONE printf, so the append is a single write() that cannot interleave with another
-  # session's. Entries stay far below PIPE_BUF: clauses are capped at 140 characters and
-  # the per-session lists at eight items.
-  printf '%s\n' "$1" >> "$f" 2>/dev/null
+# file_append <file> <header-or-empty> <line>
+#
+# THE append routine. Every append in this system goes through here — the daily log,
+# and the per-session context journal added later in this file. There is deliberately
+# only one, because the three properties below were each paid for once and must not be
+# re-derived by a second implementation that gets one of them wrong.
+#
+#   1. The header is created with noclobber, so create-or-skip is a SINGLE operation
+#      rather than a check followed by a write. Two sessions finishing a turn in the
+#      same instant would otherwise both find no file and both write a header.
+#   2. The trailing newline is owned HERE, not by the caller. Callers build entries in
+#      a command substitution and `$( )` strips trailing newlines, so a caller that
+#      ended its own line found it silently removed and every entry ran into the next.
+#   3. ONE printf, so the append is a single write() that cannot interleave with
+#      another session's. Entries stay far below PIPE_BUF: clauses are capped at 140
+#      characters and the per-session lists at eight items.
+file_append() {
+  local f="$1" hdr="$2" line="$3"
+  [ -n "$f" ] || return 0
+  case "$f" in */*) mkdir -p "${f%/*}" 2>/dev/null ;; esac
+  [ -n "$hdr" ] && ( set -C; printf '%s\n\n' "$hdr" > "$f" ) 2>/dev/null
+  printf '%s\n' "$line" >> "$f" 2>/dev/null
   return 0
+}
+
+daily_append() {
+  local d
+  d=$(date +%Y-%m-%d)
+  file_append "$J/daily/$d.md" "$(printf '# Daily log — %s' "$d")" "$1"
 }
 
 # Append a clause to a per-session list, without duplicates. The same PENDING item
@@ -176,6 +312,147 @@ remember() {
   [ "$n" -lt 8 ] && printf '%s\n' "$line" >> "$file"
   return 0
 }
+
+# ---------------------------------------------------------------------------
+# Session context — the handoff document
+#
+# One document per session, in $JARVIS_CTX_DIR, written AS THE SESSION RUNS.
+# Distinct from the daily log, which is one line per turn across every session and
+# answers "what did I do today"; this answers "what was this session for, what was
+# decided, and what is still open" — which is what a FUTURE session needs loaded.
+#
+# The split that makes it affordable:
+#
+#   here (bash, hot)    append one JSON line to <session>.jsonl. No spawn, ever.
+#   context.mjs (cold)  render the .md from that journal. Spawned at compaction,
+#                       at session end, and by the SessionStart sweep.
+#
+# So `Stop` — which fires after every single turn — costs exactly one printf, the
+# same as the daily log already did. node is never on that path. The journal is the
+# truth and the markdown is a projection of it, so a session killed at any instant
+# loses nothing: the sweep at the next SessionStart renders whatever was left.
+# ---------------------------------------------------------------------------
+
+CTX_DIR="${JARVIS_CTX_DIR:-$HOME/frappe-bench/Referencedocs/CLI-Session-Context}"
+# Installed beside this file by `voice --apply`. The skills-install copy is the
+# fallback, so either installer alone is enough.
+CTX_MJS="${JARVIS_CTX_MJS:-}"
+if [ -z "$CTX_MJS" ]; then
+  if   [ -r "$J/context.mjs" ]; then CTX_MJS="$J/context.mjs"
+  else CTX_MJS="$HOME/.claude/skills/jarvis/scripts/context.mjs"; fi
+fi
+
+# Enabled, installed, and node present. Any of the three missing is a silent no-op:
+# a context recorder that can break a hook is exactly the liability this whole file
+# is written to avoid.
+#
+# platform.sh is sourced HERE and nowhere else in this file. It is 14 KB, and this
+# file runs on every hook event — sourcing it at the top would put that cost on
+# `Stop`, which fires after every turn, to reach a function only the cold paths use.
+# Every caller of ctx_on() is cold: first prompt, compaction, session end.
+ctx_on() {
+  [ "${JARVIS_CTX:-1}" = "1" ] || return 1
+  [ -r "$CTX_MJS" ] || return 1
+  if [ -z "${JV_OS:-}" ] && [ -r "$J/platform.sh" ]; then . "$J/platform.sh"; fi
+  jv_have_node 2>/dev/null || return 1
+  return 0
+}
+
+# The journal path, cached in a plain file at open time.
+#
+# Resolving it would otherwise mean asking context.mjs, and that is a node spawn on
+# the `Stop` path — which is the one thing this design exists to avoid. It is written
+# once, when the session is opened, and read with a bare `read` thereafter.
+ctx_journal() {
+  [ -r "$S/ctxj/$KEY" ] || return 1
+  local p; read -r p < "$S/ctxj/$KEY" 2>/dev/null || return 1
+  [ -n "$p" ] || return 1
+  printf '%s' "$p"
+}
+
+# Strip anything credential-shaped, then make the text safe to sit inside a JSON
+# string literal.
+#
+# Interval quantifiers ({16,}) are avoided deliberately: the awk that ships with
+# macOS did not support them for most of its life, and a pattern that silently fails
+# to match is worse here than a slightly blunter one. `+` costs nothing in precision
+# for these shapes. The thorough, shape-based filter — long hex runs, base64, JWTs —
+# lives in context.mjs, which handles every string that did not come through here.
+#
+# The double quote and the backslash are DELETED rather than escaped: this text is
+# about to be interpolated into a JSON line by printf, and deleting two characters
+# from a human-readable clause is a smaller loss than an escaping bug that corrupts
+# the journal for the rest of the session.
+ctx_clean() {
+  sed -E \
+    -e 's#sk-ant-[A-Za-z0-9_-]+#[REDACTED]#g' \
+    -e 's#gh[pousr]_[A-Za-z0-9]+#[REDACTED]#g' \
+    -e 's#github_pat_[A-Za-z0-9_]+#[REDACTED]#g' \
+    -e 's#xox[baprs]-[A-Za-z0-9-]+#[REDACTED]#g' \
+    -e 's#(AKIA|ASIA)[0-9A-Z]+#[REDACTED]#g' \
+    -e 's#AIza[0-9A-Za-z_-]+#[REDACTED]#g' \
+    -e 's#[Bb]earer [A-Za-z0-9._~+/-]+#[REDACTED]#g' \
+    -e 's#(api[_-]?key|apikey|secret|access[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd|private[_-]?key)([[:space:]]*[:=][[:space:]]*)[^[:space:],;]+#\1\2[REDACTED]#Ig' \
+    2>/dev/null \
+    | tr -d '"\\' \
+    | tr '\n\r\t' '   ' \
+    | tr -s ' '
+}
+
+# ctx_event <kind> <value> [extra-json]
+# One JSON object, one line, one printf — through the same file_append as the daily
+# log, per the rule that this system has exactly one append routine.
+ctx_event() {
+  local f v
+  f=$(ctx_journal) || return 0
+  [ -n "$2" ] || [ -n "${3:-}" ] || return 0
+  v=$(printf '%s' "$2" | ctx_clean)
+  v="${v# }"; v="${v% }"
+  file_append "$f" "" "$(printf '{"t":%s,"k":"%s","v":"%s"%s}' "$NOW" "$1" "$v" "${3:-}")"
+}
+
+# Materialise the document. Called on the FIRST UserPromptSubmit, not at SessionStart,
+# for two reasons that are both about the filename:
+#
+#   * the name is a slug of the first prompt, which does not exist at SessionStart.
+#     Creating under a placeholder and renaming later races every append already in
+#     flight, and the rename is unrecoverable if it loses.
+#   * a session that never receives a prompt has nothing to record. No file is the
+#     correct output, not an empty one.
+#
+# The SessionStart timestamp is still what lands in the front matter — it is stashed
+# in $S/start/$KEY by the `start` mode above.
+ctx_open() {
+  ctx_on || return 0
+  [ -e "$S/ctxj/$KEY" ] && return 0
+  local prompt started jpath
+  # Cut at the first unescaped closing quote, NOT at `","`. When `prompt` is the last
+  # key in the payload -- which it is, in a real UserPromptSubmit -- there is no
+  # following `","` at all, so the objective came out with a literal `"}` welded onto
+  # the end of it. Trim both shapes, in that order.
+  prompt=$(printf '%s' "$IN" \
+    | sed -n 's/.*"prompt":"//p' \
+    | sed -e 's/",".*//' -e 's/"[]}[:space:]]*$//' \
+    | awk '{gsub(/\\n/," ")} 1' \
+    | head -c 1200)
+  [ -n "$prompt" ] || return 0
+  started=$(cat "$S/start/$KEY" 2>/dev/null); [ -z "$started" ] && started=$NOW
+  mkdir -p "$S/ctxj" 2>/dev/null
+  jpath=$(JARVIS_CTX_DIR="$CTX_DIR" jv_node "$CTX_MJS" open \
+            --key "$KEY" --session-id "$SID" --cwd "${CWD:-$PWD}" \
+            --branch "$(ctx_branch)" --started "$started" --prompt "$prompt" 2>/dev/null)
+  [ -n "$jpath" ] && printf '%s\n' "$jpath" > "$S/ctxj/$KEY" 2>/dev/null
+  return 0
+}
+
+# The branch, read from git in the session's own directory. `git` is not an OS tool in
+# the platform.sh sense — it is the same on every platform — but it may be absent, and
+# this bench root is not a repository at all, so both outcomes are handled.
+ctx_branch() {
+  command -v git >/dev/null 2>&1 || { printf ''; return; }
+  git -C "${CWD:-$PWD}" rev-parse --abbrev-ref HEAD 2>/dev/null | tr -d '\n' | tr -cd 'A-Za-z0-9._/-'
+}
+
 
 # The session's working directory, taken from the hook payload where it is given. Claude
 # Code passes `cwd` explicitly; $PWD is only a proxy for it and the two can differ.
@@ -311,12 +588,110 @@ case "$MODE" in
     mark_active
     echo "$NOW" > "$S/start/$KEY"
     rm -f "$S/subs/$KEY"
+    # Tidy documents left `active` by a session that never got a SessionEnd — a
+    # closed terminal, a reboot, a kill -9 — and print the pointer to any recent
+    # session for this project that still has open threads. A POINTER, at most three
+    # lines: it is injected before anyone has decided the work is worth loading, so
+    # naming the file is the whole job. The contents are the reader's call.
+    if ctx_on; then
+      JARVIS_CTX_DIR="$CTX_DIR" jv_node "$CTX_MJS" startup --project "${CWD:-$PWD}" 2>/dev/null
+    fi
     enqueue 4 boot "" ;;
 
   begin)                            # UserPromptSubmit — restart the clock
     mark_active
     echo "$NOW" > "$S/start/$KEY"
-    rm -f "$S/pending/$KEY" "$S/subs/$KEY" "$S/notes/$KEY" ;;
+    # The first prompt is what names and opens the document; later ones are no-ops.
+    ctx_open
+    rm -f "$S/pending/$KEY" "$S/subs/$KEY" "$S/notes/$KEY" "$S/inflight/$KEY" "$S/swarm/$KEY" ;;
+
+  precompact)                       # PreCompact — the point at which context is LOST
+    # Compaction, not session closure, is where context actually goes. It happens
+    # repeatedly inside a long session and it is silent. Everything below runs before
+    # the discard, and every part of it is deterministic: the payload carries
+    # `transcript_path`, a POINTER to the conversation, not the conversation, so the
+    # snapshot is built by reading the transcript window since the last watermark.
+    #
+    # Repeated compactions therefore capture DISJOINT windows rather than re-reading
+    # the whole file, and the cost is proportional to new content rather than to a
+    # transcript that can reach twenty megabytes.
+    ctx_on || exit 0
+    TRIG=""
+    case "$IN" in *'"trigger"'*) TRIG=${IN#*\"trigger\":\"}; TRIG=${TRIG%%\"*} ;; esac
+    case "$TRIG" in manual|auto) ;; *) TRIG=auto ;; esac
+    TPATH=""
+    case "$IN" in *'"transcript_path"'*) TPATH=${IN#*\"transcript_path\":\"}; TPATH=${TPATH%%\"*} ;; esac
+    # A JSON string escapes the separator on Windows; nothing else here can contain one.
+    TPATH=${TPATH//\\\\//}
+    [ -r "$TPATH" ] || exit 0
+    ctx_open   # a session can compact before it has ever been opened by a prompt
+
+    RES=$(JARVIS_CTX_DIR="$CTX_DIR" jv_node "$CTX_MJS" precompact \
+            --key "$KEY" --transcript "$TPATH" --trigger "$TRIG" 2>/dev/null)
+    SNAP=${RES%%|*}; REST=${RES#*|}; DROPPED=${REST%%|*}
+    case "$SNAP" in ''|*[!0-9]*) exit 0 ;; esac
+
+    # The optional model pass. Deterministic extraction has already recovered the
+    # FACTS — files, commands, prompts, markers — and they are on disk before this
+    # runs. What it cannot recover is a decision's REASONING, because the main thread
+    # emits no markers. That is the one place a model call is the honest answer.
+    #
+    # Detached, so the hook has returned long before it starts. Floored, because a
+    # small window is not worth a request. Capped per day, because a pathological
+    # day must not run away — and both are RECORDED in the document when they bite,
+    # since a silent cap reads as "nothing was there".
+    if [ "${JARVIS_CTX_SUMMARY:-1}" = "1" ]; then
+      MINC=${JARVIS_CTX_SUMMARY_MIN_CHARS:-16000}
+      DAYMAX=${JARVIS_CTX_SUMMARY_DAILY_MAX:-20}
+      CNTF="$S/ctx_llm_$(date +%Y%m%d)"
+      CNT=$(cat "$CNTF" 2>/dev/null); case "$CNT" in ''|*[!0-9]*) CNT=0 ;; esac
+      case "$DROPPED" in ''|*[!0-9]*) DROPPED=0 ;; esac
+      if [ "$DROPPED" -lt "$MINC" ]; then
+        ctx_event skipped "" ",\"n\":$SNAP,\"why\":\"window below the ${MINC}-char floor\""
+      elif [ "$CNT" -ge "$DAYMAX" ]; then
+        ctx_event skipped "" ",\"n\":$SNAP,\"why\":\"daily cap of $DAYMAX summaries reached\""
+      else
+        echo $(( CNT + 1 )) > "$CNTF" 2>/dev/null
+        # `< /dev/null` is not decoration: this file reads stdin at the top, and a
+        # detached copy that inherits the hook's stdin blocks on a read that never
+        # returns — taking the model pass with it, silently.
+        ( nohup "$J/jarvis.sh" llm "$KEY" "$SNAP" "$TPATH" </dev/null >/dev/null 2>&1 & ) 2>/dev/null
+      fi
+    fi
+    enqueue 8 sub "$SNAP" ;;
+
+  postcompact)                      # PostCompact — what survived
+    # The payload carries the summary the model kept. Recording it next to the
+    # snapshot of what was dropped is what makes the pair readable: one says what
+    # was lost, the other what replaced it. Pure payload read — no transcript walk.
+    ctx_on || exit 0
+    SUMM=""
+    case "$IN" in
+      *'"summary"'*) SUMM=${IN#*\"summary\":\"}; SUMM=${SUMM%%\"*} ;;
+    esac
+    SUMM=$(printf '%s' "$SUMM" | awk '{gsub(/\\n/," ")} 1' | head -c 800)
+    JARVIS_CTX_DIR="$CTX_DIR" jv_node "$CTX_MJS" postcompact \
+      --key "$KEY" --summary "$SUMM" >/dev/null 2>&1
+    exit 0 ;;
+
+  llm)                              # internal: the detached model pass
+    # Never invoked as a hook. Spawned by `precompact` above, already detached, so
+    # it may take as long as it takes. It writes marker lines into the journal and
+    # re-renders; if anything fails the document simply keeps the deterministic
+    # facts it already had.
+    ctx_on || exit 0
+    LKEY="$2"; LN="$3"; LT="$4"
+    KEY="$LKEY"
+    [ -r "$S/ctxj/$KEY" ] || exit 0
+    TMPI="$J/run/llm-in-$$"; TMPO="$J/run/llm-out-$$"
+    JARVIS_CTX_DIR="$CTX_DIR" jv_node "$CTX_MJS" llmprompt \
+      --key "$KEY" --n "$LN" --transcript "$LT" > "$TMPI" 2>/dev/null
+    if [ -s "$TMPI" ] && jv_llm_summarize "$TMPI" "$TMPO"; then
+      [ -s "$TMPO" ] && JARVIS_CTX_DIR="$CTX_DIR" jv_node "$CTX_MJS" reasoned \
+        --key "$KEY" --n "$LN" --file "$TMPO" >/dev/null 2>&1
+    fi
+    rm -f "$TMPI" "$TMPO" 2>/dev/null
+    exit 0 ;;
 
   done)                             # Stop
     # No "permission granted" event exists in Claude Code, so pending state is
@@ -334,8 +709,26 @@ case "$MODE" in
     # What to actually say. Specialist notes first; failing that, a marker the main
     # thread left in its own final message.
     # The main thread can leave these too, not only the specialists.
-    remember "$S/todo/$KEY"  "$(marker_note 'PENDING' 2>/dev/null)"
-    remember "$S/heads/$KEY" "$(marker_note 'HEADS-UP' 2>/dev/null)"
+    #
+    # Extracted ONCE into variables and used twice — by the spoken briefing below and
+    # by the handoff document further down. Calling marker_note again for the second
+    # consumer would double the awk passes on the hottest path in the system. The
+    # early `case "$IN"` guard already makes a turn with no markers free; this keeps a
+    # turn WITH markers from paying twice.
+    MK_PENDING=$(marker_note 'PENDING'  2>/dev/null)
+    MK_HEADS=$(marker_note   'HEADS-UP' 2>/dev/null)
+    remember "$S/todo/$KEY"  "$MK_PENDING"
+    remember "$S/heads/$KEY" "$MK_HEADS"
+
+    # A refused gate outranks everything else this turn. Enqueued at priority 0 BEFORE
+    # the completion is even considered, so it is spoken first and the completion queues
+    # behind it -- an agent that stopped because it needs authorisation is not a turn
+    # that "finished".
+    MK_GATE=$(gate_note 2>/dev/null) || MK_GATE=""
+    if [ -n "$MK_GATE" ]; then
+      mark_active
+      enqueue 0 gate "$MK_GATE"
+    fi
 
     SUMMARY=""
     if [ "${JARVIS_SUMMARY:-1}" = "1" ]; then
@@ -411,13 +804,83 @@ case "$MODE" in
       esac
       daily_append "$(printf -- '- **%s** · `%s` · %s%s · %s%s' \
         "$(date +%H:%M)" "$NAME" "$_d" "$_crew" "$_flag" "$_what")"
+
+      # A specialist's fuller account, when it left one. A SECOND single-printf append
+      # rather than one longer line: two writes of 400 bytes each stay inside the
+      # atomicity budget where one of 800 would not, and the turn line stays scannable
+      # with the detail indented beneath it.
+      #
+      # Written HERE, on the Stop path as the turn ends -- not assembled at SessionEnd.
+      # A killed terminal must not take the day with it, which is the property the whole
+      # daily log exists to hold.
+      _log=$(log_note 2>/dev/null) || _log=""
+      [ -n "$_log" ] && daily_append "$(printf -- '  - %s' "$_log")"
     fi
+
+    # The same turn, into this session's own journal. One printf, no spawn — the
+    # clause and the elapsed time were already computed for the line above, so the
+    # marginal cost of the handoff document on the hottest path in the system is a
+    # single additional write().
+    if [ -n "$SUMMARY" ]; then
+      _p=0; [ -n "$_flag" ] && _p=1
+      ctx_event turn "$SUMMARY" ",\"el\":$el,\"subs\":$subs,\"p\":$_p"
+    fi
+    # Markers the main thread or a specialist left. PENDING and HEADS-UP are reused
+    # from the extraction above rather than re-run. DECISION and GOTCHA are
+    # document-only and never spoken, so they take the `doc` filter, which preserves
+    # paths instead of reducing them to speakable words.
+    ctx_event decision "$(marker_note 'DECISION' doc 2>/dev/null)"
+    ctx_event gotcha   "$(marker_note 'GOTCHA'   doc 2>/dev/null)"
+    ctx_event thread   "$MK_PENDING"
+    ctx_event gotcha   "$MK_HEADS"
 
     if [ "$el" -lt "${JARVIS_MIN_SECONDS:-25}" ] || [ "$speak_it" = 0 ]; then
       enqueue 7 tick "$el"
     else
       enqueue 5 'done' "$el:$subs" "$SUMMARY"
     fi ;;
+
+  swarm)                            # JARVIS routing: record the shape of the plan
+    # Silent. `jarvisctl report` answers "what is the swarm doing right now", and the
+    # in-flight COUNT alone cannot say in which batch or at which tier -- only the
+    # planner knows that, and only at plan time. So it is recorded here and read there.
+    mkdir -p "$S/swarm" 2>/dev/null
+    SW=$(printf '%s' "${2:-}" | tr -cd "A-Za-z0-9 ,.:-" | tr -s ' ')
+    printf '%s\n' "$(clip "$SW" 120)" > "$S/swarm/$KEY" 2>/dev/null
+    exit 0 ;;
+
+  gate)                             # JARVIS routing: a human-approval gate was hit
+    # THE LOUDEST THING THIS LAYER SAYS, and the only announcement that names its own
+    # cause. There are seven gates and they are not interchangeable -- "needs your
+    # approval" tells you to look, "a production deployment needs your approval" tells
+    # you what you are about to be asked. Priority 0, ahead of everything.
+    #
+    # The gate name arrives as $2 rather than in a JSON payload: the caller is the
+    # JARVIS routing, a Node CLI, not a Claude Code hook, so there is no payload to put
+    # it in.
+    mark_active
+    GATE=$(printf '%s' "${2:-}" | speakable_separators | tr -cd "A-Za-z0-9 .,;:'-" | tr -s ' ')
+    GATE=$(clip "$GATE" 140)
+    enqueue 0 gate "$GATE" ;;
+
+  route)                            # JARVIS routing: a routing or planning decision
+    # A dropped agent or a capped effort level is a decision someone made on your
+    # behalf. One line, at routine priority -- it is information, not an interruption.
+    mark_active
+    RT=$(printf '%s' "${2:-}" | speakable_separators | tr -cd "A-Za-z0-9 .,;:'-" | tr -s ' ')
+    RT=$(clip "$RT" 140)
+    [ ${#RT} -ge 3 ] || exit 0
+    enqueue 6 route "$RT" ;;
+
+  substart)                         # SubagentStart — a specialist went out
+    # The COMPLETION count already existed; this is the in-flight count, which is what
+    # `jarvisctl report` needs to answer "what is the swarm doing right now" rather
+    # than "what has it finished". Silent by design: a batch of four dispatching is
+    # four events, and sub-agents do not speak.
+    mkdir -p "$S/inflight" 2>/dev/null
+    _n=$(cat "$S/inflight/$KEY" 2>/dev/null); case "$_n" in ''|*[!0-9]*) _n=0 ;; esac
+    printf '%s\n' "$(( _n + 1 ))" > "$S/inflight/$KEY" 2>/dev/null
+    exit 0 ;;
 
   permission|approve)               # Notification / permission_prompt
     mark_active
@@ -428,6 +891,12 @@ case "$MODE" in
     enqueue 6 idle "" ;;
 
   subagent|sub)                     # SubagentStop
+    # Decrement the in-flight count first, and never below zero: SubagentStop can fire
+    # for a specialist whose start was missed (an older install, or a session that
+    # began before SubagentStart was registered), and a negative count would render as
+    # "minus one specialist running".
+    _n=$(cat "$S/inflight/$KEY" 2>/dev/null); case "$_n" in ''|*[!0-9]*) _n=0 ;; esac
+    [ "$_n" -gt 0 ] && printf '%s\n' "$(( _n - 1 ))" > "$S/inflight/$KEY" 2>/dev/null
     n=$(cat "$S/subs/$KEY" 2>/dev/null); [ -z "$n" ] && n=0
     echo $(( n + 1 )) > "$S/subs/$KEY"
     # Whatever this specialist wanted said. Capped: a swarm run can dispatch a dozen,
@@ -502,6 +971,31 @@ $(sed 's/^/- **Heads up** · /' "$S/heads/$KEY" 2>/dev/null)"
 $(sed 's/^/- **Pending** · /' "$S/todo/$KEY" 2>/dev/null)"
       fi
       daily_append "$_blk"
+    fi
+
+    # Close the handoff document: flip the front matter to `closed`, fold the journal
+    # into its final shape, and add the line to INDEX.md. A session that produced
+    # nothing meaningful has its file removed here rather than left as a ceremonial
+    # empty record — silence is the correct entry for "nothing happened".
+    if ctx_on && [ -e "$S/ctxj/$KEY" ]; then
+      # Everything the spoken briefing collected is already deduplicated and capped
+      # at eight by remember(); reuse it wholesale rather than re-harvesting.
+      if [ -s "$S/todo/$KEY" ]; then
+        while IFS= read -r _l; do ctx_event thread "$_l"; done < "$S/todo/$KEY"
+      fi
+      if [ -s "$S/heads/$KEY" ]; then
+        while IFS= read -r _l; do ctx_event gotcha "$_l"; done < "$S/heads/$KEY"
+      fi
+      # SessionEnd carries the transcript path, so the close can sweep everything
+      # since the last compaction -- which for a session that never compacted is the
+      # whole thing, and is the only place "Files touched" can come from.
+      ETP=""
+      case "$IN" in *'"transcript_path"'*) ETP=${IN#*\"transcript_path\":\"}; ETP=${ETP%%\"*} ;; esac
+      ETP=${ETP//\\\\//}
+      [ -r "$ETP" ] || ETP=""
+      JARVIS_CTX_DIR="$CTX_DIR" jv_node "$CTX_MJS" close --key "$KEY" \
+        ${ETP:+--transcript "$ETP"} >/dev/null 2>&1
+      rm -f "$S/ctxj/$KEY" 2>/dev/null
     fi
 
     rm -f "$S/active/$KEY" "$S/start/$KEY" "$S/pending/$KEY" "$S/subs/$KEY" "$S/notes/$KEY" \

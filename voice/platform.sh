@@ -281,3 +281,65 @@ jv_backend_notify() {
     *) echo "none" ;;
   esac
 }
+
+# --------------------------------------------------------------- context layer
+#
+# The session-context recorder needs two things this file must own, because nothing
+# outside platform.sh is allowed to name an OS tool (tests/voice-audio.sh check P2).
+
+# node, for the context recorder. It parses transcript JSONL, which is not work for
+# awk. Deliberately NOT on the hot path: the Stop hook appends a line in pure bash
+# and never spawns anything. node is reached only at compaction, at session end, and
+# by the sweep — a handful of times per session, not once per turn.
+jv_have_node() { have node; }
+jv_node() { node "$@"; }
+
+# The optional model pass over a discarded compaction window.
+#
+# Deterministic extraction recovers FACTS — which files changed, which commands ran,
+# what was asked. It cannot recover a decision's REASONING unless an agent happened
+# to emit a marker, and the main thread emits none. That is the one place in this
+# system where a model call is the honest answer rather than a shortcut.
+#
+# Constraints that make it safe to have on by default:
+#   * it runs DETACHED, so the hook has already returned before it starts
+#   * the snapshot is written with the deterministic facts BEFORE this is called, so
+#     a failure here costs the reasoning and nothing else
+#   * a floor and a daily cap, both reported in the document when they bite
+#   * no `claude` on PATH -> silent no-op, like every other missing backend here
+#
+# Cost, measured against Haiku 4.5 pricing ($1/MTok in, $5/MTok out): a compaction
+# window stripped of tool results runs 20-40k input tokens and returns under 200
+# output tokens, so roughly $0.02-0.04 a call, and the daily cap bounds the worst
+# case at well under a dollar.
+jv_llm_summarize() {
+  local infile="$1" outfile="$2" pid guard rc
+  local model="${JARVIS_CTX_SUMMARY_MODEL:-claude-haiku-4-5-20251001}"
+  local limit="${JARVIS_CTX_SUMMARY_TIMEOUT:-120}"
+  have claude || return 1
+
+  # Deliberately only -p and --model.
+  #
+  # `--max-turns` does not exist in every build, and `--allowed-tools` is VARIADIC:
+  # written without a value it swallows the following flag as a tool name, and the
+  # failure is a confusing argument error rather than anything that names the cause.
+  # A summarisation prompt has no reason to call a tool, so neither flag is needed.
+  claude -p --model "$model" < "$infile" > "$outfile" 2>/dev/null &
+  pid=$!
+
+  # A watchdog, because there is no portable `timeout(1)` -- macOS ships none, and
+  # this is already detached, so a hung request would otherwise leave a stray process
+  # per compaction with nothing to notice it.
+  ( sleep "$limit"; kill -0 "$pid" 2>/dev/null && kill -TERM "$pid" 2>/dev/null ) &
+  guard=$!
+  wait "$pid" 2>/dev/null; rc=$?
+  kill -TERM "$guard" 2>/dev/null
+  wait "$guard" 2>/dev/null
+  return "$rc"
+}
+jv_backend_context() {
+  local n s
+  if jv_have_node; then n="node $(node --version 2>/dev/null)"; else n="NONE — install node 18+"; fi
+  if have claude; then s="claude CLI"; else s="none (deterministic extraction only)"; fi
+  printf '%s, summariser: %s\n' "$n" "$s"
+}

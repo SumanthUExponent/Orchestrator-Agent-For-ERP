@@ -26,11 +26,11 @@ chk()  { if [ "$1" = 0 ]; then ok "$2"; else bad "$2" "${3:-}"; fi; }
 
 # A sandbox install, so the suite never depends on what happens to be in ~/.claude.
 SB=$(mktemp -d /tmp/jv-audio-XXXXXX)
-export CLAUDE_JARVIS_DIR="$SB/jarvis"
-export CLAUDE_SETTINGS_FILE="$SB/settings.json"
-echo '{}' > "$CLAUDE_SETTINGS_FILE"
-node "$REPO/scripts/orchestrator.mjs" voice --apply >/dev/null 2>&1
-J="$CLAUDE_JARVIS_DIR"
+export JARVIS_DIR="$SB/jarvis"
+export JARVIS_SETTINGS_FILE="$SB/settings.json"
+echo '{}' > "$JARVIS_SETTINGS_FILE"
+node "$REPO/scripts/jarvis.mjs" voice --apply >/dev/null 2>&1
+J="$JARVIS_DIR"
 trap 'rm -rf "$SB"' EXIT
 
 . "$J/platform.sh"
@@ -215,12 +215,12 @@ spoken_of() (
   spoken "$1"
 )
 t() { r=$(spoken_of "$1" "${3:-}"); if [ "$r" = "$2" ]; then ok "$1 -> \"$r\""; else bad "$1 -> \"$r\", expected \"$2\""; fi; }
-t "frappe-bench"       "frappe bench"
-t "exponent_utilities" "exponent utilities"
+t "checkout"       "checkout"
+t "shared_lib" "shared lib"
 t "nsproto"            "nsproto"
-t "wt_nst"             "N S T"                                    # worktree prefix + initialism
-t "wt_crm"             "C R M"
-t "wt_nst"             "the N S T tree"  "wt_nst=the N S T tree"  # explicit override wins
+t "wt_svc"             "S V C"                                    # worktree prefix + initialism
+t "billing"            "billing"                                  # an ordinary word is left alone
+t "wt_svc"             "the service tree"  "wt_svc=the service tree"  # explicit override wins
 
 # ------------------------------------------------------------------- lengths
 echo
@@ -271,7 +271,7 @@ else
   budget "approval, solo      " 1.8 "Your approval, sir."
   budget "error, solo         " 1.8 "A problem, sir."
   budget "idle, solo          " 1.8 "Standing by, sir."
-  budget "boot                " 3.2 "Good afternoon, sir. frappe bench online."
+  budget "boot                " 3.2 "Good afternoon, sir. checkout online."
   budget "approval, 2 sessions" 2.6 "N S T needs your approval, sir."
   # A summarised completion carries real information, so it earns more seconds than
   # "task complete" — but not many more. The agent contract caps the clause at ten
@@ -280,7 +280,7 @@ else
   # it: an announcement you cannot attribute is worthless to someone running four
   # projects, and the old rule — name it only when several are live — depended on
   # live-session bookkeeping that is exactly the thing most likely to be stale.
-  budget "named + summary        " 4.6 "frappe bench: Vendor Audit schema is in, sir. 4 minutes."
+  budget "named + summary        " 4.6 "checkout: Invoice schema is in, sir. 4 minutes."
   # Six words is the contract, and this is where the number comes from: a word costs
   # about 0.38s on macOS `say`, and the name plus the duration spend two seconds before
   # the clause starts.
@@ -290,8 +290,8 @@ else
   # espeak-ng renders the six-word case at 5.03s where `say` gives 4.78s. The contract
   # being asserted is "an announcement stays short", not "two synthesisers agree to the
   # centisecond" — a budget with no margin fails on a difference that is not a defect.
-  budget "named + 6-word clause  " 5.4 "frappe bench: Vendor Audit schema and fixtures done, sir. 4 minutes."
-  budget "two in one directory   " 4.9 "frappe bench two: Vendor Audit schema is in, sir. 4 minutes."
+  budget "named + 6-word clause  " 5.4 "checkout: the invoice schema and seed data are in, sir. 4 minutes."
+  budget "two in one directory   " 4.9 "checkout two: Invoice schema is in, sir. 4 minutes."
 fi
 
 echo
@@ -303,6 +303,123 @@ out=$(JV_OS=linux; . "$J/platform.sh" 2>/dev/null; JV_OS=linux
       [ "$JV_OS" = macos ] || t=$(printf '%s' "$t" | sed 's/\[\[[^]]*\]\]//g; s/  */ /g')
       printf '%s' "$t")
 case "$out" in *slnc*) bad "markup stripped off macOS" "got: $out" ;; *) ok "stripped: \"$out\"" ;; esac
+
+echo
+echo "R1  nothing unspeakable survives the pipeline"
+# The readability gate. A clause that still carries a path, an underscore, a camelCase
+# boundary or a fused run of letters is not a shortened announcement -- it is a
+# different and meaningless one. Every example below is a real line out of the daily
+# log, from before the separator fix and the pronunciation layer.
+#
+# The two functions are lifted with awk rather than sourced: jarvis.sh is a hook and
+# sourcing it would run the hook body. (`sed -n '/^f() {/,/^}/p'` is not portable --
+# BSD sed rejects the parens.)
+eval "$(awk '/^speakable_separators\(\) \{/,/^\}/' "$J/jarvis.sh")"
+eval "$(awk '/^clip\(\) \{/,/^\}/' "$J/jarvis.sh")"
+# config.sh must be sourced here: the suite does not load it globally, so the
+# pronunciation tables were EMPTY and the camelCase exemption below iterated over
+# nothing -- which is why "JavaScript" was reported as an unsplit identifier.
+. "$J/config.sh"
+. "$J/pronounce.sh"
+
+spoken_pipeline() {
+  printf '%s' "$1" \
+    | speakable_separators \
+    | tr -cd "A-Za-z0-9 .,;:'-" \
+    | tr -s ' ' \
+    | { read -r l; pronounce "$l"; }
+}
+
+R1FAIL=""
+# The tilde below is literal TEST DATA -- text to be pronounced, not a path to open --
+# so it must NOT expand. Held in a variable because shellcheck SC2088 flags a quoted
+# tilde as a probable mistake, and here it is the point.
+LIT_TILDE='~'
+for probe in \
+  'updated services/shared_lib/hooks.py and the schema' \
+  "$LIT_TILDE/.claude/statusline.sh: /bin/bash" \
+  'billing_service_api schema is in, 3 tables' \
+  'wt_svc build green; ran make migrate --env staging' \
+  'getValue returned null from safe_exec' \
+  'see scripts/jarvis.mjs and registry/agents.yaml'
+do
+  out=$(spoken_pipeline "$probe")
+  case "$out" in
+    */*)            R1FAIL="$R1FAIL\n    raw path survived: [$out]" ;;
+  esac
+  case "$out" in
+    *_*)            R1FAIL="$R1FAIL\n    underscore survived: [$out]" ;;
+  esac
+  # A fused run: twelve or more letters with no boundary is not a word anyone says.
+  if printf '%s' "$out" | grep -qE '[A-Za-z]{13,}'; then
+    R1FAIL="$R1FAIL\n    unsplit identifier: [$out]"
+  fi
+  # An unsplit camelCase boundary -- but not in the layer's OWN vocabulary. The
+  # pronunciation tables deliberately emit proper nouns like "JavaScript", which a
+  # synthesiser says correctly and a naive [a-z][A-Z] check flags as an identifier.
+  # Strip every table value first, so only text the layer did not choose is judged.
+  probe_out="$out"
+  for v in $(printf '%s;%s' "${JARVIS_EXTWORDS:-}" "${JARVIS_GLOSSARY:-}" | tr ';' '\n' | sed 's/^[^=]*=//' | tr ' ' '\n'); do
+    [ -n "$v" ] && probe_out=${probe_out//"$v"/}
+  done
+  if printf '%s' "$probe_out" | grep -qE '[a-z][A-Z]'; then
+    R1FAIL="$R1FAIL\n    unsplit camelCase: [$out]"
+  fi
+done
+if [ -z "$R1FAIL" ]; then ok "no path, underscore, fused run or camelCase reaches speech"
+else bad "unspeakable text reached speech" "$(printf '%b' "$R1FAIL")"; fi
+
+echo
+echo "R2  every variant of every event fits inside the ceiling"
+# `jarvisctl audition` flags its own overruns, which is how the long error frame
+# ("Something has gone wrong in <session>") was caught at 5.17s. If any variant is
+# over, this fails rather than waiting for someone to notice by ear.
+aud=$("$J/jarvisctl" audition --text 2>/dev/null)
+# Match the MARKER on a variant line, not the closing sentence that explains it --
+# "Anything marked OVER CEILING is too long..." made this test fail permanently.
+over=$(printf '%s\n' "$aud" | grep -c -- '<-- OVER CEILING' || true)
+lines=$(printf '%s\n' "$aud" | grep -cE '^  [a-z]' || true)
+# A line with no CONTENT cannot be over the ceiling, so counting lines is not enough.
+# On CI this passed with 30 renderings of ": . 4 minutes." because the runtime ignored
+# JARVIS_DIR and found no config.sh -- a green check on an empty announcement.
+sane=$(printf '%s\n' "$aud" | grep -cE '^  [a-z].*[0-9]+ms  .*[A-Za-z]{3,}.*\.')
+if [ "${over:-0}" = "0" ] && [ "${lines:-0}" -ge 20 ] && [ "${sane:-0}" -ge 20 ]; then
+  ok "$lines variants ($sane with real content), none over the ceiling"
+else
+  bad "a variant exceeds the ceiling, or audition produced nothing" \
+      "$(printf '%s\n' "$aud" | grep -- '<-- OVER CEILING'; printf 'lines=%s sane=%s' "$lines" "$sane")"
+fi
+
+echo
+echo "R3  every announcement obeys the register"
+# The register is declared in config.sh as a persona, not a preference: dry,
+# understated, addresses you as sir, never cheerful, never apologetic, no exclamations.
+# These are the parts of it a machine can check, and each one has already been broken:
+#   * two of three completions dropped "sir", so the persona addressed you on one turn
+#     in three and read as two different narrators
+#   * a clause dropped in after a full stop stayed lower case, which the desktop banner
+#     and the daily log both render as a sentence starting mid-thought
+aud=$("$J/jarvisctl" audition --text 2>/dev/null)
+variants=$(printf '%s\n' "$aud" | grep -E '^  [a-z]')
+
+R3FAIL=""
+# One address per announcement -- not zero, not two.
+bad=$(printf '%s\n' "$variants" | awk '{ n=gsub(/sir/,"sir"); if (n!=1) print }')
+[ -z "$bad" ] || R3FAIL="$R3FAIL\n    address count not exactly one:\n$bad"
+
+# A clause after a full stop begins a sentence.
+bad=$(printf '%s\n' "$variants" | grep -oE '\. [a-z][a-z]+' | sort -u)
+[ -z "$bad" ] || R3FAIL="$R3FAIL\n    lower case after a full stop: $(printf '%s' "$bad" | tr '\n' ' ')"
+
+# Never cheerful, never apologetic, no exclamations.
+bad=$(printf '%s\n' "$variants" | grep -iE '!|sorry|afraid|unfortunately|great |excellent|awesome|oops|please note')
+[ -z "$bad" ] || R3FAIL="$R3FAIL\n    off-register wording:\n$bad"
+
+if [ -z "$R3FAIL" ]; then
+  ok "$(printf '%s\n' "$variants" | grep -c .) variants, all in register"
+else
+  bad "an announcement is off-register" "$(printf '%b' "$R3FAIL")"
+fi
 
 echo
 printf 'RESULT: %s passed, %s failed, %s skipped\n' "$PASS" "$FAIL" "$SKIP"

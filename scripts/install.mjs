@@ -28,12 +28,12 @@ const SAFE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 
 /** Where Claude Code keeps user skills. Overridable for tests and odd setups. */
 export function skillsDir() {
-  return process.env.CLAUDE_SKILLS_DIR || path.join(os.homedir(), '.claude', 'skills');
+  return process.env.JARVIS_SKILLS_DIR || process.env.CLAUDE_SKILLS_DIR || path.join(os.homedir(), '.claude', 'skills');
 }
 
 /** Where Claude Code looks for sub-agent definitions. Agents are inert until they land here. */
 export function agentsDir() {
-  return process.env.CLAUDE_AGENTS_DIR || path.join(os.homedir(), '.claude', 'agents');
+  return process.env.JARVIS_AGENTS_DIR || process.env.CLAUDE_AGENTS_DIR || path.join(os.homedir(), '.claude', 'agents');
 }
 
 function assertSafeName(name) {
@@ -76,11 +76,11 @@ export function install({ root, readYaml, apply = false, external = false, force
   const planned = [];
   const skipped = [];
 
-  // 1. in-tree skills plus the orchestrator itself
+  // 1. in-tree skills plus JARVIS itself
   const inTree = [
     ...skillDirsIn(path.join(root, 'skills')).map((n) => ({ name: n, from: path.join(root, 'skills', n), source: 'in-tree' })),
-    ...(fs.existsSync(path.join(root, 'orchestrator', 'SKILL.md'))
-      ? [{ name: 'orchestrator', from: path.join(root, 'orchestrator'), source: 'in-tree' }]
+    ...(fs.existsSync(path.join(root, 'jarvis', 'SKILL.md'))
+      ? [{ name: 'jarvis', from: path.join(root, 'jarvis'), source: 'in-tree' }]
       : []),
   ];
   for (const s of inTree) {
@@ -134,16 +134,16 @@ export function install({ root, readYaml, apply = false, external = false, force
       copyTree(p.from, p.to);
       written++;
     }
-    // Make the installed orchestrator self-contained.
+    // Make the installed JARVIS skill self-contained.
     //
-    // SKILL.md documents `node scripts/orchestrator.mjs route "..."`. Installed
-    // into ~/.claude/skills/orchestrator/ there is no scripts/ directory there,
+    // SKILL.md documents `node scripts/jarvis.mjs route "..."`. Installed
+    // into ~/.claude/skills/jarvis/ there is no scripts/ directory there,
     // so the skill would instruct a command that cannot run — the worst kind of
     // defect, because the skill still looks correct. Ship the CLI and the
     // prebuilt registry alongside it. `route` and `health` then work from the
     // installed location; `build` stays a repo-side operation because it has to
     // scan the source tree.
-    const orchDest = path.join(target, 'orchestrator');
+    const orchDest = path.join(target, 'jarvis');
     if (fs.existsSync(orchDest)) {
       for (const dir of ['scripts', 'registry']) {
         const src = path.join(root, dir);
@@ -200,6 +200,6 @@ export function render(result) {
     console.log(`\nSkipped (${result.skipped.length})`);
     for (const s of result.skipped) console.log(`  - ${s.name.padEnd(28)} ${s.reason}`);
   }
-  console.log('\nNext: node scripts/orchestrator.mjs health');
+  console.log('\nNext: node scripts/jarvis.mjs health');
   return 0;
 }

@@ -8,6 +8,8 @@
 #   demo              narrated simulation of four parallel sessions, end to end
 #   report            speak where every session stands right now
 #   brief [name]      the end-of-session record: done, heads up, pending
+#   context [proj]    open threads from the per-session handoff documents
+#                     --speak reads them aloud; --reindex rebuilds INDEX.md
 #   daily [date]      the raw markdown log for a day (default today)
 #   yesterday         digest of the last day you worked; --speak reads it aloud
 #   log [n]           the last n announcements
@@ -15,7 +17,12 @@
 #   reset             clear all state (orphan daemons stand down on their own)
 #   voices            list installed voices; --setup opens the free high-quality downloads
 
-J="$HOME/.claude/jarvis"; S="$J/state"
+# JARVIS_DIR, with the historical name as a fallback. The installer has always
+# honoured this variable; the runtime scripts did not, so an install anywhere but
+# the default silently found no config.sh, no tones and no state -- and said
+# nothing about it, because every lookup is guarded. CI installs to a temp dir,
+# which is how an audition that rendered ": . 4 minutes." got past a ceiling check.
+J="${JARVIS_DIR:-${CLAUDE_JARVIS_DIR:-$HOME/.claude/jarvis}}"; S="$J/state"
 [ -f "$J/config.sh" ] && . "$J/config.sh"
 [ -f "$J/platform.sh" ] && . "$J/platform.sh"
 mkdir -p "$S/active" "$S/start" "$S/pending" "$S/subs" "$J/queue" 2>/dev/null
@@ -97,7 +104,12 @@ case "${1:-status}" in
     if [ -f "$SET" ]; then
       ckt "settings.json is valid JSON" node -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$SET"
       hooked=$(grep -c 'jarvis.sh' "$SET" 2>/dev/null); hooked=${hooked:-0}
-      ckt "hooks registered ($hooked/8 events)" test "$hooked" -ge 8
+      ckt "hooks registered ($hooked/10 events)" test "$hooked" -ge 10
+      # PreCompact is the one that matters most and the one most likely to be
+      # missing, because it was added after the original eight. Compaction is
+      # where context is actually lost, and it is silent when it is not hooked.
+      ckt "PreCompact hooked (compaction capture)"  grep -q 'precompact' "$SET"
+      ckt "PostCompact hooked (what survived)"      grep -q 'postcompact' "$SET"
     else
       ck 1 "settings.json exists"
     fi
@@ -106,6 +118,21 @@ case "${1:-status}" in
     case "$sayb"  in NONE*) ck 1 "speech:  $sayb" ;; *) ck 0 "speech:  $sayb" ;; esac
     case "$playb" in NONE*) ck 1 "audio:   $playb" ;; *) ck 0 "audio:   $playb" ;; esac
     echo "  ok    banner:  $(jv_backend_notify)"
+    echo "  ---- session context ----"
+    CTXM="${JARVIS_CTX_MJS:-}"
+    [ -z "$CTXM" ] && [ -r "$J/context.mjs" ] && CTXM="$J/context.mjs"
+    [ -z "$CTXM" ] && CTXM="$HOME/.claude/skills/jarvis/scripts/context.mjs"
+    ckt "context.mjs installed" test -r "$CTXM"
+    if [ -r "$CTXM" ]; then ckt "context.mjs parses" node --check "$CTXM"; fi
+    echo "  ok    runtime: $(jv_backend_context)"
+    CTXD="${JARVIS_CTX_DIR:-$HOME/checkout/Referencedocs/CLI-Session-Context}"
+    if [ -d "$CTXD" ]; then
+      nd=$(find "$CTXD/sessions" -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+      ck 0 "documents: ${nd:-0} in $CTXD"
+      ckt "INDEX.md present" test -f "$CTXD/INDEX.md"
+    else
+      ck 0 "documents: none yet (written on the first prompt of a session)"
+    fi
 
     # The tones are generated at install time rather than shipped, so a partial or
     # interrupted install leaves motifs that reference files which do not exist —
@@ -124,7 +151,7 @@ case "${1:-status}" in
       done
       ckt "tones: $((total-missing))/$total notes present" test "$missing" = 0
     else
-      ck 1 "tones: none generated — run: node scripts/orchestrator.mjs voice --apply"
+      ck 1 "tones: none generated — run: node scripts/jarvis.mjs voice --apply"
     fi
 
     if [ -n "${JARVIS_VOICES:-}" ]; then
@@ -195,7 +222,7 @@ case "${1:-status}" in
         echo "But $advice thing(s) above are worth doing before you judge how it sounds."
       fi
     else
-      echo "$fail problem(s). Re-run: node scripts/orchestrator.mjs voice --apply --force"
+      echo "$fail problem(s). Re-run: node scripts/jarvis.mjs voice --apply --force"
     fi
     [ "$fail" = 0 ] && exit 0 || exit 1
     ;;
@@ -235,6 +262,30 @@ case "${1:-status}" in
     [ -n "$blocked" ] && msg="$msg Blocked: $blocked."
     [ -n "$working" ] && msg="$msg Working: $working."
     [ -n "$idle" ]    && msg="$msg Idle: $idle."
+
+    # In-flight swarm state, which is a different question from session state: a session
+    # can be "working" for four minutes with nothing dispatched, or with eight
+    # specialists out. The count comes from SubagentStart minus SubagentStop; the batch
+    # and tier from what the planner recorded, since only it knows them and only at plan
+    # time. Reported after the sessions, because a blocked session still comes first.
+    fleet=0; shape=""
+    for f in "$S"/inflight/*; do
+      [ -r "$f" ] || continue
+      read -r c < "$f" 2>/dev/null
+      case "$c" in ''|*[!0-9]*) c=0 ;; esac
+      fleet=$(( fleet + c ))
+    done
+    for f in "$S"/swarm/*; do
+      [ -r "$f" ] || continue
+      read -r shape < "$f" 2>/dev/null
+      break
+    done
+    if [ "$fleet" -gt 0 ]; then
+      if [ "$fleet" = 1 ]; then msg="$msg One specialist running"
+      else msg="$msg $fleet specialists running"; fi
+      [ -n "$shape" ] && msg="$msg, $shape"
+      msg="$msg."
+    fi
     msg=$(printf '%s' "$msg" | tr -s ' ')
     echo "$msg"
     [ "${2:-}" = "--text" ] || jv_say "$msg" ;;
@@ -258,6 +309,41 @@ case "${1:-status}" in
       done
       n=$(ls "$d" 2>/dev/null | wc -l | tr -d ' ')
       [ "$n" -gt 3 ] && echo "($n briefings in $d)"
+    fi ;;
+
+  context)
+    # Where a PROJECT stands, as opposed to where a session ended.
+    #
+    # `brief` answers "what did that session do" and reads the spoken record.
+    # This answers "what is still open on this project", reads the handoff
+    # documents, and is the thing you run before deciding whether to load one.
+    CTXM="${JARVIS_CTX_MJS:-}"
+    [ -z "$CTXM" ] && [ -r "$J/context.mjs" ] && CTXM="$J/context.mjs"
+    [ -z "$CTXM" ] && CTXM="$HOME/.claude/skills/jarvis/scripts/context.mjs"
+    if [ ! -r "$CTXM" ]; then
+      echo "Session context is not installed (missing $CTXM)."
+      echo "Install it with: node scripts/jarvis.mjs voice --apply"
+      exit 1
+    fi
+    command -v node >/dev/null 2>&1 || { echo "node is required for session context."; exit 1; }
+    proj="${2:-$PWD}"
+    case "$proj" in --*) proj="$PWD" ;; esac
+
+    if [ "${2:-}" = "--reindex" ] || [ "${3:-}" = "--reindex" ]; then
+      n=$(node "$CTXM" index 2>/dev/null)
+      echo "Reindexed ${n:-0} session document(s)."
+      exit 0
+    fi
+
+    node "$CTXM" context --project "$proj"
+
+    # --speak reads back only what is still outstanding, in the same register as
+    # `yesterday --speak`: the spoken form is never the whole record, only the part
+    # that can still be acted on.
+    if [ "${2:-}" = "--speak" ] || [ "${3:-}" = "--speak" ]; then
+      export JARVIS_LIB=1
+      msg=$(node "$CTXM" speakable --project "$proj" 2>/dev/null)
+      [ -n "$msg" ] && jv_say "$msg"
     fi ;;
 
   daily)
@@ -478,6 +564,103 @@ case "${1:-status}" in
       *) echo "Unsupported platform: $(uname -s)" ;;
     esac ;;
 
-  *) echo "usage: jarvisctl [status|doctor|report|brief [name]|daily [date]|yesterday [--speak]|
-                 test|chimes|demo|log [n]|mute <min>|unmute|reset|voices]"; exit 2 ;;
+  audition)
+    # Every variant of every event, back to back, so taste can be judged by EAR.
+    #
+    # A table of durations tells you whether an announcement fits. It cannot tell you
+    # whether it sounds like a composed assistant or like a status field read aloud,
+    # and that is the thing this whole layer lives or dies on. --text prints without
+    # speaking, which is also what CI uses.
+    export JARVIS_LIB=1
+    . "$J/pronounce.sh" 2>/dev/null
+    . "$J/speaker.sh"
+    TEXT=0; [ "${2:-}" = "--text" ] && TEXT=1
+    WHO="$(spoken "wt_svc")"
+    EL="4 minutes"
+
+    # NOTE: these lines MIRROR the templates in speaker.sh render() -- they are not
+    # produced by it. That has drifted three times (the error variants, $SIR on two
+    # completions, cap() after a full stop). The R3 assertions in tests/voice-audio.sh
+    # check the PROPERTIES both must satisfy, which is what catches the next drift.
+    echo "THE REGISTER"
+    # "unset" and not "<unset>": tests/voice.test.mjs treats a fallback of exactly
+    # `unset` as a diagnostic placeholder rather than a competing default, which is what
+    # this is. Anything else here reads as a second, disagreeing default for the setting.
+    echo "  ${JARVIS_REGISTER:-unset}"
+    echo
+    echo "A variant that would not pass as something a composed human assistant would"
+    echo "say does not ship. Vary the wording, never the register."
+    echo
+    printf "budget: routine %sw  problem %sw  blocked %sw   ceiling %sms  frame %sms\n" \
+      "${JARVIS_BUDGET_ROUTINE:-10}" "${JARVIS_BUDGET_PROBLEM:-9}" \
+      "${JARVIS_BUDGET_BLOCKED:-9}" "${JARVIS_CEILING_MS:-5000}" "${JARVIS_FRAME_MS:-2200}"
+    echo
+
+    SUM_OK="$(budget routine "$(pronounce "the the invoice schema is in, with three line-item tables")")"
+    SUM_BAD="$(budget problem "$(pronounce "four tests are failing on the refund path in the billing module")")"
+    PEND="$(budget blocked "$(pronounce "the permissions matrix still needs a reviewer role")")"
+
+    say_one() {
+      # $1 = event label, $2 = line
+      ms="$(spoken_ms "$2")"
+      over=""
+      [ "$ms" -gt "${JARVIS_CEILING_MS:-5000}" ] && over="  <-- OVER CEILING"
+      printf "  %-22s %5sms  %s%s\n" "$1" "$ms" "$2" "$over"
+      [ "$TEXT" = "1" ] && return 0
+      jv_say "$2"
+      sleep 0.35
+    }
+
+    echo "BOOT"
+    for g in "Good morning" "Good afternoon" "Good evening"; do
+      say_one "boot" "$g$SIR. $WHO online."
+    done
+    echo
+    echo "COMPLETION, with something to report  (the most-heard announcement)"
+    say_one "done+summary a" "$WHO: $SUM_OK$SIR. $EL."
+    say_one "done+summary b" "$WHO, $SUM_OK$SIR. $EL."
+    say_one "done+summary c" "$WHO reports $SUM_OK$SIR. $EL."
+    say_one "done+summary d" "From $WHO, $SUM_OK$SIR. $EL."
+    echo
+    echo "COMPLETION, nothing to report"
+    say_one "done a" "$WHO done$SIR. 3 specialists, $EL."
+    say_one "done b" "$WHO finished$SIR. 3 specialists, $EL."
+    say_one "done c" "$WHO, all done$SIR. 3 specialists, $EL."
+    echo
+    echo "BLOCKED ON APPROVAL  (the expensive failure)"
+    say_one "approve a" "$WHO needs your approval$SIR."
+    say_one "approve b" "$WHO is holding for clearance$SIR."
+    say_one "approve c" "$WHO needs you$SIR."
+    say_one "nag a"     "$WHO is still waiting$SIR."
+    say_one "nag b"     "Still blocked on $WHO$SIR."
+    say_one "nag c"     "$WHO has not moved$SIR."
+    say_one "escalate"  "$WHO has been waiting 5 minutes$SIR. It is going nowhere without you."
+    echo
+    echo "A HUMAN GATE  (the loudest thing this layer says, and it names which gate)"
+    say_one "gate: production" "Approval needed on $WHO$SIR. $(cap "production deployment")."
+    say_one "gate: database"   "Approval needed on $WHO$SIR. $(cap "destructive database changes")."
+    _gf=$(( $(spoken_ms "Approval needed on $WHO$SIR. .") + 200 ))
+    say_one "gate: git"        "Approval needed on $WHO$SIR. $(cap "$(budget blocked "destructive git operations force push history rewrite branch deletion" "$_gf")")."
+    echo
+    echo "A ROUTING DECISION  (information, not an interruption)"
+    say_one "route a" "$WHO: the console report engineer was dropped$SIR."
+    say_one "route b" "On $WHO, effort capped at standard$SIR."
+    echo
+    echo "A PROBLEM"
+    say_one "err a" "$WHO has a problem$SIR. $(cap "$SUM_BAD")."
+    say_one "err b" "Trouble in $WHO$SIR. $(cap "$SUM_BAD")."
+    say_one "err c" "$WHO has hit a problem$SIR. $(cap "$SUM_BAD")."
+    echo
+    echo "WAITING, AND CLOSING"
+    say_one "idle a" "$WHO is standing by$SIR."
+    say_one "idle b" "$WHO awaits instruction$SIR."
+    say_one "brief"  "$WHO closing$SIR. $(cap "$PEND")."
+    say_one "bye"    "All sessions closed$SIR. 7 turns, nothing outstanding."
+    echo
+    echo "Anything marked OVER CEILING is too long to be heard out."
+    ;;
+
+  *) echo "usage: jarvisctl [status|doctor|report|brief [name]|context [project] [--speak|--reindex]|
+                 daily [date]|yesterday [--speak]|test|chimes|demo|audition [--text]|log [n]|
+                 mute <min>|unmute|reset|voices]"; exit 2 ;;
 esac
