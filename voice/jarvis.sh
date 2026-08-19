@@ -65,6 +65,58 @@ esac
 # The clause is then filtered through an ALLOWLIST, not escaped. It is about to be read
 # aloud and carried through a pipe-delimited queue line, and agent output is not a
 # trusted input, so anything that is not plain speech is dropped.
+# Make word separators AUDIBLE before the allowlist deletes them.
+#
+# The allowlist below is `tr -cd`, which DELETES. It does not substitute. So an
+# identifier or a path arriving here unprepared does not lose its separators — it
+# loses its word boundaries, and the tokens either side fuse into one
+# unpronounceable blob:
+#
+#   apps/exponent_utilities/hooks.py  ->  appsexponentutilitieshooks.py
+#   frappe_exponent_crm schema is in  ->  frappeexponentcrm schema is in
+#   ~/.claude/statusline.sh: /bin/bash -> .claudestatusline.sh: binbash
+#
+# All three are real lines out of the daily log. This runs FIRST so the allowlist
+# only ever sees text that is already spoken words. It does not widen the
+# allowlist: every character it emits was already permitted.
+#
+# A handful of symbols carry meaning that deletion silently destroys, so they
+# become the word they stand for rather than nothing. "Typo cladue -> claude"
+# was being spoken as "Typo cladue claude", which reverses nothing and explains
+# nothing. One awk pass, because sed's handling of multibyte literals and of
+# escapes in the replacement differs between BSD and GNU.
+speakable_separators() {
+  awk '{
+    gsub(/→/,  " to ")   # a literal arrow: \x escapes are silently inert in BWK awk
+    gsub(/->/,  " to ")
+    gsub(/=>/,  " to ")
+    gsub(/&/,   " and ")
+    gsub(/%/,   " percent ")
+    gsub(/\+/, " plus ")
+    gsub(/[_\/\\|]/, " ")
+  } 1'
+}
+
+# Cap a clause without cutting a word in half.
+#
+# `${v:0:140}` cuts blind. Fourteen of the thirty entries in the daily log end
+# mid-word — "...and an appsapp cw" — which a synthesiser reads as a nonsense
+# syllable and then stops. Back off to the last space instead, and close the
+# clause so it does not trail off in mid-air.
+clip() {
+  local s="$1" max="${2:-140}"
+  if [ ${#s} -gt "$max" ]; then
+    s="${s:0:$max}"
+    case "$s" in *' '*) s="${s% *}" ;; esac
+  fi
+  # Trailing separators only. NO terminal full stop: the clause is a FRAGMENT that
+  # render() embeds in a frame -- "$who: $summary$SIR. $(dur)." -- so a self-terminated
+  # clause produces "schema is in., sir." Sentence punctuation belongs to the template
+  # that owns the whole sentence, not to the piece being dropped into it.
+  s="${s%"${s##*[!,;: ]}"}"
+  printf '%s' "$s"
+}
+
 marker_note() {
   local marker="$1" v
   case "$IN" in *"$marker":*) ;; *) return 1 ;; esac
@@ -97,11 +149,12 @@ marker_note() {
             if (out != "") { sub("^" M ":[ \t]*", "", out); print out }
           }' \
       | sed 's/".*//' \
+      | speakable_separators \
       | tr -cd "A-Za-z0-9 .,;:'-" \
       | tr -s ' ')
   v="${v# }"; v="${v% }"
   # A runaway line would otherwise be read out for a minute.
-  v="${v:0:140}"
+  v=$(clip "$v" 140)
   [ ${#v} -ge 3 ] || return 1
   printf '%s' "$v"
 }
@@ -124,10 +177,11 @@ first_sentence() {
       | sed -n '1,4p' \
       | tr '\n' ' ' \
       | sed 's/\([.!?]\)[[:space:]].*/\1/' \
+      | speakable_separators \
       | tr -cd "A-Za-z0-9 .,;:'-" \
       | tr -s ' ')
   v="${v# }"; v="${v% }"
-  v="${v:0:120}"
+  v=$(clip "$v" 120)
   # Too short to be a sentence, or so long it was never one.
   [ ${#v} -ge 12 ] || return 1
   printf '%s' "$v"
