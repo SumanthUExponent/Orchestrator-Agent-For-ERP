@@ -20,7 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { ROOT } from '../scripts/jarvis.mjs';
-import { installVoice, mergeHooks, stripJarvis, hookCommand, HOOKS } from '../scripts/voice.mjs';
+import { installVoice, mergeHooks, stripJarvis, hookCommand, HOOKS, matchGates } from '../scripts/voice.mjs';
 
 let tmp;
 const SETTINGS = () => path.join(tmp, 'settings.json');
@@ -346,5 +346,61 @@ describe('documented defaults are the real defaults', () => {
     // every setting that carried a trailing comment.
     const n = configDefaults().size;
     assert.ok(n >= 15, `only found ${n} declared defaults — the matcher is missing lines`);
+  });
+});
+
+describe('matchGates only fires when it is sure', () => {
+  // A false gate warning is the most expensive false positive available: it is the one
+  // alert a user is trained not to ignore. So every rule needs TWO independent signals
+  // and the answer when unsure is [].
+  const SEVEN = [
+    'destructive database changes',
+    'production deployment',
+    'destructive git operations (force push, history rewrite, branch deletion)',
+    'deleting or overwriting an existing skill or agent',
+    'changing the swarm architecture itself',
+    'generating a new agent',
+    'security-sensitive changes',
+  ];
+
+  test('it names the right gate', () => {
+    assert.deepEqual(matchGates('deploy the module to production', SEVEN), ['production deployment']);
+    assert.deepEqual(matchGates('drop the audit table', SEVEN), ['destructive database changes']);
+    assert.deepEqual(matchGates('force push the develop branch', SEVEN), [SEVEN[2]]);
+    assert.deepEqual(matchGates('delete the code-reviewer agent', SEVEN), [SEVEN[3]]);
+    assert.deepEqual(matchGates('rotate the API token', SEVEN), ['security-sensitive changes']);
+  });
+
+  test('one signal is not enough', () => {
+    // Each of these carries exactly one of the two required signals.
+    for (const q of [
+      'drop the trailing comma from the list',
+      'the production numbers look wrong',
+      'delete the trailing whitespace',
+      'add a field to a form',
+      'rename a variable',
+    ]) {
+      assert.deepEqual(matchGates(q, SEVEN), [], `fired on: ${q}`);
+    }
+  });
+
+  test('two gates at once are both named', () => {
+    const hit = matchGates('deploy to production and drop the audit table', SEVEN);
+    assert.equal(hit.length, 2);
+  });
+
+  test('it keys on the gate text, not on list position', () => {
+    // Position was the first implementation and it mismatched every rule by one,
+    // announcing "destructive database changes" for "deploy to production".
+    const shuffled = [...SEVEN].reverse();
+    assert.deepEqual(
+      matchGates('deploy to production', shuffled),
+      matchGates('deploy to production', SEVEN)
+    );
+  });
+
+  test('no request and no gates are both answered with nothing', () => {
+    assert.deepEqual(matchGates('', SEVEN), []);
+    assert.deepEqual(matchGates('deploy to production', []), []);
   });
 });

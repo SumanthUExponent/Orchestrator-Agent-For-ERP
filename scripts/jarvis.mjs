@@ -376,6 +376,27 @@ try {
       };
       const rc = render(reg, request, planOpts);
 
+      // PRINT the human-approval gates, not just speak them.
+      //
+      // `Gates: verify` in the plan above is a PHASE gate. The seven human gates are a
+      // different thing entirely and the planner never computed them, so
+      // "drop the audit table" printed no warning at all -- the only place they
+      // surfaced was the spoken announcement, which is no use to someone reading.
+      //
+      // matchGates is a heuristic and says so: two independent signals per gate, and []
+      // when unsure, because a false gate warning is the one warning people learn to
+      // ignore. The authoritative path is still an agent refusing and emitting GATE:.
+      try {
+        const { matchGates } = await import('./voice.mjs');
+        const { gates: sevenGates } = swarmModule.loadAgents({ root: ROOT, readYaml });
+        const hit = matchGates(request, sevenGates);
+        if (hit.length) {
+          console.log('\nHuman approval required before this runs');
+          for (const g of hit) console.log(`  ! ${g}`);
+          console.log('  Nothing here dispatches on its own. This is the line a human signs.');
+        }
+      } catch { /* voice module absent: the plan above is still complete */ }
+
       // Speak the decisions AFTER printing them, so the text is on screen before the
       // voice starts. Announced from HERE and not from plan.mjs render(), which stays
       // pure: executionPlan is unit-tested and must not spawn anything.

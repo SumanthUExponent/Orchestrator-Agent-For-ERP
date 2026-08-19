@@ -1,6 +1,6 @@
 ---
 name: frappe-doctype
-description: Use when creating a new DocType, adding fields to an existing DocType, or modeling a data entity. Scaffolds JSON, Python controller, permissions, and fixtures.
+description: Use when creating a new DocType, adding fields to an existing DocType, or modeling a data entity. Also the right skill when the request says form, field, column, table or schema rather than DocType. Scaffolds JSON, Python controller, permissions, and fixtures.
 ---
 
 Scaffold a complete Frappe DocType — JSON definition, Python controller with lifecycle hooks, permissions matrix, and optional fixtures entry.

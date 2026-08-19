@@ -63,7 +63,7 @@ skills:
     category: data-model
     mode: active
     priority: 90
-    triggers: [doctype, add field, data model, child table]
+    triggers: [doctype, add field, data model, child table, form field, table column, schema change, add a field, data entity]
     recommended_after: [module-planner]
     recommended_before: [frappe-workflow, frappe-api]
 
