@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'jv-ctx-'));
@@ -20,7 +20,10 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'jv-ctx-'));
 process.env.JARVIS_CTX_DIR = path.join(TMP, 'docs');
 process.env.JARVIS_CTX_STATE = path.join(TMP, 'state');
 
-const C = await import(path.join(ROOT, 'scripts', 'context.mjs'));
+// pathToFileURL, not a bare path. On Windows a dynamic import of an absolute path
+// fails with ERR_UNSUPPORTED_ESM_URL_SCHEME -- the ESM loader reads the drive
+// letter as a protocol ('d:'). Green on macOS and Linux, red on Windows only.
+const C = await import(pathToFileURL(path.join(ROOT, 'scripts', 'context.mjs')).href);
 
 after(() => fs.rmSync(TMP, { recursive: true, force: true }));
 
