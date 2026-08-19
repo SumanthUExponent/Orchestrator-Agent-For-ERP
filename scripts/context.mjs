@@ -941,7 +941,10 @@ export function buildIndex() {
     .sort((a, b) => String(b.started || '').localeCompare(String(a.started || '')));
   const lines = [INDEX_HEADER];
   for (const r of rows) {
-    const rel = path.relative(CFG.dir, r._file);
+    // A markdown link is a URL and its separator is always '/'. path.relative gives
+    // backslashes on Windows, and encodeURI then turns each one into %5C -- so every
+    // row in INDEX.md linked nowhere. Green on macOS and Linux; only CI caught it.
+    const rel = path.relative(CFG.dir, r._file).split(path.sep).join('/');
     const obj = (r._objective || '').replace(/\|/g, '\\|').slice(0, 90);
     const open = num(r.open_threads, 0);
     const mark = open > 0 ? `**${open}**` : '—';

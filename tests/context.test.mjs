@@ -639,8 +639,11 @@ describe('naming', () => {
       '2026-08-19--frappe-bench--durable-session-context--6655d427.md'
     );
     assert.equal(C.monthDir(meta.date), '2026-08');
-    assert.match(C.docPath(meta), /sessions\/2026-08\//);
-    assert.match(C.journalPath(meta), /sessions\/2026-08\/\.journal\/.*\.jsonl$/);
+    // Compare on a normalised copy: path.join uses '\\' on Windows, so a regex written
+    // with '/' can never match there. The assertion is about the STRUCTURE of the path.
+    const norm = (x) => x.split(path.sep).join('/');
+    assert.match(norm(C.docPath(meta)), /sessions\/2026-08\//);
+    assert.match(norm(C.journalPath(meta)), /sessions\/2026-08\/\.journal\/.*\.jsonl$/);
   });
 
   test('a project path with a space survives', () => {
