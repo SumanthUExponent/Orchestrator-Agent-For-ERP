@@ -379,11 +379,15 @@ aud=$("$J/jarvisctl" audition --text 2>/dev/null)
 # "Anything marked OVER CEILING is too long..." made this test fail permanently.
 over=$(printf '%s\n' "$aud" | grep -c -- '<-- OVER CEILING' || true)
 lines=$(printf '%s\n' "$aud" | grep -cE '^  [a-z]' || true)
-if [ "${over:-0}" = "0" ] && [ "${lines:-0}" -ge 20 ]; then
-  ok "$lines variants, none over the ceiling"
+# A line with no CONTENT cannot be over the ceiling, so counting lines is not enough.
+# On CI this passed with 30 renderings of ": . 4 minutes." because the runtime ignored
+# JARVIS_DIR and found no config.sh -- a green check on an empty announcement.
+sane=$(printf '%s\n' "$aud" | grep -cE '^  [a-z].*[0-9]+ms  .*[A-Za-z]{3,}.*\.')
+if [ "${over:-0}" = "0" ] && [ "${lines:-0}" -ge 20 ] && [ "${sane:-0}" -ge 20 ]; then
+  ok "$lines variants ($sane with real content), none over the ceiling"
 else
   bad "a variant exceeds the ceiling, or audition produced nothing" \
-      "$(printf '%s\n' "$aud" | grep -- '<-- OVER CEILING')"
+      "$(printf '%s\n' "$aud" | grep -- '<-- OVER CEILING'; printf 'lines=%s sane=%s' "$lines" "$sane")"
 fi
 
 echo

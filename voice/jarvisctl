@@ -17,7 +17,12 @@
 #   reset             clear all state (orphan daemons stand down on their own)
 #   voices            list installed voices; --setup opens the free high-quality downloads
 
-J="$HOME/.claude/jarvis"; S="$J/state"
+# JARVIS_DIR, with the historical name as a fallback. The installer has always
+# honoured this variable; the runtime scripts did not, so an install anywhere but
+# the default silently found no config.sh, no tones and no state -- and said
+# nothing about it, because every lookup is guarded. CI installs to a temp dir,
+# which is how an audition that rendered ": . 4 minutes." got past a ceiling check.
+J="${JARVIS_DIR:-${CLAUDE_JARVIS_DIR:-$HOME/.claude/jarvis}}"; S="$J/state"
 [ -f "$J/config.sh" ] && . "$J/config.sh"
 [ -f "$J/platform.sh" ] && . "$J/platform.sh"
 mkdir -p "$S/active" "$S/start" "$S/pending" "$S/subs" "$J/queue" 2>/dev/null

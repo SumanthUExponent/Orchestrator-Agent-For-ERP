@@ -12,7 +12,12 @@
 #
 # Always exits 0. A notification system that can block a tool call is a liability.
 
-J="$HOME/.claude/jarvis"
+# JARVIS_DIR, with the historical name as a fallback. The installer has always
+# honoured this variable; the runtime scripts did not, so an install anywhere but
+# the default silently found no config.sh, no tones and no state -- and said
+# nothing about it, because every lookup is guarded. CI installs to a temp dir,
+# which is how an audition that rendered ": . 4 minutes." got past a ceiling check.
+J="${JARVIS_DIR:-${CLAUDE_JARVIS_DIR:-$HOME/.claude/jarvis}}"
 [ -f "$J/config.sh" ] && . "$J/config.sh"
 
 Q="$J/queue"; S="$J/state"

@@ -10,7 +10,12 @@
 # collapses to one line, staleness so a late completion is dropped rather than
 # read out, and phrase variety so it sounds like an assistant and not a beep.
 
-J="$HOME/.claude/jarvis"
+# JARVIS_DIR, with the historical name as a fallback. The installer has always
+# honoured this variable; the runtime scripts did not, so an install anywhere but
+# the default silently found no config.sh, no tones and no state -- and said
+# nothing about it, because every lookup is guarded. CI installs to a temp dir,
+# which is how an audition that rendered ": . 4 minutes." got past a ceiling check.
+J="${JARVIS_DIR:-${CLAUDE_JARVIS_DIR:-$HOME/.claude/jarvis}}"
 [ -f "$J/config.sh" ] && . "$J/config.sh"
 # Every OS-specific call lives in platform.sh. Nothing below this line names `say`,
 # `afplay` or `osascript`.

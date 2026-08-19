@@ -16,7 +16,12 @@
 # Usage: jarvisctl demo        (or voice/demo.sh)
 
 set -u
-J="$HOME/.claude/jarvis"; S="$J/state"
+# JARVIS_DIR, with the historical name as a fallback. The installer has always
+# honoured this variable; the runtime scripts did not, so an install anywhere but
+# the default silently found no config.sh, no tones and no state -- and said
+# nothing about it, because every lookup is guarded. CI installs to a temp dir,
+# which is how an audition that rendered ": . 4 minutes." got past a ceiling check.
+J="${JARVIS_DIR:-${CLAUDE_JARVIS_DIR:-$HOME/.claude/jarvis}}"; S="$J/state"
 [ -f "$J/config.sh" ] && . "$J/config.sh"
 
 # Shortened so the reminder arrives during the demo. The daemon inherits this from

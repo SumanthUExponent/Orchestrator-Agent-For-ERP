@@ -295,6 +295,11 @@ describe('documented defaults are the real defaults', () => {
     // now carries meaning of its own: use the platform's own System Voice, which is the
     // only way to reach a Siri voice.
     JARVIS_VOICE: 'default is platform-specific; empty means the System Voice',
+    // Circular by nature: this variable is what LOCATES config.sh, so config.sh cannot
+    // be the place that declares it. Its default lives in the scripts, identically in
+    // all four, and the install-path assertions are what hold them together.
+    JARVIS_DIR: 'locates config.sh itself — cannot be declared inside it',
+    CLAUDE_JARVIS_DIR: 'superseded name for JARVIS_DIR, read for back-compat only',
   };
 
   const configDefaults = () => {
@@ -402,5 +407,36 @@ describe('matchGates only fires when it is sure', () => {
   test('no request and no gates are both answered with nothing', () => {
     assert.deepEqual(matchGates('', SEVEN), []);
     assert.deepEqual(matchGates('deploy to production', []), []);
+  });
+});
+
+describe('the install path is resolved identically everywhere', () => {
+  // JARVIS_DIR cannot be declared in config.sh, because it is what locates config.sh.
+  // Its default therefore lives in four scripts at once, and four copies of a default
+  // is exactly the shape that drifts. This is the assertion that keeps them together.
+  //
+  // It matters because the failure is silent: every lookup in the voice layer is
+  // guarded so a partial install degrades rather than errors, which means a script
+  // looking in the WRONG place behaves identically to one with nothing to say.
+  const SHELL = ['jarvis.sh', 'speaker.sh', 'jarvisctl', 'demo.sh'];
+  const EXPECTED = '${JARVIS_DIR:-${CLAUDE_JARVIS_DIR:-$HOME/.claude/jarvis}}';
+
+  test('all four shell entry points agree', () => {
+    const wrong = [];
+    for (const f of SHELL) {
+      const body = fs.readFileSync(path.join(ROOT, 'voice', f), 'utf8');
+      const m = body.match(/^J="([^"]+)"/m);
+      if (!m) wrong.push(`${f}: no J= assignment found`);
+      else if (m[1] !== EXPECTED) wrong.push(`${f}: ${m[1]}`);
+    }
+    assert.deepEqual(wrong, [], 'scripts resolving the install dir differently');
+  });
+
+  test('and none of them hardcodes the default path', () => {
+    const bad = SHELL.filter((f) => {
+      const body = fs.readFileSync(path.join(ROOT, 'voice', f), 'utf8');
+      return /^J="\$HOME\/\.claude\/jarvis"/m.test(body);
+    });
+    assert.deepEqual(bad, [], 'scripts ignoring JARVIS_DIR');
   });
 });
