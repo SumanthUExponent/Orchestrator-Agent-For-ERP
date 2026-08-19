@@ -39,7 +39,19 @@ jobs:
       - name: Linux audio and speech backends
         if: runner.os == 'Linux' && matrix.node == '20'
         timeout-minutes: 6
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends espeak-ng alsa-utils
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -e
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends espeak-ng
+          # alsa-utils was the thing that hung: it pulls in service configuration the
+          # runner does not need, and the step timed out at six minutes twice. The image
+          # already ships ffmpeg, and ffplay is one of the audio backends the platform
+          # layer accepts — so it is only installed if nothing is there.
+          command -v ffplay >/dev/null 2>&1 || sudo apt-get install -y -qq --no-install-recommends alsa-utils
+          echo "speech backend: $(command -v espeak-ng || echo NONE)"
+          echo "audio backend:  $(command -v ffplay || command -v aplay || command -v paplay || echo NONE)"
 
       - run: node --version && bash --version | head -1
 
