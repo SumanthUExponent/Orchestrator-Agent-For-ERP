@@ -168,7 +168,7 @@ skills:
 # ------------------------------------------------- third-party skills (§15)
 # NOT vendored. These are other people's work under their own licences; the
 # installer resolves them from source so upstream fixes reach you and the
-# redistribution question never arises. All optional — the orchestrator degrades
+# redistribution question never arises. All optional — JARVIS degrades
 # to its in-tree set when they are absent.
 external:
   frappe-skills:

@@ -64,8 +64,8 @@ jobs:
 
       - name: Registry and swarm health
         run: |
-          node scripts/orchestrator.mjs health
-          node scripts/orchestrator.mjs doctor
+          node scripts/jarvis.mjs health
+          node scripts/jarvis.mjs doctor
 
       # Only on one node version per OS: these are wall-clock heavy (real sleeps, real
       # daemon lifecycles) and they exercise shell behaviour, not the Node version.
@@ -83,7 +83,7 @@ jobs:
           export CLAUDE_JARVIS_DIR="$HOME/.claude/jarvis"
           export CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json"
           mkdir -p "$HOME/.claude" && echo '{}' > "$CLAUDE_SETTINGS_FILE"
-          node scripts/orchestrator.mjs voice --apply
+          node scripts/jarvis.mjs voice --apply
           "$HOME/.claude/jarvis/jarvisctl" doctor
           "$HOME/.claude/jarvis/jarvisctl" report --text
 
@@ -118,7 +118,7 @@ jobs:
           export CLAUDE_JARVIS_DIR="$HOME/.claude/jarvis"
           export CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json"
           mkdir -p "$HOME/.claude" && echo '{}' > "$CLAUDE_SETTINGS_FILE"
-          node scripts/orchestrator.mjs voice --apply
+          node scripts/jarvis.mjs voice --apply
           node -e "
             const fs=require('fs');
             const s=JSON.parse(fs.readFileSync(process.env.CLAUDE_SETTINGS_FILE,'utf8'));

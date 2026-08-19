@@ -6,7 +6,7 @@
  * decides whether Claude Code works at all, so it is more cautious than the rest:
  *
  *   - it backs the file up before touching it
- *   - it merges, never replaces. The orchestrator's own UserPromptSubmit routing
+ *   - it merges, never replaces. JARVIS's own UserPromptSubmit routing
  *     gate and SessionStart context pack live in the same arrays; clobbering them
  *     would silently disable the swarm while appearing to succeed
  *   - it is IDEMPOTENT. Prior jarvis entries are removed before the new ones are
@@ -65,7 +65,7 @@ export function settingsFile() {
 
 /**
  * Strip every hook entry that refers to jarvis, at the HOOK level rather than the
- * group level, so a group we share with the orchestrator keeps its other entries.
+ * group level, so a group we share with the routing skill keeps its other entries.
  * Returns the number removed.
  */
 export function stripJarvis(hooks) {
@@ -148,7 +148,7 @@ function copyScripts({ from, to, apply, force }) {
 /**
  * Hand one announcement to the voice layer, from Node.
  *
- * The orchestrator is a CLI, not a Claude Code hook, so it has no payload to speak
+ * JARVIS routing is a CLI, not a Claude Code hook, so it has no payload to speak
  * through -- but it must not speak for itself either. Nothing outside the drainer ever
  * calls the speech engine, so this ENQUEUES exactly the way a hook does, by invoking
  * jarvis.sh, and returns immediately.
@@ -390,7 +390,7 @@ export function render(r) {
     console.log(`  ${h.event}${h.matcher ? `/${h.matcher}` : ''}`.padEnd(34) + `${h.arg.padEnd(11)} ${h.why}`);
   }
   if (r.removed) console.log(`\nReplaced ${r.removed} previous jarvis hook entr${r.removed === 1 ? 'y' : 'ies'} — re-running is safe.`);
-  console.log(`Left untouched: ${r.foreign} non-jarvis hook entr${r.foreign === 1 ? 'y' : 'ies'} (the orchestrator's routing gate and context pack).`);
+  console.log(`Left untouched: ${r.foreign} non-jarvis hook entr${r.foreign === 1 ? 'y' : 'ies'} (the JARVIS routing gate and context pack).`);
 
   console.log(
     [

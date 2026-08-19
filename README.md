@@ -4,7 +4,7 @@
 
 A sub-agent swarm for [Claude Code](https://claude.com/claude-code), tuned for Frappe/ERPNext development.
 
-45 specialist agents across 9 divisions, coordinated by an orchestrator, policed by passive governance agents that audit the swarm itself, and paced by a control plane whose entire job is to convene less of it.
+45 specialist agents across 9 divisions, coordinated by JARVIS routing, policed by passive governance agents that audit the swarm itself, and paced by a control plane whose entire job is to convene less of it.
 
 You describe the work. JARVIS decides which specialist skills apply, what order they run in, what can run in parallel, and which gates the work must clear before it can be called done.
 
@@ -76,7 +76,7 @@ A swarm gets slow in ways that never show up as an error. Four of them, and what
 
 **Everything ran on the biggest model.** Agents that said `model: inherit` silently cost whatever the session cost, so all 39 ran on Opus — nobody chose that, it was the default leaking through. Tiers are now explicit and `inherit` is gone: **12 opus, 31 sonnet, 2 haiku**. Opus is reserved for output that is a design decision with blast radius — a schema, an architecture, a review that gates a deploy. `doctor` fails an unknown tier and warns on any agent that goes back to inheriting.
 
-**Every agent rediscovered the same repository.** Five dispatches meant five identical scans for the same `hooks.py` and the same DocType list. `orchestrator.mjs pack` answers that once with commands rather than a model, so the shared context costs **zero tokens**; `context-broker` adds only the judgement a command cannot have — which of those files matter here.
+**Every agent rediscovered the same repository.** Five dispatches meant five identical scans for the same `hooks.py` and the same DocType list. `jarvis.mjs pack` answers that once with commands rather than a model, so the shared context costs **zero tokens**; `context-broker` adds only the judgement a command cannot have — which of those files matter here.
 
 **The parallelism was theoretical.** The phase table said what could run concurrently and nothing acted on it. `plan` emits actual batches, guaranteeing no agent shares a batch with something it `requires`, capped at four abreast.
 
@@ -105,7 +105,7 @@ The cheapest fix is upstream of all four: **most requests should never reach the
 
 They are constrained accordingly. A control agent holds no `Write` or `Edit` tool and `doctor` fails the build if one appears — the moment it can build, it stops being cheaper than the specialist it was meant to replace. `quality-sentinel` may reduce review effort but never to zero on schema, deployment, security, or anything a specialist flagged as risky in its own handoff. `result-synthesizer` may merge a duplicate finding but may never drop one for brevity, and surfaces contradictions as contradictions rather than averaging them into a position no agent held.
 
-**Where JARVIS lives, and why it matters.** A Claude Code sub-agent cannot address the user — only the main thread can. So human-approval gates, live observability and conflict escalation stay in JARVIS **skill** running in the main thread; that is the only surface which can both dispatch agents and talk to you. The three orchestrator *sub-agents* exist for delegated work needing no mid-flight decision, and they are mute by design: they return a question in `handoff` rather than guess.
+**Where JARVIS lives, and why it matters.** A Claude Code sub-agent cannot address the user — only the main thread can. So human-approval gates, live observability and conflict escalation stay in the JARVIS **skill** running in the main thread; that is the only surface which can both dispatch agents and talk to you. The three coordinator *sub-agents* exist for delegated work needing no mid-flight decision, and they are mute by design: they return a question in `handoff` rather than guess.
 
 **Every agent returns fields, not prose** — `summary`, `files_changed`, `decisions`, `findings`, `risks`, `testing`, `remaining`, `handoff`. An agent that finishes with "done" has failed the protocol.
 
@@ -676,7 +676,7 @@ See [the voice-quality note](#adding-the-voice-layer) — it is the single bigge
 you can change about how this sounds.
 
 The installer **merges** into `settings.json` rather than replacing it: the
-orchestrator's own routing gate and context-pack hooks live in the same arrays, and
+JARVIS's own routing gate and context-pack hooks live in the same arrays, and
 clobbering them would disable the swarm while appearing to succeed. It is idempotent
 (matched on the command string, so a moved install self-heals), backs the file up
 first, writes atomically, and refuses to touch a `settings.json` it cannot parse.

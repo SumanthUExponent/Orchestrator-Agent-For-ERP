@@ -3,7 +3,7 @@
  *
  * The risk here is not that the voice sounds wrong — that is a matter of taste and
  * a human ear. The risk is settings.json: it is the one file that decides whether
- * Claude Code starts, it already holds the orchestrator's routing gate and context
+ * Claude Code starts, it already holds the JARVIS routing gate and context
  * pack, and a malformed hook does not report an error. It simply stops arriving.
  *
  * So these tests are about the merge, not the audio. The audio behaviour — queueing,
@@ -26,9 +26,9 @@ let tmp;
 const SETTINGS = () => path.join(tmp, 'settings.json');
 const TARGET = () => path.join(tmp, 'jarvis');
 
-// A realistic starting point: the orchestrator's own two hooks are already there.
+// A realistic starting point: JARVIS's own two hooks are already there.
 // Installing the voice layer over them must leave both completely alone.
-const ORCHESTRATOR_SETTINGS = {
+const ROUTING_SETTINGS = {
   model: 'opus[1m]',
   hooks: {
     UserPromptSubmit: [{ hooks: [{ type: 'command', timeout: 5, command: "echo '{\"hookSpecificOutput\":{\"additionalContext\":\"ROUTING GATE\"}}'" }] }],
@@ -42,7 +42,7 @@ before(() => {
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 beforeEach(() => {
   fs.rmSync(TARGET(), { recursive: true, force: true });
-  fs.writeFileSync(SETTINGS(), JSON.stringify(ORCHESTRATOR_SETTINGS, null, 2));
+  fs.writeFileSync(SETTINGS(), JSON.stringify(ROUTING_SETTINGS, null, 2));
 });
 
 const run = (opts = {}) => installVoice({ root: ROOT, target: TARGET(), settings: SETTINGS(), ...opts });
@@ -131,7 +131,7 @@ describe('settings.json merge', () => {
   test('a backup is written before the file is touched', () => {
     const r = run({ apply: true });
     assert.ok(fs.existsSync(r.backup), 'no backup');
-    assert.deepEqual(JSON.parse(fs.readFileSync(r.backup, 'utf8')), ORCHESTRATOR_SETTINGS);
+    assert.deepEqual(JSON.parse(fs.readFileSync(r.backup, 'utf8')), ROUTING_SETTINGS);
   });
 
   test('the result is still valid JSON', () => {
@@ -231,7 +231,7 @@ describe('the hook command is executable on the platform it targets', () => {
   });
 
   test('a windows merge is still idempotent', () => {
-    const s = JSON.parse(JSON.stringify(ORCHESTRATOR_SETTINGS));
+    const s = JSON.parse(JSON.stringify(ROUTING_SETTINGS));
     mergeHooks(s, 'C:\\Users\\me\\.claude\\jarvis\\jarvis.sh', 'win32');
     mergeHooks(s, 'C:\\Users\\me\\.claude\\jarvis\\jarvis.sh', 'win32');
     assert.equal(jarvisCmds(s).length, HOOKS.length, 'hooks multiplied on Windows');
@@ -262,10 +262,10 @@ describe('stripJarvis', () => {
 
 describe('mergeHooks is pure enough to preview', () => {
   test('merging a copy does not touch the original', () => {
-    const original = JSON.parse(JSON.stringify(ORCHESTRATOR_SETTINGS));
+    const original = JSON.parse(JSON.stringify(ROUTING_SETTINGS));
     const copy = JSON.parse(JSON.stringify(original));
     mergeHooks(copy, '/x/jarvis.sh');
-    assert.deepEqual(original, ORCHESTRATOR_SETTINGS, 'the source object was mutated');
+    assert.deepEqual(original, ROUTING_SETTINGS, 'the source object was mutated');
     assert.equal(jarvisCmds(copy).length, HOOKS.length);
   });
 });

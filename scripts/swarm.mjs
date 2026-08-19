@@ -1,7 +1,7 @@
 /**
  * Swarm tooling — generate agent definitions, and audit the roster.
  *
- *   orchestrator.mjs agents [--apply]   generate agents/*.md from registry/agents.yaml
+ *   jarvis.mjs agents [--apply]   generate agents/*.md from registry/agents.yaml
  *   swarm doctor                   audit the roster (agent-guardian's job, §6)
  *   swarm show <agent>             print one agent's resolved definition
  *
@@ -9,7 +9,7 @@
  * (§DRY, §19) — a skill is reusable expertise, an agent is an execution identity
  * that consumes skills, and neither is copied into the other.
  *
- * Does NOT import orchestrator.mjs — that module dynamically imports this one, and
+ * Does NOT import jarvis.mjs — that module dynamically imports this one, and
  * a static import back would deadlock on an unsettled top-level await. Helpers
  * arrive through opts.
  */
@@ -45,7 +45,7 @@ export function loadAgents({ root, readYaml }) {
     conflict_rule: (a.conflict_rule || '').trim(),
     escalates_to: a.escalates_to || 'JARVIS',
     // How this agent gets picked. `skill` = matched via the skills it declares.
-    // `orchestrator` = dispatched explicitly by a coordinator. Coordinators and
+    // `jarvis` = dispatched explicitly by a coordinator. Coordinators and
     // generalists legitimately declare no skills; that is not unreachability.
     selected_by: a.selected_by || (a.skills && a.skills.length ? 'skill' : 'jarvis'),
     uses_design_system: a.uses_design_system === true,

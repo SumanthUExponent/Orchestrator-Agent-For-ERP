@@ -10,7 +10,7 @@ They need: **Node 18+**, **git**, and a **bash** (built in on macOS and Linux; o
 ---
 
 ```text
-Please install the Orchestrator Agent swarm and its JARVIS voice layer on this machine.
+Please install the JARVIS agent swarm and its voice layer on this machine.
 
 The repo is https://github.com/SumanthUExponent/JARVIS-For-ERP — a 45-agent
 orchestration swarm for Claude Code tuned to Frappe/ERPNext, plus a voice layer that

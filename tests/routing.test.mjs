@@ -1,5 +1,5 @@
 /**
- * Orchestrator test suite (§29).
+ * JARVIS routing test suite (§29).
  *
  * These are regression tests for ROUTING DECISIONS, not for prose. Every case
  * below corresponds to a defect found while building the engine — each one

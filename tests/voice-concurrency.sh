@@ -494,7 +494,7 @@ echo
 echo "T17 specialists' spoken summaries reach the announcement"
 fresh
 printf 'alpha|1\n' > "$HOME/.claude/jarvis/state/active/s1"
-# Every orchestrator agent is required to end with a VOICE: line. Stop and SubagentStop
+# Every JARVIS agent is required to end with a VOICE: line. Stop and SubagentStop
 # both carry last_assistant_message, so the clause is picked up from the hook payload —
 # no transcript parsing, no model call, nothing leaving the machine.
 say_hook begin '{}'

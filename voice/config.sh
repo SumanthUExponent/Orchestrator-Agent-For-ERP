@@ -89,7 +89,7 @@ JARVIS_NAMES="${JARVIS_NAMES:-}"
 
 # Speak what the agents actually DID, rather than only that a turn ended.
 #
-# Every orchestrator agent is required to end its output with a line reading
+# Every JARVIS agent is required to end its output with a line reading
 # "VOICE: <one clause>", and those clauses are collected and read out on completion:
 #
 #   without:  "Done, sir. Six specialists, four minutes."          3.5s

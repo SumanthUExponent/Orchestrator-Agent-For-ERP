@@ -503,7 +503,7 @@ render() {
       banner "$name" "GATE - $extra" ;;
 
     route)
-      # A decision the orchestrator made on your behalf. Information, not an
+      # A decision JARVIS routing made on your behalf. Information, not an
       # interruption, so it takes the quiet motif and the routine budget.
       motif idle "$ord"
       _rframe=$(spoken_ms "$who $SIR . .")

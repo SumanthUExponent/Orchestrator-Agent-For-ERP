@@ -835,7 +835,7 @@ case "$MODE" in
       enqueue 5 'done' "$el:$subs" "$SUMMARY"
     fi ;;
 
-  swarm)                            # orchestrator: record the shape of the plan
+  swarm)                            # JARVIS routing: record the shape of the plan
     # Silent. `jarvisctl report` answers "what is the swarm doing right now", and the
     # in-flight COUNT alone cannot say in which batch or at which tier -- only the
     # planner knows that, and only at plan time. So it is recorded here and read there.
@@ -844,21 +844,21 @@ case "$MODE" in
     printf '%s\n' "$(clip "$SW" 120)" > "$S/swarm/$KEY" 2>/dev/null
     exit 0 ;;
 
-  gate)                             # orchestrator: a human-approval gate was hit
+  gate)                             # JARVIS routing: a human-approval gate was hit
     # THE LOUDEST THING THIS LAYER SAYS, and the only announcement that names its own
     # cause. There are seven gates and they are not interchangeable -- "needs your
     # approval" tells you to look, "a production deployment needs your approval" tells
     # you what you are about to be asked. Priority 0, ahead of everything.
     #
     # The gate name arrives as $2 rather than in a JSON payload: the caller is the
-    # orchestrator, a Node CLI, not a Claude Code hook, so there is no payload to put
+    # JARVIS routing, a Node CLI, not a Claude Code hook, so there is no payload to put
     # it in.
     mark_active
     GATE=$(printf '%s' "${2:-}" | speakable_separators | tr -cd "A-Za-z0-9 .,;:'-" | tr -s ' ')
     GATE=$(clip "$GATE" 140)
     enqueue 0 gate "$GATE" ;;
 
-  route)                            # orchestrator: a routing or planning decision
+  route)                            # JARVIS routing: a routing or planning decision
     # A dropped agent or a capped effort level is a decision someone made on your
     # behalf. One line, at routine priority -- it is information, not an interruption.
     mark_active

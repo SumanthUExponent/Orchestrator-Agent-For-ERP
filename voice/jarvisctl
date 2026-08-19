@@ -116,7 +116,7 @@ case "${1:-status}" in
     echo "  ---- session context ----"
     CTXM="${JARVIS_CTX_MJS:-}"
     [ -z "$CTXM" ] && [ -r "$J/context.mjs" ] && CTXM="$J/context.mjs"
-    [ -z "$CTXM" ] && CTXM="$HOME/.claude/skills/orchestrator/scripts/context.mjs"
+    [ -z "$CTXM" ] && CTXM="$HOME/.claude/skills/jarvis/scripts/context.mjs"
     ckt "context.mjs installed" test -r "$CTXM"
     if [ -r "$CTXM" ]; then ckt "context.mjs parses" node --check "$CTXM"; fi
     echo "  ok    runtime: $(jv_backend_context)"
@@ -146,7 +146,7 @@ case "${1:-status}" in
       done
       ckt "tones: $((total-missing))/$total notes present" test "$missing" = 0
     else
-      ck 1 "tones: none generated — run: node scripts/orchestrator.mjs voice --apply"
+      ck 1 "tones: none generated — run: node scripts/jarvis.mjs voice --apply"
     fi
 
     if [ -n "${JARVIS_VOICES:-}" ]; then
@@ -217,7 +217,7 @@ case "${1:-status}" in
         echo "But $advice thing(s) above are worth doing before you judge how it sounds."
       fi
     else
-      echo "$fail problem(s). Re-run: node scripts/orchestrator.mjs voice --apply --force"
+      echo "$fail problem(s). Re-run: node scripts/jarvis.mjs voice --apply --force"
     fi
     [ "$fail" = 0 ] && exit 0 || exit 1
     ;;
@@ -314,10 +314,10 @@ case "${1:-status}" in
     # documents, and is the thing you run before deciding whether to load one.
     CTXM="${JARVIS_CTX_MJS:-}"
     [ -z "$CTXM" ] && [ -r "$J/context.mjs" ] && CTXM="$J/context.mjs"
-    [ -z "$CTXM" ] && CTXM="$HOME/.claude/skills/orchestrator/scripts/context.mjs"
+    [ -z "$CTXM" ] && CTXM="$HOME/.claude/skills/jarvis/scripts/context.mjs"
     if [ ! -r "$CTXM" ]; then
       echo "Session context is not installed (missing $CTXM)."
-      echo "Install it with: node scripts/orchestrator.mjs voice --apply"
+      echo "Install it with: node scripts/jarvis.mjs voice --apply"
       exit 1
     fi
     command -v node >/dev/null 2>&1 || { echo "node is required for session context."; exit 1; }
