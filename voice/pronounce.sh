@@ -53,9 +53,9 @@
 pronounce() {
   [ -z "${1:-}" ] && return 0
   printf '%s' "$1" | awk \
-    -v SPELL="${JARVIS_SPELL_OUT:-ERP;UAT;QA;API;CRM;PR;UI;DB;SQL;CI;CD;NST;LMS;NSS;ECR;ECN;BOM;PDF;CSV;JSON;YAML;HTML;CSS;URL;SSH;TTS;VS;IDE;SPA;JS;TS;GL;PO;SO;HR}" \
-    -v ASWORD="${JARVIS_SAY_AS_WORD:-ERPNext;JARVIS;SCADA;CRUD;JSON5;REST;SOAP;CRON;SASS;JIRA}" \
-    -v GLOSS="${JARVIS_GLOSSARY:-frappe=frappay;erpnext=E R P next;doctype=doc type;doctypes=doc types;macdev=mac dev;wsldev=W S L dev;crmdev=C R M dev;nginx=engine X;venv=v env;cwd=working directory;env=environment;repo=repository;auth=auth;jinja=jinja;bench=bench;fixture=fixture;fixtures=fixtures;workflow=workflow;async=a sync;regex=regex;stdout=standard out;stderr=standard error;npm=N P M;mjs=M J S}" \
+    -v SPELL="${JARVIS_SPELL_OUT:-API;CRM;UI;UX;DB;SQL;CI;CD;PR;QA;URL;URI;SSH;TLS;SSL;HTTP;JSON;YAML;XML;HTML;CSS;CSV;PDF;JWT;JS;TS;VM;OS;IO;CPU;RAM;SDK;CLI;GUI;IDE;SPA;ORM;RPC;DNS;CDN;S3;EC2;VPC;IAM;TTS}" \
+    -v ASWORD="${JARVIS_SAY_AS_WORD:-JARVIS;JSON5;REST;SOAP;CRON;SASS;JIRA;SCADA;CRUD;GRPC;OAUTH;YAML}" \
+    -v GLOSS="${JARVIS_GLOSSARY:-nginx=engine X;venv=v env;cwd=working directory;env=environment;repo=repository;async=a sync;regex=regex;stdout=standard out;stderr=standard error;npm=N P M;mjs=M J S;jwt=J W T;yaml=yamel;sqlite=sequel light;kubectl=cube control;k8s=kubernetes;nodejs=node J S;psql=P sequel;localhost=local host;middleware=middleware;webhook=webhook}" \
     -v FILES="${JARVIS_FILEWORDS:-hooks.py=the hooks file;settings.json=the settings file;package.json=the package file;claude.md=the CLAUDE file;config.sh=the config file;hooks.py=the hooks file;pyproject.toml=the project file;modules.txt=the modules list}" \
     -v EXTS="${JARVIS_EXTWORDS:-py=Python file;js=JavaScript file;mjs=JavaScript file;ts=TypeScript file;json=config file;sh=shell script;md=markdown file;txt=text file;yaml=config file;yml=config file;toml=config file;css=stylesheet;html=page;vue=component;sql=S Q L file;log=log file}" '
     # ---------------------------------------------------------------- tables

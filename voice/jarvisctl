@@ -120,7 +120,7 @@ case "${1:-status}" in
     ckt "context.mjs installed" test -r "$CTXM"
     if [ -r "$CTXM" ]; then ckt "context.mjs parses" node --check "$CTXM"; fi
     echo "  ok    runtime: $(jv_backend_context)"
-    CTXD="${JARVIS_CTX_DIR:-$HOME/frappe-bench/Referencedocs/CLI-Session-Context}"
+    CTXD="${JARVIS_CTX_DIR:-$HOME/checkout/Referencedocs/CLI-Session-Context}"
     if [ -d "$CTXD" ]; then
       nd=$(find "$CTXD/sessions" -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
       ck 0 "documents: ${nd:-0} in $CTXD"
@@ -570,7 +570,7 @@ case "${1:-status}" in
     . "$J/pronounce.sh" 2>/dev/null
     . "$J/speaker.sh"
     TEXT=0; [ "${2:-}" = "--text" ] && TEXT=1
-    WHO="$(spoken "wt_nst")"
+    WHO="$(spoken "wt_svc")"
     EL="4 minutes"
 
     echo "THE REGISTER"
@@ -587,9 +587,9 @@ case "${1:-status}" in
       "${JARVIS_BUDGET_BLOCKED:-9}" "${JARVIS_CEILING_MS:-5000}" "${JARVIS_FRAME_MS:-2200}"
     echo
 
-    SUM_OK="$(budget routine "$(pronounce "the Vendor Audit schema is in, with three child tables")")"
-    SUM_BAD="$(budget problem "$(pronounce "four tests are failing on the refund path in the NSS DocType")")"
-    PEND="$(budget blocked "$(pronounce "the permissions matrix still needs an Auditor role")")"
+    SUM_OK="$(budget routine "$(pronounce "the the invoice schema is in, with three line-item tables")")"
+    SUM_BAD="$(budget problem "$(pronounce "four tests are failing on the refund path in the billing module")")"
+    PEND="$(budget blocked "$(pronounce "the permissions matrix still needs a reviewer role")")"
 
     say_one() {
       # $1 = event label, $2 = line

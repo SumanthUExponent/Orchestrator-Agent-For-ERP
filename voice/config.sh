@@ -80,9 +80,9 @@ JARVIS_ESCALATE="${JARVIS_ESCALATE:-300}"
 #   speak   announce each one. Only sane with 1-2 agents
 JARVIS_SUBAGENT="${JARVIS_SUBAGENT:-chime}"
 
-# A directory basename is not a word. `say` renders "wt_nst" as two nonsense
-# syllables, and "exponent_utilities" takes 1.6s to get through. Map the ones you
-# actually run to something speakable:  "wt_nst=N S T;frappe-bench=bench"
+# A directory basename is not a word. `say` renders "wt_svc" as two nonsense
+# syllables, and "shared_lib" takes 1.6s to get through. Map the ones you
+# actually run to something speakable:  "wt_svc=N S T;checkout=bench"
 # Without an entry, underscores and hyphens become spaces and a leading "wt " (the
 # worktree prefix) is dropped.
 JARVIS_NAMES="${JARVIS_NAMES:-}"
@@ -93,7 +93,7 @@ JARVIS_NAMES="${JARVIS_NAMES:-}"
 # "VOICE: <one clause>", and those clauses are collected and read out on completion:
 #
 #   without:  "Done, sir. Six specialists, four minutes."          3.5s
-#   with:     "Vendor Audit schema is in, sir. Four minutes."       2.8s
+#   with:     "Invoice schema is in, sir. Four minutes."       2.8s
 #
 # The count of specialists disappears when there is a summary — it only ever existed
 # because there was nothing better to say. 0 disables and restores the short form.
@@ -134,7 +134,7 @@ JARVIS_COUNT_SUBAGENTS="${JARVIS_COUNT_SUBAGENTS:-1}"
 JARVIS_SPEAK_WITHOUT_SUMMARY="${JARVIS_SPEAK_WITHOUT_SUMMARY:-auto}"
 
 # Speak what is still outstanding as each session closes: "N S T closing, sir. Pending:
-# the permissions matrix still needs an Auditor role." A session that finished cleanly
+# the permissions matrix still needs a reviewer role." A session that finished cleanly
 # says nothing — the farewell already reports the totals. The FULL record is always
 # written either way; read it with `jarvisctl brief`. 0 disables the spoken part.
 JARVIS_BRIEF="${JARVIS_BRIEF:-1}"
@@ -157,7 +157,7 @@ JARVIS_DAY_DIGEST="${JARVIS_DAY_DIGEST:-1}"
 #
 # JARVIS_NAMES above fixes ONE case: the session name. Everything else in an
 # announcement went out raw, which is why the log is full of lines like
-# "appsexponentutilitieshooks.py" and "wtnst build green". These five tables
+# "servicessharedlibhooks.py" and "wtapi build green". These five tables
 # generalise it to every word spoken.
 #
 # All five are DATA in the same "k=v;k=v" shape as JARVIS_NAMES, so vocabulary is
@@ -169,14 +169,12 @@ JARVIS_DAY_DIGEST="${JARVIS_DAY_DIGEST:-1}"
 # ship — the allowlist wins, always.
 
 # Said one letter at a time. "E R P" is right; "erp" is a noise.
-JARVIS_SPELL_OUT="${JARVIS_SPELL_OUT:-ERP;UAT;QA;API;CRM;PR;UI;DB;SQL;CI;CD;NST;LMS;NSS;ECR;ECN;BOM;PDF;CSV;JSON;YAML;HTML;CSS;URL;SSH;TTS;VS;IDE;SPA;JS;TS;GL;PO;SO;HR}"
-
+JARVIS_SPELL_OUT="${JARVIS_SPELL_OUT:-API;CRM;UI;UX;DB;SQL;CI;CD;PR;QA;URL;URI;SSH;TLS;SSL;HTTP;JSON;YAML;XML;HTML;CSS;CSV;PDF;JWT;JS;TS;VM;OS;IO;CPU;RAM;SDK;CLI;GUI;IDE;SPA;ORM;RPC;DNS;CDN;S3;EC2;VPC;IAM;TTS}"
 # Genuine words, even though they are capitalised. Do NOT spell these out.
-JARVIS_SAY_AS_WORD="${JARVIS_SAY_AS_WORD:-ERPNext;JARVIS;SCADA;CRUD;JSON5;REST;SOAP;CRON;SASS;JIRA}"
-
+JARVIS_SAY_AS_WORD="${JARVIS_SAY_AS_WORD:-JARVIS;JSON5;REST;SOAP;CRON;SASS;JIRA;SCADA;CRUD;GRPC;OAUTH;YAML}"
 # Words the synthesiser gets audibly wrong, and domain terms with a settled
 # pronunciation. Matched whole-word, case-insensitively.
-JARVIS_GLOSSARY="${JARVIS_GLOSSARY:-frappe=frappay;erpnext=E R P next;doctype=doc type;doctypes=doc types;macdev=mac dev;wsldev=W S L dev;crmdev=C R M dev;nginx=engine X;venv=v env;cwd=working directory;env=environment;repo=repository;auth=auth;jinja=jinja;bench=bench;fixture=fixture;fixtures=fixtures;workflow=workflow;async=a sync;regex=regex;stdout=standard out;stderr=standard error;npm=N P M;mjs=M J S}"
+JARVIS_GLOSSARY="${JARVIS_GLOSSARY:-nginx=engine X;venv=v env;cwd=working directory;env=environment;repo=repository;async=a sync;regex=regex;stdout=standard out;stderr=standard error;npm=N P M;mjs=M J S;jwt=J W T;yaml=yamel;sqlite=sequel light;kubectl=cube control;k8s=kubernetes;nodejs=node J S;psql=P sequel;localhost=local host;middleware=middleware;webhook=webhook}"
 
 # Named files that deserve a name rather than a filename. Matched on the whole token.
 JARVIS_FILEWORDS="${JARVIS_FILEWORDS:-hooks.py=the hooks file;settings.json=the settings file;package.json=the package file;claude.md=the CLAUDE file;config.sh=the config file;hooks.py=the hooks file;pyproject.toml=the project file;modules.txt=the modules list}"
@@ -204,7 +202,7 @@ JARVIS_CTX="${JARVIS_CTX:-1}"
 # Where the documents live. Deliberately NOT inside a git repository: they are
 # machine-local, they carry absolute paths and session ids, they change on every
 # turn, and the secret filter is a mitigation rather than a guarantee.
-JARVIS_CTX_DIR="${JARVIS_CTX_DIR:-$HOME/frappe-bench/Referencedocs/CLI-Session-Context}"
+JARVIS_CTX_DIR="${JARVIS_CTX_DIR:-$HOME/checkout/Referencedocs/CLI-Session-Context}"
 
 # Path to context.mjs. EMPTY is the normal value and is not a missing setting: the
 # hook then resolves it itself, preferring the copy installed beside it by

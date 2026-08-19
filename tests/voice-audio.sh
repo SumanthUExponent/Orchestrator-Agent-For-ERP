@@ -215,12 +215,12 @@ spoken_of() (
   spoken "$1"
 )
 t() { r=$(spoken_of "$1" "${3:-}"); if [ "$r" = "$2" ]; then ok "$1 -> \"$r\""; else bad "$1 -> \"$r\", expected \"$2\""; fi; }
-t "frappe-bench"       "frappe bench"
-t "exponent_utilities" "exponent utilities"
+t "checkout"       "checkout"
+t "shared_lib" "shared lib"
 t "nsproto"            "nsproto"
-t "wt_nst"             "N S T"                                    # worktree prefix + initialism
-t "wt_crm"             "C R M"
-t "wt_nst"             "the N S T tree"  "wt_nst=the N S T tree"  # explicit override wins
+t "wt_svc"             "S V C"                                    # worktree prefix + initialism
+t "billing"            "billing"                                  # an ordinary word is left alone
+t "wt_svc"             "the service tree"  "wt_svc=the service tree"  # explicit override wins
 
 # ------------------------------------------------------------------- lengths
 echo
@@ -271,7 +271,7 @@ else
   budget "approval, solo      " 1.8 "Your approval, sir."
   budget "error, solo         " 1.8 "A problem, sir."
   budget "idle, solo          " 1.8 "Standing by, sir."
-  budget "boot                " 3.2 "Good afternoon, sir. frappe bench online."
+  budget "boot                " 3.2 "Good afternoon, sir. checkout online."
   budget "approval, 2 sessions" 2.6 "N S T needs your approval, sir."
   # A summarised completion carries real information, so it earns more seconds than
   # "task complete" — but not many more. The agent contract caps the clause at ten
@@ -280,7 +280,7 @@ else
   # it: an announcement you cannot attribute is worthless to someone running four
   # projects, and the old rule — name it only when several are live — depended on
   # live-session bookkeeping that is exactly the thing most likely to be stale.
-  budget "named + summary        " 4.6 "frappe bench: Vendor Audit schema is in, sir. 4 minutes."
+  budget "named + summary        " 4.6 "checkout: Invoice schema is in, sir. 4 minutes."
   # Six words is the contract, and this is where the number comes from: a word costs
   # about 0.38s on macOS `say`, and the name plus the duration spend two seconds before
   # the clause starts.
@@ -290,8 +290,8 @@ else
   # espeak-ng renders the six-word case at 5.03s where `say` gives 4.78s. The contract
   # being asserted is "an announcement stays short", not "two synthesisers agree to the
   # centisecond" — a budget with no margin fails on a difference that is not a defect.
-  budget "named + 6-word clause  " 5.4 "frappe bench: Vendor Audit schema and fixtures done, sir. 4 minutes."
-  budget "two in one directory   " 4.9 "frappe bench two: Vendor Audit schema is in, sir. 4 minutes."
+  budget "named + 6-word clause  " 5.4 "checkout: the invoice schema and seed data are in, sir. 4 minutes."
+  budget "two in one directory   " 4.9 "checkout two: Invoice schema is in, sir. 4 minutes."
 fi
 
 echo
@@ -336,10 +336,10 @@ R1FAIL=""
 # tilde as a probable mistake, and here it is the point.
 LIT_TILDE='~'
 for probe in \
-  'updated apps/exponent_utilities/hooks.py and the DocType' \
+  'updated services/shared_lib/hooks.py and the schema' \
   "$LIT_TILDE/.claude/statusline.sh: /bin/bash" \
-  'frappe_exponent_crm schema is in, 3 tables' \
-  'wt_nst build green; ran bench --site macdev migrate' \
+  'billing_service_api schema is in, 3 tables' \
+  'wt_svc build green; ran make migrate --env staging' \
   'getValue returned null from safe_exec' \
   'see scripts/jarvis.mjs and registry/agents.yaml'
 do

@@ -23,7 +23,7 @@ J="$HOME/.claude/jarvis"; S="$J/state"
 # the environment because config.sh assigns with :- defaults.
 export JARVIS_NAG_AFTER=14
 export JARVIS_NAG=2
-export JARVIS_NAMES="${JARVIS_NAMES:-wt_nst=N S T;wt_crm=C R M}"
+export JARVIS_NAMES="${JARVIS_NAMES:-wt_svc=N S T;billing=C R M}"
 
 step=0
 narrate() {
@@ -79,39 +79,39 @@ sleep 1
 narrate "09:04 — you open four sessions, one after another" \
         "Each greeting names its own project and is pitched two semitones above the last."
 listen "four rising arpeggios, ascending in pitch, four different project names"
-hook d1 frappe-bench start; sleep 4
-hook d2 wt_nst       start; sleep 4
-hook d3 wt_crm       start; sleep 4
-hook d4 exponent_utilities start
+hook d1 checkout start; sleep 4
+hook d2 wt_svc       start; sleep 4
+hook d3 billing       start; sleep 4
+hook d4 shared_lib start
 settle 2
 
 # ---------------------------------------------------------------- short turn
-narrate "You ask frappe-bench a three-second question" \
+narrate "You ask checkout a three-second question" \
         "Stop fires after EVERY turn. Under 25 seconds it is not worth a sentence."
 listen "one quiet tick. No speech at all"
-hook d1 frappe-bench begin; sleep 3; hook d1 frappe-bench 'done'
+hook d1 checkout begin; sleep 3; hook d1 checkout 'done'
 settle 2
 
 # ---------------------------------------------------------------- swarm
-narrate "wt_nst dispatches a swarm; six specialists report back over two seconds" \
+narrate "wt_svc dispatches a swarm; six specialists report back over two seconds" \
         "SubagentStop fires once each. Six announcements would be intolerable, so they chime and are counted."
 listen "ONE soft low tick, not six"
-hook d2 wt_nst begin
-for i in 1 2 3 4 5 6; do hook d2 wt_nst subagent; sleep 0.3; done
+hook d2 wt_svc begin
+for i in 1 2 3 4 5 6; do hook d2 wt_svc subagent; sleep 0.3; done
 settle 2
 
 narrate "…and the swarm turn completes, four minutes in" \
         "The specialist count is what distinguishes a swarm run from a one-line edit."
 listen "rising two-note chime, then \"N S T done, sir. Six specialists, four minutes.\""
 elapsed d2 245 6
-hook d2 wt_nst 'done'
+hook d2 wt_svc 'done'
 settle 2
 
 # ---------------------------------------------------------------- the expensive failure
-narrate "wt_crm hits a permission prompt while the other three keep working" \
+narrate "billing hits a permission prompt while the other three keep working" \
         "This is the failure the whole thing exists for: a session blocked in silence."
 listen "three insistent taps — a different rhythm entirely — then \"C R M needs your approval, sir.\""
-hook d3 wt_crm permission
+hook d3 billing permission
 settle 2
 
 narrate "Two other sessions finish at the same instant" \
@@ -119,28 +119,28 @@ narrate "Two other sessions finish at the same instant" \
 listen "two completions, one after the other, never overlapping"
 elapsed d1 210 0
 elapsed d4 380 3
-hook d1 frappe-bench 'done'
-hook d4 exponent_utilities 'done'
+hook d1 checkout 'done'
+hook d4 shared_lib 'done'
 settle 2
 
-narrate "You still have not answered wt_crm" \
+narrate "You still have not answered billing" \
         "Nothing fires when a permission prompt goes unanswered, so the daemon re-checks on its own."
 listen "the taps return, tighter and higher: \"C R M is still waiting, sir.\""
 sleep 16
 settle 2
 
 # ---------------------------------------------------------------- coalescing
-narrate "exponent_utilities finishes six turns in two seconds" \
+narrate "shared_lib finishes six turns in two seconds" \
         "A burst is debounced, then collapsed to the newest — its elapsed time is the accurate one."
 listen "ONE completion, not six"
-for i in 1 2 3 4 5 6; do elapsed d4 $(( 90 + i * 10 )) 0; hook d4 exponent_utilities 'done'; sleep 0.3; done
+for i in 1 2 3 4 5 6; do elapsed d4 $(( 90 + i * 10 )) 0; hook d4 shared_lib 'done'; sleep 0.3; done
 settle 2
 
 # ---------------------------------------------------------------- bad news
-narrate "An API error ends a turn in frappe-bench" \
+narrate "An API error ends a turn in checkout" \
         "StopFailure, not a failed tool call. Low, falling, on a darker instrument."
-listen "a descending two-note thud, louder than the rest: \"frappe bench has a problem, sir.\""
-hook d1 frappe-bench error
+listen "a descending two-note thud, louder than the rest: \"checkout svc has a problem, sir.\""
+hook d1 checkout error
 settle 2
 
 # ---------------------------------------------------------------- mute
@@ -149,8 +149,8 @@ narrate "You go into a meeting: mute for one minute, and an error arrives" \
 listen "complete silence for the next few seconds"
 before=$(grep -c '' "$J/log" 2>/dev/null | tr -d ' '); before=${before:-0}
 "$J/jarvisctl" mute 1 >/dev/null
-hook d2 wt_nst error
-hook d3 wt_crm permission
+hook d2 wt_svc error
+hook d3 billing permission
 sleep 8
 after=$(grep -c '' "$J/log" 2>/dev/null | tr -d ' '); after=${after:-0}
 printf '    \033[2mannounced during the mute: %s (must be 0)\033[0m\n' "$(( after - before ))"
@@ -162,14 +162,14 @@ settle 2
 # ---------------------------------------------------------------- idle
 narrate "You walk away and leave a session waiting for input"
 listen "two soft taps: \"…standing by, sir.\""
-hook d2 wt_nst idle
+hook d2 wt_svc idle
 settle 2
 
 # ---------------------------------------------------------------- shutdown
 narrate "18:30 — you close all four sessions at once" \
         "Four SessionEnd events, but only one farewell: a per-session goodbye would be four goodbyes."
 listen "silence, then ONE falling arpeggio: \"Goodbye, sir.\""
-hook d1 frappe-bench end; hook d2 wt_nst end; hook d3 wt_crm end; hook d4 exponent_utilities end
+hook d1 checkout end; hook d2 wt_svc end; hook d3 billing end; hook d4 shared_lib end
 settle 4
 
 # ---------------------------------------------------------------- summary
