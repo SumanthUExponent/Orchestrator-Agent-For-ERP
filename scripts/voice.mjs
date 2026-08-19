@@ -21,11 +21,12 @@
  */
 
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { generate } from './tones.mjs';
 
-const SCRIPTS = ['jarvis.sh', 'speaker.sh', 'jarvisctl', 'demo.sh', 'platform.sh'];
+const SCRIPTS = ['jarvis.sh', 'speaker.sh', 'jarvisctl', 'demo.sh', 'platform.sh', 'pronounce.sh', 'summarise.awk'];
 const EXECUTABLE = new Set(['jarvis.sh', 'speaker.sh', 'jarvisctl', 'demo.sh']);
 
 /** Every hook the voice layer registers. Order here is the order written. */
@@ -35,8 +36,21 @@ export const HOOKS = [
   { event: 'Stop', matcher: '', arg: 'done', why: 'announce completion, gated on elapsed time' },
   { event: 'Notification', matcher: 'permission_prompt', arg: 'permission', why: 'blocked on approval — the expensive failure' },
   { event: 'Notification', matcher: 'idle_prompt', arg: 'idle', why: 'waiting on you' },
+  { event: 'SubagentStart', matcher: '', arg: 'substart', why: 'count specialists IN FLIGHT, for jarvisctl report' },
   { event: 'SubagentStop', matcher: '', arg: 'subagent', why: 'count specialists; chime per batch' },
   { event: 'StopFailure', matcher: '', arg: 'error', why: 'API error (NOT a failed tool call)' },
+  // Compaction, not session closure, is where context is actually lost -- and it
+  // happens repeatedly inside one long session, silently. PreCompact runs BEFORE the
+  // discard and gets a longer budget than the others because it reads a slice of the
+  // transcript; PostCompact is a pure payload read and needs none.
+  {
+    event: 'PreCompact',
+    matcher: '',
+    arg: 'precompact',
+    timeout: 10,
+    why: 'snapshot what is about to be discarded',
+  },
+  { event: 'PostCompact', matcher: '', arg: 'postcompact', why: 'record what survived' },
   // SessionEnd hooks share a 1.5s budget unless a timeout is declared, and the
   // goodbye line is longer than that, so it gets cut off mid-word without this.
   { event: 'SessionEnd', matcher: '', arg: 'end', timeout: 8, why: 'goodbye, once the last session closes' },
@@ -61,7 +75,15 @@ export function stripJarvis(hooks) {
     const kept = [];
     for (const g of groups) {
       const before = (g.hooks || []).length;
-      g.hooks = (g.hooks || []).filter((h) => !String(h.command || '').includes('jarvis'));
+      // Match `jarvis.sh` specifically, NOT any command containing "jarvis".
+      //
+      // The loose test was survivable only while the routing skill was called
+      // "orchestrator". Renaming it to jarvis made `skills/jarvis/scripts/jarvis.mjs`
+      // match, so installing the voice layer deleted the routing gate and the context
+      // pack -- the two hooks this function exists to protect. The voice hooks are
+      // always `<dir>/jarvis.sh <arg>` (on Windows, `bash "C:/.../jarvis.sh" arg`), so
+      // the file name is the precise and portable discriminator.
+      g.hooks = (g.hooks || []).filter((h) => !String(h.command || '').includes('jarvis.sh'));
       removed += before - g.hooks.length;
       if (g.hooks.length) kept.push(g);
     }
@@ -123,6 +145,140 @@ function copyScripts({ from, to, apply, force }) {
   return { written, skipped };
 }
 
+/**
+ * Hand one announcement to the voice layer, from Node.
+ *
+ * The orchestrator is a CLI, not a Claude Code hook, so it has no payload to speak
+ * through -- but it must not speak for itself either. Nothing outside the drainer ever
+ * calls the speech engine, so this ENQUEUES exactly the way a hook does, by invoking
+ * jarvis.sh, and returns immediately.
+ *
+ * Silent on every failure: not installed, not executable, spawn refused. A planner that
+ * cannot plan because the voice layer is missing would be a much worse tool than a
+ * silent one.
+ *
+ * stdio stdin is 'ignore' deliberately -- jarvis.sh does `[ -t 0 ] || IN=$(cat)`, which
+ * would block forever on an inherited pipe with nothing written to it.
+ */
+export function announce(arg, text, { target = jarvisDir() } = {}) {
+  try {
+    const script = path.join(target, 'jarvis.sh');
+    if (!fs.existsSync(script)) return false;
+    spawnSync(script, [arg, String(text ?? '')], {
+      stdio: ['ignore', 'ignore', 'ignore'],
+      timeout: 4000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Speak the parts of an execution plan a person would want to hear.
+ *
+ * Three things qualify, and nothing else: a gate (the loudest announcement the layer
+ * has, and it names WHICH of the seven), an agent dropped by the router, and an effort
+ * level capped below what was asked for. All three are decisions made on the user's
+ * behalf, which is exactly the category worth one spoken line.
+ */
+
+/**
+ * Which of the seven human-approval gates a request plainly crosses.
+ *
+ * Two independent signals per gate, never one. A single keyword is not enough: "drop"
+ * alone appears in "drop the trailing comma", and a false gate announcement is the most
+ * expensive false positive available -- it is the one alert the user is trained not to
+ * ignore. Returns [] when unsure, which is the right answer when unsure.
+ */
+export function matchGates(request, gates = []) {
+  const q = String(request || '').toLowerCase();
+  if (!q) return [];
+
+  // Keyed on a distinctive word of the GATE TEXT, never on list position. Position was
+  // the first attempt and it silently mismatched every rule by one -- "deploy to
+  // production" announced "destructive database changes" -- because the rule order and
+  // the registry order were not the same list. Reordering registry/agents.yaml must not
+  // be able to change which gate is named.
+  const rules = [
+    { key: 'database', all: [/\bdrop\b|\btruncate\b|\bwipe\b/, /\btable|\bdatabase|\bschema|\bdb\b/] },
+    { key: 'production', all: [/\bproduction\b|\bprod\b/, /\bdeploy|\brelease\b|\bship\b/] },
+    { key: 'git', all: [/force[- ]push|reset --hard|rewrite (the )?history|branch -d\b/] },
+    { key: 'skill or agent', all: [/\bdelete\b|\bremove\b|\boverwrite\b/, /\bskills?\b|\bagents?\b/] },
+    { key: 'swarm architecture', all: [/\bswarm\b/, /\barchitecture\b|\bregistry\b/] },
+    { key: 'new agent', all: [/\bnew agent\b|generate an? agent/] },
+    { key: 'security', all: [/\bsecret|\bcredential|\bpassword|\btoken\b|api key/] },
+  ];
+
+  const hit = [];
+  for (const g of gates) {
+    const gl = String(g).toLowerCase();
+    const rule = rules.find((r) => gl.includes(r.key));
+    if (!rule) continue;
+    if (rule.all.every((re) => re.test(q))) hit.push(g);
+  }
+  return hit;
+}
+
+export function announcePlan(plan, { requestedEffort, request = '', gates = [], target = jarvisDir() } = {}) {
+  if (!plan || typeof plan !== 'object') return;
+  const spoken = [];
+
+  // NOT plan.gates. Those are PHASE gates -- "verify" -- and announcing one as though
+  // it were a human-approval gate is worse than saying nothing: it spends the loudest
+  // motif in the set on a routine planning step.
+  //
+  // The seven human gates are a flat list in registry/agents.yaml, printed verbatim
+  // into every agent prompt and enforced by the AGENT at runtime. Nothing in the
+  // planner decides which one a request crosses, so there is nothing here to read.
+  // What follows is therefore a HEURISTIC front end to the `gate` event, and it is
+  // deliberately biased towards silence: every rule needs two independent signals, so
+  // it under-reports rather than crying wolf on the loudest announcement in the system.
+  // The authoritative path remains an agent calling `jarvis.sh gate "<gate>"` when it
+  // actually refuses and escalates.
+  for (const g of matchGates(request, gates)) {
+    announce('gate', g, { target });
+    spoken.push(`gate: ${g}`);
+  }
+
+  const dropped = plan.dropped || [];
+  if (dropped.length) {
+    // One line for the whole set. Naming every dropped agent would be a list read
+    // aloud, which is the thing the written plan on screen is already better at.
+    const first = dropped[0];
+    const more = dropped.length > 1 ? `, and ${dropped.length - 1} more` : '';
+    announce('route', `${first.id} was dropped${more}`, { target });
+    spoken.push(`route: dropped ${dropped.length}`);
+  }
+
+  // Not spoken -- recorded, for `jarvisctl report` to read later. The in-flight count
+  // comes from SubagentStart/Stop and says HOW MANY; only the planner knows in how many
+  // batches and at what tier, and only at plan time.
+  // Shape read from plan.mjs, not guessed: batches[] each carry members[], and the tier
+  // is on member.agent.model. A first pass invented plan.agents and plan.dispatch and
+  // silently recorded "0 batches, top tier unknown" for every plan.
+  const batches = Array.isArray(plan.batches) ? plan.batches.length : 0;
+  const tiers = [
+    ...new Set(
+      (plan.batches || [])
+        .flatMap((b) => b.members || [])
+        .map((m) => m && m.agent && m.agent.model)
+        .filter(Boolean)
+    ),
+  ];
+  const top = tiers.includes('opus') ? 'opus' : tiers.includes('sonnet') ? 'sonnet' : tiers[0] || '';
+  if (batches || top) {
+    announce('swarm', `${batches} batches, top tier ${top || 'unknown'}`, { target });
+    spoken.push(`swarm: ${batches} batches ${top}`);
+  }
+
+  if (requestedEffort && plan.effort && plan.effort !== requestedEffort) {
+    announce('route', `effort capped at ${plan.effort}`, { target });
+    spoken.push(`route: effort ${plan.effort}`);
+  }
+  return spoken;
+}
+
 /** Atomic write, then re-read. A half-written settings.json cannot be started from. */
 function writeSettingsAtomic(file, obj) {
   const tmp = `${file}.tmp-${process.pid}`;
@@ -137,6 +293,17 @@ export function installVoice({ root, apply = false, force = false, target = jarv
 
   const scripts = copyScripts({ from, to: target, apply, force });
   const script = path.join(target, 'jarvis.sh');
+
+  // The session-context recorder ships WITH the voice layer, not only with the
+  // skills install. The hooks registered below reference it, and a hook pointing at
+  // a file that is not there degrades to a silent no-op -- which is safe, but means
+  // `voice --apply` alone would install a compaction hook that never records
+  // anything. Copying it here makes the voice layer self-contained, as it already
+  // claims to be everywhere else.
+  if (apply) {
+    const ctxSrc = path.join(root, 'scripts', 'context.mjs');
+    if (fs.existsSync(ctxSrc)) fs.copyFileSync(ctxSrc, path.join(target, 'context.mjs'));
+  }
 
   // Tones are SYNTHESISED here rather than shipped. They are derived data — pitch,
   // envelope and loudness baked into plain WAV so playback needs no per-platform rate
@@ -166,7 +333,10 @@ export function installVoice({ root, apply = false, force = false, target = jarv
   const preview = JSON.parse(JSON.stringify(existing));
   const counts = mergeHooks(preview, script);
   const foreign = Object.entries(preview.hooks || {}).reduce(
-    (n, [, gs]) => n + gs.reduce((m, g) => m + g.hooks.filter((h) => !String(h.command).includes('jarvis')).length, 0),
+    // Same discriminator as stripJarvis, and it MUST stay the same: this is the count
+    // reported as "left untouched", and if the two predicates disagree the installer
+    // reports having preserved a hook it just deleted.
+    (n, [, gs]) => n + gs.reduce((m, g) => m + g.hooks.filter((h) => !String(h.command).includes('jarvis.sh')).length, 0),
     0
   );
 

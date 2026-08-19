@@ -29,7 +29,7 @@ SB=$(mktemp -d /tmp/jv-audio-XXXXXX)
 export CLAUDE_JARVIS_DIR="$SB/jarvis"
 export CLAUDE_SETTINGS_FILE="$SB/settings.json"
 echo '{}' > "$CLAUDE_SETTINGS_FILE"
-node "$REPO/scripts/orchestrator.mjs" voice --apply >/dev/null 2>&1
+node "$REPO/scripts/jarvis.mjs" voice --apply >/dev/null 2>&1
 J="$CLAUDE_JARVIS_DIR"
 trap 'rm -rf "$SB"' EXIT
 
@@ -303,6 +303,84 @@ out=$(JV_OS=linux; . "$J/platform.sh" 2>/dev/null; JV_OS=linux
       [ "$JV_OS" = macos ] || t=$(printf '%s' "$t" | sed 's/\[\[[^]]*\]\]//g; s/  */ /g')
       printf '%s' "$t")
 case "$out" in *slnc*) bad "markup stripped off macOS" "got: $out" ;; *) ok "stripped: \"$out\"" ;; esac
+
+echo
+echo "R1  nothing unspeakable survives the pipeline"
+# The readability gate. A clause that still carries a path, an underscore, a camelCase
+# boundary or a fused run of letters is not a shortened announcement -- it is a
+# different and meaningless one. Every example below is a real line out of the daily
+# log, from before the separator fix and the pronunciation layer.
+#
+# The two functions are lifted with awk rather than sourced: jarvis.sh is a hook and
+# sourcing it would run the hook body. (`sed -n '/^f() {/,/^}/p'` is not portable --
+# BSD sed rejects the parens.)
+eval "$(awk '/^speakable_separators\(\) \{/,/^\}/' "$J/jarvis.sh")"
+eval "$(awk '/^clip\(\) \{/,/^\}/' "$J/jarvis.sh")"
+# config.sh must be sourced here: the suite does not load it globally, so the
+# pronunciation tables were EMPTY and the camelCase exemption below iterated over
+# nothing -- which is why "JavaScript" was reported as an unsplit identifier.
+. "$J/config.sh"
+. "$J/pronounce.sh"
+
+spoken_pipeline() {
+  printf '%s' "$1" \
+    | speakable_separators \
+    | tr -cd "A-Za-z0-9 .,;:'-" \
+    | tr -s ' ' \
+    | { read -r l; pronounce "$l"; }
+}
+
+R1FAIL=""
+for probe in \
+  'updated apps/exponent_utilities/hooks.py and the DocType' \
+  '~/.claude/statusline.sh: /bin/bash' \
+  'frappe_exponent_crm schema is in, 3 tables' \
+  'wt_nst build green; ran bench --site macdev migrate' \
+  'getValue returned null from safe_exec' \
+  'see scripts/jarvis.mjs and registry/agents.yaml'
+do
+  out=$(spoken_pipeline "$probe")
+  case "$out" in
+    */*)            R1FAIL="$R1FAIL\n    raw path survived: [$out]" ;;
+  esac
+  case "$out" in
+    *_*)            R1FAIL="$R1FAIL\n    underscore survived: [$out]" ;;
+  esac
+  # A fused run: twelve or more letters with no boundary is not a word anyone says.
+  if printf '%s' "$out" | grep -qE '[A-Za-z]{13,}'; then
+    R1FAIL="$R1FAIL\n    unsplit identifier: [$out]"
+  fi
+  # An unsplit camelCase boundary -- but not in the layer's OWN vocabulary. The
+  # pronunciation tables deliberately emit proper nouns like "JavaScript", which a
+  # synthesiser says correctly and a naive [a-z][A-Z] check flags as an identifier.
+  # Strip every table value first, so only text the layer did not choose is judged.
+  probe_out="$out"
+  for v in $(printf '%s;%s' "${JARVIS_EXTWORDS:-}" "${JARVIS_GLOSSARY:-}" | tr ';' '\n' | sed 's/^[^=]*=//' | tr ' ' '\n'); do
+    [ -n "$v" ] && probe_out=${probe_out//"$v"/}
+  done
+  if printf '%s' "$probe_out" | grep -qE '[a-z][A-Z]'; then
+    R1FAIL="$R1FAIL\n    unsplit camelCase: [$out]"
+  fi
+done
+if [ -z "$R1FAIL" ]; then ok "no path, underscore, fused run or camelCase reaches speech"
+else bad "unspeakable text reached speech" "$(printf '%b' "$R1FAIL")"; fi
+
+echo
+echo "R2  every variant of every event fits inside the ceiling"
+# `jarvisctl audition` flags its own overruns, which is how the long error frame
+# ("Something has gone wrong in <session>") was caught at 5.17s. If any variant is
+# over, this fails rather than waiting for someone to notice by ear.
+aud=$("$J/jarvisctl" audition --text 2>/dev/null)
+# Match the MARKER on a variant line, not the closing sentence that explains it --
+# "Anything marked OVER CEILING is too long..." made this test fail permanently.
+over=$(printf '%s\n' "$aud" | grep -c -- '<-- OVER CEILING' || true)
+lines=$(printf '%s\n' "$aud" | grep -cE '^  [a-z]' || true)
+if [ "${over:-0}" = "0" ] && [ "${lines:-0}" -ge 20 ]; then
+  ok "$lines variants, none over the ceiling"
+else
+  bad "a variant exceeds the ceiling, or audition produced nothing" \
+      "$(printf '%s\n' "$aud" | grep -- '<-- OVER CEILING')"
+fi
 
 echo
 printf 'RESULT: %s passed, %s failed, %s skipped\n' "$PASS" "$FAIL" "$SKIP"

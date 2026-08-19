@@ -12,7 +12,7 @@ They need: **Node 18+**, **git**, and a **bash** (built in on macOS and Linux; o
 ```text
 Please install the Orchestrator Agent swarm and its JARVIS voice layer on this machine.
 
-The repo is https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP — a 45-agent
+The repo is https://github.com/SumanthUExponent/JARVIS-For-ERP — a 45-agent
 orchestration swarm for Claude Code tuned to Frappe/ERPNext, plus a voice layer that
 announces what each parallel session is doing. It has no runtime dependencies and makes
 no network calls; the speech is the operating system's own synthesiser.
@@ -22,20 +22,20 @@ Do this:
 1. Clone it somewhere permanent (not /tmp) and cd in.
 
 2. Read the README first, then run the dry runs and show me what they plan to do:
-       node scripts/orchestrator.mjs install
-       node scripts/orchestrator.mjs voice
+       node scripts/jarvis.mjs install
+       node scripts/jarvis.mjs voice
    Both are dry-run by default and write nothing. Tell me what they would install and
    which of my existing settings, if any, they would touch.
 
 3. If it looks right, apply both. --force on BOTH is required, not optional:
-       node scripts/orchestrator.mjs install --apply --force
-       node scripts/orchestrator.mjs voice   --apply --force
+       node scripts/jarvis.mjs install --apply --force
+       node scripts/jarvis.mjs voice   --apply --force
    Without it, agents that already exist are skipped by name and config.sh is preserved,
    so an install can appear to succeed while changing nothing.
 
 4. Verify, and show me the real output rather than summarising it:
-       node scripts/orchestrator.mjs health     # the skill registry
-       node scripts/orchestrator.mjs doctor     # the 45 agents
+       node scripts/jarvis.mjs health     # the skill registry
+       node scripts/jarvis.mjs doctor     # the 45 agents
        jarvisctl doctor                         # the voice layer, per platform
    jarvisctl may not be on PATH; it is at ~/.claude/jarvis/jarvisctl.
 
@@ -88,8 +88,8 @@ no account.
 
 ```bash
 git pull
-node scripts/orchestrator.mjs install --apply --force
-node scripts/orchestrator.mjs voice   --apply --force
+node scripts/jarvis.mjs install --apply --force
+node scripts/jarvis.mjs voice   --apply --force
 ```
 
 `--force` again, for the same reason, and restart sessions afterwards.

@@ -6,9 +6,9 @@ Guidance for Claude Code working in this repository.
 
 Two things that ship together and are developed together:
 
-1. **The orchestrator** — registry-driven routing for a 45-agent swarm tuned to
+1. **JARVIS** — registry-driven routing for a 45-agent swarm tuned to
    Frappe/ERPNext work. `registry/agents.yaml` is the single source of truth;
-   `agents/*.md` are **generated** from it (`node scripts/swarm.mjs build-agents --apply`).
+   `agents/*.md` are **generated** from it (`node scripts/jarvis.mjs agents --apply`).
    Never hand-edit `agents/*.md` — the next build overwrites it.
 2. **JARVIS** — the voice layer. A local, zero-dependency spoken notification system for
    someone running several Claude Code sessions at once, who is not looking at the screen.
@@ -75,19 +75,59 @@ Supporting properties, each of which exists because its absence was a real defec
 
 ## The clause budget
 
-**Measured, not a style preference.** At `JARVIS_RATE=172` wpm a word costs ≈ **0.38 s**
-of speech. An announcement also carries a frame — the session name and the elapsed time —
-which is ≈ **2 s before the clause even starts**.
+**Measured, not a style preference**, and the familiar figure is only an average. At
+`JARVIS_RATE=172`, measured with `say -o f.aiff` + `afinfo`:
 
-| Clause length | Total spoken |
-|---|---|
-| 5 words | ≈ 4.1 s |
-| 8 words | ≈ 5.7 s |
+| Sample | Duration | Per token |
+|---|---|---|
+| 8 ordinary words (long) | 3.81 s | 476 ms |
+| 6 ordinary words (short) | 1.64 s | 273 ms |
+| 6 spelled letters (`E R P U A T`) | 1.34 s | 224 ms |
+| 3 spelled letters (`N S T`) | 0.82 s | 272 ms |
 
-**Anything past ~5 s is longer than anyone keeps listening.** That is the whole reason the
-agent contract asks for a short clause. Measure with `say -o f.aiff` + `afinfo`; do not
-guess. Two registers (naming the session only when 2+ are live) got the worst case from
-5.4 s to 1.67 s.
+So **cost tracks syllables, not tokens**. Per *letter* of ordinary prose it is a steady
+**≈70 ms**; a **spelled letter costs ≈224 ms** because each is its own syllable plus a
+pause; a digit is spoken as a word but has no letters (**≈280 ms**); a comma or full stop
+is a real pause (**≈100 ms**). `budget()` in `speaker.sh` spends exactly these.
+
+Counting *tokens* instead caused a real defect. Budgeting runs **after** pronunciation —
+it must, because pronouncing EXPANDS and it is the spoken length that costs seconds — so
+"the ERP UAT run" is already eight tokens of single letters, and a six-token trim emitted
+`the E R P U A`. Not a shortened announcement: a different, meaningless one.
+
+**The ceiling is 5 s and the frame is charged against it.** The frame — session name,
+`", sir"`, elapsed time — costs ≈2.2 s, so there are only ≈2.8 s of clause to spend
+whatever the word allowance says. That is why "a problem earns more words" is **9 against
+6, not 12**: twelve put an error announcement at 5.54 s. Events whose frame is unusually
+long (`gate`) measure their own with `spoken_ms` and pass it to `budget` rather than
+trusting the average.
+
+Two rules found by ear, both in `budget()`: never cut inside a spelled acronym (retreat
+to where the run began), and prefer a comma boundary — punctuation is the pacing, so
+cutting on it is free. `the schema is in` reads finished; `the schema is in, with three`
+dangles. Never end on a function word either, *unless* the cut landed on a comma, which
+is evidence the clause really ended there.
+
+Three more things the measurements forced, each of which had shipped wrong first:
+
+- **`I` and `a` are words, not spelled letters.** Charging every single character 224 ms
+  and treating it as an acronym boundary made the trim retreat in front of the pronoun:
+  "exactly the trap I had recorded" came out as "exactly the trap".
+- **Fit the ASSEMBLED line, not an estimate of its frame.** Measuring the frame alone
+  missed the variant prefix ("From …", "… reports"), and the model under-reads by ~20%
+  — prosody and phrase-final lengthening are not in it. `JARVIS_MODEL_SLACK_MS` (800 ms)
+  is that gap, measured, not tuned.
+- **When over budget, drop the elapsed time before truncating the sentence.** With
+  something to report, the duration is the least valuable thing in the line — the same
+  argument `config.sh` already makes for dropping the specialist count once a summary
+  exists. Truncating content to keep a timestamp is backwards. A long fallback sentence
+  now lands at 4.45 s whole, instead of 5.32 s mangled.
+
+Budget in the BRANCH that speaks, never centrally. Doing both meant the average reserve
+trimmed the clause before the accurate cap ever saw it.
+
+`jarvisctl audition` prints every variant with its modelled cost and flags anything over
+the ceiling. It has caught two overruns that no unit test would have.
 
 Related measured facts, all in the same spirit — audio design here is measurable, so do
 not guess it:
@@ -114,6 +154,71 @@ another marker or the JSON tail. A line anchor is not enough — explaining the 
 a reply put a mangled half-sentence into a live session's briefing. Documentation must not
 be mistaken for data.
 
+## Markers: what a specialist hands back
+
+Agents end their output with terminal marker lines. `marker_note` extracts them and the
+filter — not the extraction — differs by consumer:
+
+| Marker | Filter | Cap | Spoken? |
+|---|---|---|---|
+| `VOICE:` | speech allowlist | 140 | yes, the announcement |
+| `LOG:` | doc (paths survive) | 380 | **never** — the daily log |
+| `GATE:` | speech allowlist | 140 | **first, at priority 0** |
+| `PENDING:` / `HEADS-UP:` | speech allowlist | 140 | at session end |
+| `DECISION:` / `GOTCHA:` | doc | 240 | never |
+
+`LOG:` is deliberately the longest. The daily log is **read, not heard**, so it carries
+what the clause cannot: exact paths, identifiers, counts, and above all *why*. The bound
+is not taste — it is the single-`printf` atomicity in `file_append`. **PIPE_BUF is 512
+bytes on macOS**, the smallest of the three platforms, and the log-line prefix costs up to
+~70 of them. Two 400-byte appends stay inside the budget where one 800-byte append would
+not, which is why the turn line and its `LOG:` detail are separate writes.
+
+`log` is in `protocol.required`, so **`doctor` fails every agent if it is dropped** —
+verified by removing it: 45 failures, `UNHEALTHY`.
+
+A marker only counts if it is **terminal**. A trap that hid here for a long time: the
+JSON-tail skip handled `"}` but not `","hook_event_name":"Stop"}`, which is the shape
+whenever the message ends with a newline *and* any field follows it. In that case **no
+marker was harvested at all** — VOICE, PENDING, HEADS-UP, DECISION, GOTCHA and LOG alike —
+silently, with the hook exiting 0. Every existing test happened to put
+`last_assistant_message` last, so nothing caught it.
+
+## JARVIS speaks through the queue, never for itself
+
+`plan` announces three things, via `announce()` in `scripts/voice.mjs`, which invokes
+`jarvis.sh` exactly as a hook does — because nothing outside the drainer may call the
+speech engine:
+
+- **a human gate** — `gate`, priority 0, the escalate motif, and it names *which* gate
+- **a dropped agent or a capped effort** — `route`, routine priority
+- **the plan's shape** — `swarm`, silent, recorded for `jarvisctl report`
+
+`--quiet-voice` suppresses all of it, and a missing voice layer is silent, never an error.
+
+**`GATE:` is the authoritative path.** An agent that refuses and escalates emits
+`GATE: production deployment` as its last line; the hook harvests it and enqueues at
+priority 0 *before* the completion is even considered, so it is spoken first and the
+completion queues behind it — a run that stopped for authorisation is not a run that
+finished. `jarvis.sh` deliberately does **not** validate the name against the seven: the
+shell layer has no access to the registry, and a second copy of that list is how two
+lists start disagreeing. Instead the contract carries all seven verbatim for agents to
+copy, and `tests/agents.test.mjs` asserts every one reaches every agent.
+
+**`matchGates()` is the fallback, and a heuristic.** Nothing in the planner decides
+which of the seven gates a request crosses — they are a flat list printed into every agent
+prompt and enforced by the agent at runtime. So the matcher requires **two independent
+signals** per gate and returns `[]` when unsure: a false gate announcement is the most
+expensive false positive available, because it is the one alert a user is trained not to
+ignore. It keys on the gate *text*, never on list position — position was the first
+attempt and it mismatched every rule by one, announcing "destructive database changes" for
+"deploy to production". The authoritative path is still an agent calling
+`jarvis.sh gate "<gate>"` when it actually refuses and escalates.
+
+`jarvisctl report` answers "what is the swarm doing **now**": in-flight specialists from
+`SubagentStart` minus `SubagentStop`, plus the batch count and top tier the planner
+recorded. Sub-agents stay mute — `JARVIS_SUBAGENT=chime`.
+
 ## `voice/platform.sh` is the only file allowed to name an OS tool
 
 Every OS-specific call — the speech engine, audio playback, desktop notification, voice
@@ -137,9 +242,54 @@ Portability traps already paid for, which is why the rule is absolute:
 - `trap cleanup EXIT INT TERM` fires cleanup **twice** — TERM handler, then EXIT. Guard
   with a flag plus `trap - EXIT INT TERM`.
 
+## Session context is a second consumer of the same machinery
+
+`scripts/context.mjs` writes one handoff document per session. It is deliberately built
+on what already existed rather than beside it, and the reuse is load-bearing:
+
+- **There is exactly ONE append routine.** `file_append` in `voice/jarvis.sh`. The daily
+  log and the session journal are both callers. Its three properties — noclobber header
+  creation, the sink owning the trailing newline, one `printf` per append so the write
+  cannot interleave — were each paid for once. A second append implementation would
+  re-derive them and get one wrong.
+- **`remember()` is the dedup and cap rule**, unchanged. "The same gotcha recorded four
+  times is one gotcha" was already solved.
+- **`marker_note()` is the only marker extractor.** `DECISION:` and `GOTCHA:` were added
+  to its terminal-marker regex, not given a parser of their own. Its second argument
+  selects the FILTER, not the extraction: speech gets the allowlist, the document gets a
+  filter that preserves paths, because `apps/foo/hooks.py` is right to *say* as "apps foo
+  hooks py" and useless to *read* that way.
+- **`mergeHooks` / `writeSettingsAtomic` in `scripts/voice.mjs`** register `PreCompact`
+  and `PostCompact`. They already back up, write atomically, re-parse and roll back.
+
+### The cost split is the design
+
+`Stop` fires after every turn and must stay free, so the hot path appends one JSON line
+in pure bash with **no process spawn**. `node` is reached only at compaction, session end
+and the `SessionStart` sweep. If you find yourself adding a `node` call to `done`, stop.
+
+`platform.sh` still owns every OS tool: `jv_have_node`, `jv_node` and `jv_llm_summarize`
+live there, and `context.mjs` spawns nothing at all, which is what keeps
+`tests/voice-audio.sh` check P2 passing.
+
+### Traps this cost once each
+
+- **`node -e` puts extra arguments at `argv[1]`**, not `argv[2]` — there is no script
+  path. Two tests read `argv[2]`, wrote nowhere, and passed vacuously.
+- **A watermark is a line boundary; an arbitrary byte seek is not.** Dropping the first
+  line on `start > 0` silently lost a whole turn on every repeat compaction. Check the
+  byte before the offset.
+- **`\b` before a key name never matches a PREFIXED name**, because `_` is a word
+  character. `DB_PASSWORD=` sailed through the secret filter — the single most common
+  shape there is.
+- **`prompt` is the last key in a `UserPromptSubmit` payload**, so there is no `","`
+  after it. Cutting the value there welded a literal `"}` onto every objective.
+- **A later `meta` event must merge, not overwrite.** `Object.assign` let the empty
+  title written at open time clobber the real one learned at the first compaction.
+
 ## The seven human gates
 
-Verbatim from `registry/agents.yaml` `human_approval_required`. The orchestrator skill
+Verbatim from `registry/agents.yaml` `human_approval_required`. JARVIS skill
 enforces these; agents must refuse and escalate rather than proceed.
 
 1. destructive database changes
@@ -166,19 +316,31 @@ Hitting a gate is the loudest thing JARVIS says, and it names which gate was hit
 ## Commands
 
 ```bash
-node scripts/orchestrator.mjs doctor     # swarm integrity, gates, protocol compliance
-node scripts/orchestrator.mjs health     # skill registry integrity
-node scripts/swarm.mjs build-agents --apply   # regenerate agents/*.md from the registry
-node scripts/orchestrator.mjs voice --apply   # install the voice layer to ~/.claude/jarvis
+node scripts/jarvis.mjs doctor     # swarm integrity, gates, protocol compliance
+node scripts/jarvis.mjs health     # skill registry integrity
+node scripts/jarvis.mjs agents --apply   # regenerate agents/*.md from the registry
+node scripts/jarvis.mjs voice --apply   # install the voice layer to ~/.claude/jarvis
 
 npm run test:all        # node suite + voice-audio + voice-concurrency
 jarvisctl demo          # narrated four-session simulation
 jarvisctl audition      # speak every variant of every event
 ```
 
-**Run `npm run test:all` alone.** The suites operate on live state under
-`~/.claude/jarvis` and interfere with each other if run concurrently — two parallel runs
-produce spurious failures.
+**Run `npm run test:all` alone — never two runs in parallel, and not under other
+load.** State isolation is already correct: `voice-audio.sh` installs into a `mktemp`
+sandbox via `CLAUDE_JARVIS_DIR`/`CLAUDE_SETTINGS_FILE`, and `voice-concurrency.sh`
+overrides `HOME` outright. What breaks is **timing**. The daemon is sleep-driven (a 0.5 s
+poll, a 1.2 s trailing debounce, a 240-tick idle exit) and the harness asserts against
+wall-clock windows — "speech starts after the last tone", "escalated once", "a hanging
+extension does not stall the queue". Under contention the daemon misses those windows and
+a different, arbitrary subset fails each time. Two parallel runs measured here: 2 failures
+in one, 7 in the other, no overlap. A red suite under load is not evidence of a defect;
+re-run it alone before believing it.
+
+**Never edit `voice/*.sh` while a shell suite is running.** Both suites install from the
+repo into a sandbox at startup, so an edit mid-run is snapshotted half-written and the
+result is a wall of unrelated failures — 19 assertions reporting "0 utterances", which
+reads exactly like a systemic regression and is not one. This cost two debugging cycles.
 
 `jarvisctl demo` is the highest-value tool here. The individual behaviours are each
 verifiable in isolation but the **system** is not: whether four sessions are

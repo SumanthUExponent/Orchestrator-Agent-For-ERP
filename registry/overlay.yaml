@@ -38,6 +38,14 @@ skills:
     triggers: [resume, where were we, catch me up]
     recommended_before: [module-planner]
 
+  load-context:
+    category: session
+    mode: conditional
+    condition: a prior session for this project left open threads
+    priority: 25
+    triggers: [load context, what was i working on, pick up where we left off, open threads, previous session]
+    recommended_before: [context-keeper, module-planner]
+
   module-planner:
     category: planning
     mode: mandatory

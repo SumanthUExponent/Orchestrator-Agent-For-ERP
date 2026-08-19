@@ -15,6 +15,11 @@ J="$HOME/.claude/jarvis"
 # Every OS-specific call lives in platform.sh. Nothing below this line names `say`,
 # `afplay` or `osascript`.
 [ -f "$J/platform.sh" ] && . "$J/platform.sh"
+# Pronunciation is speech-only, so it is sourced by the DRAINER and not by the hook.
+# The hook writes the daily log, and the log is read rather than heard: "the hooks file
+# in exponent utilities" is the right thing to say and the wrong thing to read back
+# tomorrow when you need to know which file it was.
+[ -f "$J/pronounce.sh" ] && . "$J/pronounce.sh"
 Q="$J/queue"; S="$J/state"
 mkdir -p "$Q" "$S/active" "$S/pending" 2>/dev/null
 
@@ -78,25 +83,184 @@ voice_for() {
 }
 
 pick()    { local a=("$@"); printf '%s' "${a[$(( RANDOM % ${#a[@]} ))]}"; }
+
+# wpick <weight> <text> [<weight> <text> ...]
+#
+# Weighted variant choice. Flat `pick` gives the blandest phrasing the same airtime
+# as the best one; a weight lets the plainest form dominate while the alternates keep
+# the same event from being worded identically twice running.
+#
+# Vary the wording, never the register -- see JARVIS_REGISTER in config.sh.
+wpick() {
+  local total=0 i r acc=0
+  for (( i = 1; i <= $#; i += 2 )); do total=$(( total + ${!i} )); done
+  [ "$total" -le 0 ] && return 0
+  r=$(( RANDOM % total ))
+  for (( i = 1; i <= $#; i += 2 )); do
+    acc=$(( acc + ${!i} ))
+    if [ "$r" -lt "$acc" ]; then local j=$(( i + 1 )); printf '%s' "${!j}"; return; fi
+  done
+}
+
 nactive() { ls "$S/active" 2>/dev/null | wc -l | tr -d ' '; }
 speak()   { jv_say "$1" "${SPEAK_VOICE:-}"; }
 banner()  { jv_notify "$1" "$2"; }
 
-# ---------------------------------------------------------------------- CHIMES
+# budget <class> <text>
 #
-# The motif tables are GENERATED, not written here: scripts/tones.mjs synthesises one
-# WAV per note with pitch, envelope and loudness already baked in, and emits this
-# shell table alongside them. Two reasons it works that way.
+# Trim a clause to fit the time this class of event has earned.
 #
-# Musically: the first version layered pairs of macOS system sounds 160ms apart, and
-# measurement showed that could not work — the usable ones are 0.56-1.65s long with
-# their energy in the same 300-1000Hz band, so "two notes" was a sustained chord, and
-# the same file over itself was comb filtering.
+# MEASURED, not assumed. `say -v Daniel -r 172 -o f.aiff` plus `afinfo`, on this
+# machine:
 #
-# Practically: shaping a sound at playback needs `afplay -r` and `-v`, which exist
-# only on macOS. `aplay` and Windows' Media.SoundPlayer have no volume control at all.
-# Baking it into the file reduces playback to "play this", which every platform can
-# do — and the frequency and decay end up chosen rather than inherited.
+#   8 ordinary words (long)   3.806s   476 ms/word
+#   6 ordinary words (short)  1.637s   273 ms/word
+#   6 spelled letters         1.343s   224 ms/letter
+#   3 spelled letters         0.816s   272 ms/letter
+#
+# So cost tracks SYLLABLES, not tokens, and the familiar 0.38 s/word is only an
+# average across both extremes. Per LETTER of ordinary prose it is a steady ~70 ms
+# (72 and 68 in the two samples above), while a spelled letter costs ~224 ms because
+# each one is its own syllable plus a pause.
+#
+# Counting tokens instead produced a real defect: budgeting runs after pronunciation
+# (it must -- pronouncing EXPANDS, and it is the spoken length that costs seconds), so
+# "the ERP UAT run" has already become eight tokens of single letters, and a six-token
+# trim yielded "the E R P U A". Not a shortened announcement -- a different one.
+#
+# Two further rules, both found by ear:
+#   * never cut inside a spelled acronym; fall back to where the run began
+#   * prefer a clause boundary, since punctuation is the pacing and cutting on a
+#     comma is free: "the schema is in" reads finished, "the schema is in, with
+#     three" dangles
+#
+# The allowance is configured in WORDS because that is what the agent contract speaks
+# in; it is converted here at the average and then spent in milliseconds.
+MS_PER_LETTER=70
+MS_PER_SPELLED=224
+MS_PER_WORD_AVG=380
+# A digit is spoken as a word but has no letters, so the first model scored "4 minutes"
+# as one word and under-read the whole line by up to 50%. A comma or full stop is a
+# real pause and costs real time. Both were measured against the table in
+# `jarvisctl audition`.
+MS_PER_DIGIT=280
+MS_PER_PAUSE=100
+
+# The optional third argument is the frame cost in milliseconds, MEASURED by the caller
+# with spoken_ms rather than assumed. The default reserve is an average across events,
+# and the gate frame is the longest of any of them -- "Approval needed on <session>, sir."
+# runs 2230ms against a 2200 default, which put the longest gate name at 5.10s. An
+# announcement that must never be talked over cannot rely on an average.
+budget() {
+  local cls="$1" txt="$2" words
+  case "$cls" in
+    problem) words="${JARVIS_BUDGET_PROBLEM:-9}" ;;
+    blocked) words="${JARVIS_BUDGET_BLOCKED:-9}" ;;
+    *)       words="${JARVIS_BUDGET_ROUTINE:-10}" ;;
+  esac
+  case "$words" in ''|*[!0-9]*) words=6 ;; esac
+  local cap=$(( words * MS_PER_WORD_AVG ))
+
+  # The word allowance is not the real constraint -- the CEILING is, and the frame
+  # around the clause (the session name, ", sir", the elapsed time) is charged against
+  # it too. Measuring showed the frame costs about 2s across every event type, so a
+  # 12-word problem clause landed the whole announcement at 5.54s. Whichever bound is
+  # tighter wins.
+  local ceiling="${JARVIS_CEILING_MS:-5000}" reserve="${3:-${JARVIS_FRAME_MS:-2200}}"
+  case "$ceiling" in ''|*[!0-9]*) ceiling=5000 ;; esac
+  case "$reserve" in ''|*[!0-9]*) reserve=2200 ;; esac
+  local hard=$(( ceiling - reserve ))
+  [ "$hard" -lt 600 ] && hard=600
+  [ "$cap" -gt "$hard" ] && cap=$hard
+
+  local -a w=(); local t
+  for t in $txt; do w+=("$t"); done
+  [ "${#w[@]}" -eq 0 ] && { printf ''; return; }
+
+  local i spent=0 cost cut=0 clause=0 runstart=-1 bare digits marks
+  for (( i = 0; i < ${#w[@]}; i++ )); do
+    t="${w[$i]}"
+    bare="${t//[^A-Za-z]/}"
+    digits="${t//[^0-9]/}"
+    marks="${t//[^,.;:]/}"
+    # "I" and "a" are WORDS, not spelled letters. Treating every single character as an
+    # acronym letter charged the pronoun 224ms and made it an acronym boundary, so the
+    # trim retreated in front of it: "exactly the trap I had recorded" lost three words
+    # and became "exactly the trap".
+    if [ ${#bare} -eq 1 ] && [ "$bare" != I ] && [ "$bare" != a ] && [ "$bare" != A ]; then
+      cost=$MS_PER_SPELLED
+      [ "$runstart" -lt 0 ] && runstart=$i
+    else
+      cost=$(( ${#bare} * MS_PER_LETTER ))
+      runstart=-1
+    fi
+    cost=$(( cost + ${#digits} * MS_PER_DIGIT + ${#marks} * MS_PER_PAUSE ))
+    spent=$(( spent + cost ))
+    [ "$spent" -gt "$cap" ] && break
+    cut=$(( i + 1 ))
+    case "$t" in *,|*\;) clause=$(( i + 1 )) ;; esac
+  done
+
+  # Everything fits.
+  [ "$cut" -ge "${#w[@]}" ] && { printf '%s' "$txt"; return; }
+
+  # A boundary inside an acronym: retreat to where that run started.
+  if [ "$runstart" -ge 0 ] && [ "$runstart" -lt "$cut" ]; then cut=$runstart; fi
+  # A clause boundary beats a word boundary, provided it keeps enough to be a statement.
+  local on_clause=0
+  if [ "$clause" -gt 0 ] && [ "$clause" -le "$cut" ] && [ "$clause" -ge 3 ]; then
+    cut=$clause; on_clause=1
+  fi
+
+  # Never end on a function word. Trimming by time alone produced "four tests are
+  # failing on the refund path in the." -- a dangling article, which a synthesiser
+  # reads with a falling tone as though the sentence had finished. Retreat until the
+  # last surviving token can actually end a clause.
+  #
+  # SKIPPED when the cut landed on a comma: the author put a boundary there, which is
+  # direct evidence the clause ended, and retreating anyway wrecked a good one --
+  # "the Vendor Audit schema is in," became "the Vendor Audit schema", losing the verb
+  # the contract exists to require.
+  local last
+  while [ "$on_clause" -eq 0 ] && [ "$cut" -gt 2 ]; do
+    last=$(printf '%s' "${w[$(( cut - 1 ))]}" | tr 'A-Z' 'a-z')
+    last="${last//[^a-z]/}"
+    case " a an the of in on at to for with and or but from by into as is are was were that which than its their his her our i had has have been being will would can could should may might must do does did " in
+      *" $last "*) cut=$(( cut - 1 )) ;;
+      *) break ;;
+    esac
+  done
+
+  local out=""
+  for (( i = 0; i < cut; i++ )); do out="$out ${w[$i]}"; done
+  out="${out# }"
+  out="${out%"${out##*[!,;:]}"}"
+
+  # Too little left to be a statement: say nothing, and let the caller use the terse
+  # form. The same principle summarise.awk applies -- a fragment read with confidence
+  # is worse than no summary at all.
+  local real=0
+  for t in $out; do [ ${#t} -ge 2 ] && real=$(( real + 1 )); done
+  [ "$real" -lt 2 ] && { printf ''; return; }
+  printf '%s' "$out"
+}
+
+# spoken_ms <text>  -- the measured cost model, exposed for the duration table that
+# `jarvisctl audition` prints. Same constants, so the table cannot drift from the trim.
+spoken_ms() {
+  local t bare digits marks total=0
+  for t in $1; do
+    bare="${t//[^A-Za-z]/}"
+    digits="${t//[^0-9]/}"
+    marks="${t//[^,.;:]/}"
+    if [ ${#bare} -eq 1 ] && [ "$bare" != I ] && [ "$bare" != a ] && [ "$bare" != A ]
+      then total=$(( total + MS_PER_SPELLED ))
+    else total=$(( total + ${#bare} * MS_PER_LETTER )); fi
+    total=$(( total + ${#digits} * MS_PER_DIGIT + ${#marks} * MS_PER_PAUSE ))
+  done
+  printf '%s' "$total"
+}
+
 TONES="$J/tones"
 [ -f "$TONES/motifs.sh" ] && . "$TONES/motifs.sh"
 
@@ -217,6 +381,45 @@ render() {
   # they can use anything else in the sentence.
   local who; who="$(label_for "$name" "$ord")"
 
+  # Pronounce the free text ONCE, here, rather than at each speak site. There are
+  # eleven of those and a missed one is not a visible bug -- it is gibberish that only
+  # a person with speakers ever finds.
+  #
+  # $extra is only free text for `brief`. Everywhere else it is a number (elapsed
+  # seconds, a specialist count, a blocked duration) that the callers below format
+  # themselves, and running those through a word-splitter would corrupt them.
+  if command -v pronounce >/dev/null 2>&1; then
+    [ -n "$summary" ] && summary="$(pronounce "$summary")"
+    case "$mode" in brief|route|gate) extra="$(pronounce "$extra")" ;; esac
+  fi
+
+  # Strip a trailing full stop. Every clause here is a FRAGMENT embedded in a frame that
+  # supplies its own sentence punctuation, and a lifted fallback sentence arrives with a
+  # period already on it: "...exactly the trap I had recorded., sir. 3 minutes."
+  #
+  # Done here rather than in clip(), because clip also serves the LOG and DECISION
+  # markers -- written prose, whole sentences, where the final period belongs.
+  summary="${summary%.}"
+  case "$mode" in brief|route|gate) extra="${extra%.}" ;; esac
+
+  # Budget AFTER pronunciation, never before. Pronouncing expands: "the ERP UAT run"
+  # is three words written and five spoken, and it is the spoken count that costs
+  # seconds. Trimming first would let an announcement sail past the ceiling.
+  # Budgeting happens in the BRANCH that speaks, never here. It was done centrally
+  # first, with the average frame reserve, and then again in the branch with the
+  # measured one -- so the average trimmed the clause before the accurate cap ever saw
+  # it. "exactly the trap I had recorded" came out as "exactly the trap I had".
+  #
+  # Only `done` and `err` speak $summary; approve, nag and escalate use fixed phrases,
+  # and brief carries its text in $extra.
+  # gate and route put their text in $extra rather than $summary, because neither is a
+  # turn summary -- one is a cause, the other a decision. Same ceiling applies.
+  # gate and route are budgeted inside their own branches, where the frame is known
+  # exactly. Charging them the average 2.2s reserve was wrong in both directions: it put
+  # the longest gate name over the ceiling, and it trimmed "the console report engineer
+  # was dropped" down to "the console report engineer" -- which says nothing at all.
+  # route has the shortest frame of any event, so it can afford the whole clause.
+
   case "$mode" in
     boot)
       local h g; h=$(date +%H)
@@ -243,7 +446,34 @@ render() {
         # existed because there was nothing better to say than "time passed" — a run that
         # can report "schema is in, all tests pass" does not need to also report that six
         # agents were involved in it.
-        speak "$who: $summary$SIR. $(dur "$el")."
+        # The most-heard informative announcement in the whole layer, and it had
+        # exactly ONE phrasing -- so variation was absent precisely where content
+        # was present. Weighted, with the plainest form dominant.
+        # Fit the ASSEMBLED line, not an estimate of its frame. Measuring the frame
+        # alone missed the variant prefix ("From ...", "... reports"), and the model
+        # under-reads by roughly a fifth, so two of three completions measured 5.3s.
+        # SLACK covers both; it is not a guess to be tuned by taste, it is the gap
+        # between the model and `afinfo`.
+        _ceil=$(( ${JARVIS_CEILING_MS:-5000} - ${JARVIS_MODEL_SLACK_MS:-800} ))
+        _dur="$(dur "$el")"
+        _line=$(wpick 4 "$who: $summary$SIR. $_dur." \
+                       2 "$who, $summary$SIR. $_dur." \
+                       2 "$who reports $summary$SIR. $_dur." \
+                       1 "From $who, $summary$SIR. $_dur.")
+
+        # Over budget: drop the ELAPSED TIME before touching the sentence. When there is
+        # something to report, the duration is the least valuable thing in the line --
+        # exactly the argument config.sh already makes for dropping the specialist count
+        # once a summary exists. Truncating content to keep a timestamp is backwards.
+        if [ "$(spoken_ms "$_line")" -gt "$_ceil" ]; then
+          _line="$who: $summary$SIR."
+        fi
+        # Still over: now the sentence itself is too long, so trim it.
+        if [ "$(spoken_ms "$_line")" -gt "$_ceil" ]; then
+          summary="$(budget routine "$summary" "$(spoken_ms "$who $SIR . .")")"
+          _line="$who: $summary$SIR."
+        fi
+        speak "$_line"
         banner "$name" "$summary  ($(dur "$el"))"
       else
         speak "$(pick "$who done$SIR.$crew $(dur "$el")." \
@@ -251,6 +481,35 @@ render() {
                       "$who, all done.$crew $(dur "$el").")"
         banner "$name" "Complete - $(dur "$el")${crew:+ -$crew}"
       fi ;;
+
+    gate)
+      # The loudest announcement in the system, and the only one that names its own
+      # cause. Seven gates exist and they are not interchangeable: "needs your
+      # approval" tells you to look; "a production deployment needs your approval"
+      # tells you what you are about to be asked to authorise.
+      #
+      # The escalate motif, deliberately -- the same one a session blocked for five
+      # minutes gets. A gate IS that situation, caught earlier.
+      motif escalate 1
+      # "<session> has hit a gate, sir. <gate> needs your approval." measured 5.12s on
+      # the longer gate names -- over the ceiling, on the one announcement that must
+      # never be talked over. "has hit a gate" was the redundant part: the escalate
+      # motif already carries the severity, and leading with the ASK is drier anyway.
+      # Measure this exact frame rather than trusting the average reserve, and charge
+      # the deliberate 200ms pause to it as well.
+      _gframe=$(( $(spoken_ms "Approval needed on $who$SIR. .") + 200 ))
+      extra="$(budget blocked "$extra" "$_gframe")"
+      speak "Approval needed on $who$SIR. [[slnc 200]] $extra."
+      banner "$name" "GATE - $extra" ;;
+
+    route)
+      # A decision the orchestrator made on your behalf. Information, not an
+      # interruption, so it takes the quiet motif and the routine budget.
+      motif idle "$ord"
+      _rframe=$(spoken_ms "$who $SIR . .")
+      extra="$(budget blocked "$extra" "$_rframe")"
+      speak "$(wpick 3 "$who: $extra$SIR." \
+                     1 "On $who, $extra$SIR.")" ;;
 
     approve)
       motif approve "$ord"
@@ -286,7 +545,22 @@ render() {
 
     err)
       motif err "$ord"
-      speak "$(pick "$who has a problem$SIR." "Something's gone wrong in $who$SIR.")"
+      # "Something has gone wrong in <session>" is a 2.9s frame, and with a 9-word
+      # problem clause behind it `jarvisctl audition` measured the whole announcement
+      # at 5.17s -- past the ceiling. Shorter is also drier, which the register wants.
+      # An error used to announce only THAT something broke, never what. The clause is
+      # the reason this event is spoken rather than logged, so it is carried now -- but
+      # conditionally: appended unconditionally it read "has a problem, sir. ." on the
+      # ordinary case where no agent left one.
+      local etail=""
+      if [ -n "$summary" ]; then
+        _eframe=$(spoken_ms "$who has a problem $SIR . .")
+        summary="$(budget problem "$summary" "$_eframe")"
+        [ -n "$summary" ] && etail=" $summary."
+      fi
+      speak "$(wpick 3 "$who has a problem$SIR.$etail" \
+                     2 "Trouble in $who$SIR.$etail" \
+                     1 "$who has hit a problem$SIR.$etail")"
       banner "$name" "Error" ;;
 
     brief)

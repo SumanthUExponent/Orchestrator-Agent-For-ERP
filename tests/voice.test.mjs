@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { ROOT } from '../scripts/orchestrator.mjs';
+import { ROOT } from '../scripts/jarvis.mjs';
 import { installVoice, mergeHooks, stripJarvis, hookCommand, HOOKS } from '../scripts/voice.mjs';
 
 let tmp;
@@ -32,7 +32,7 @@ const ORCHESTRATOR_SETTINGS = {
   model: 'opus[1m]',
   hooks: {
     UserPromptSubmit: [{ hooks: [{ type: 'command', timeout: 5, command: "echo '{\"hookSpecificOutput\":{\"additionalContext\":\"ROUTING GATE\"}}'" }] }],
-    SessionStart: [{ hooks: [{ type: 'command', timeout: 15, command: 'node ~/.claude/skills/orchestrator/scripts/orchestrator.mjs pack "$PWD"' }] }],
+    SessionStart: [{ hooks: [{ type: 'command', timeout: 15, command: 'node ~/.claude/skills/jarvis/scripts/jarvis.mjs pack "$PWD"' }] }],
   },
 };
 
@@ -49,7 +49,7 @@ const run = (opts = {}) => installVoice({ root: ROOT, target: TARGET(), settings
 const read = () => JSON.parse(fs.readFileSync(SETTINGS(), 'utf8'));
 const commands = (s) =>
   Object.values(s.hooks || {}).flatMap((gs) => gs.flatMap((g) => g.hooks.map((h) => h.command)));
-const jarvisCmds = (s) => commands(s).filter((c) => c.includes('jarvis'));
+const jarvisCmds = (s) => commands(s).filter((c) => c.includes('jarvis.sh'));
 
 describe('the shipped scripts are valid shell', () => {
   // A syntax error here is silent in production: the hook exits non-zero, Claude
@@ -77,13 +77,13 @@ describe('the shipped scripts are valid shell', () => {
 });
 
 describe('settings.json merge', () => {
-  test('the orchestrator hooks survive untouched', () => {
+  test('the JARVIS routing hooks survive untouched', () => {
     // The failure this prevents: the swarm goes quiet, the routing gate stops
     // arriving, and nothing anywhere reports why.
     const r = run({ apply: true });
     const after = read();
     const gate = commands(after).find((c) => c.includes('ROUTING GATE'));
-    const pack = commands(after).find((c) => c.includes('orchestrator.mjs pack'));
+    const pack = commands(after).find((c) => c.includes('jarvis.mjs pack'));
     assert.ok(gate, 'the UserPromptSubmit routing gate was destroyed');
     assert.ok(pack, 'the SessionStart context pack was destroyed');
     assert.equal(r.foreign, 2, 'foreign hook count misreported');
@@ -124,7 +124,7 @@ describe('settings.json merge', () => {
     // SessionEnd hooks share a 1.5s budget unless a timeout is set. The line is
     // longer than that, so without this it is truncated mid-word.
     run({ apply: true });
-    const entry = read().hooks.SessionEnd.flatMap((g) => g.hooks).find((h) => h.command.includes('jarvis'));
+    const entry = read().hooks.SessionEnd.flatMap((g) => g.hooks).find((h) => h.command.includes('jarvis.sh'));
     assert.ok(entry.timeout >= 5, `SessionEnd timeout is ${entry.timeout}`);
   });
 
@@ -226,7 +226,7 @@ describe('the hook command is executable on the platform it targets', () => {
     // without that substring, re-running the installer would stop replacing its own
     // entries and start accumulating duplicates instead.
     for (const p of ['linux', 'darwin', 'win32']) {
-      assert.ok(hookCommand('/x/.claude/jarvis/jarvis.sh', 'done', p).includes('jarvis'));
+      assert.ok(hookCommand('/x/.claude/jarvis/jarvis.sh', 'done', p).includes('jarvis.sh'));
     }
   });
 
@@ -279,7 +279,7 @@ describe('documented defaults are the real defaults', () => {
   // That is exactly how JARVIS_SUMMARY_MAX came to be documented as 1 and behave as 2.
   // This test compares the two and fails on any divergence.
   const read = (f) => fs.readFileSync(path.join(ROOT, 'voice', f), 'utf8');
-  const SCRIPTS = ['jarvis.sh', 'speaker.sh', 'platform.sh', 'jarvisctl'];
+  const SCRIPTS = ['jarvis.sh', 'speaker.sh', 'platform.sh', 'jarvisctl', 'pronounce.sh'];
 
   // Where a divergence is intentional, it is named here with the reason.
   const EXEMPT = {

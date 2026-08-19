@@ -11,8 +11,8 @@
 #
 # MECHANISM NOTE (verified, not assumed): a Claude Code sub-agent cannot address the
 # user — only the main thread can. Human-in-the-loop gates (§24), live observability
-# (§18) and conflict escalation (§11) therefore live in the ORCHESTRATOR SKILL that
-# runs in the main thread. The orchestrator sub-agents below are deliberately mute
+# (§18) and conflict escalation (§11) therefore live in the JARVIS SKILL that
+# runs in the main thread. The JARVIS sub-agents below are deliberately mute
 # and say so in their own definitions.
 
 # MODES. active = does the work. validation = checks it. passive = audits the swarm
@@ -60,7 +60,7 @@ resources:
 agents:
   # ═══════════════════════════════════════════════════ ORCHESTRATION (3)
   # Coordinators. They decompose and delegate; they do not implement.
-  orchestrator-deep:
+  jarvis-deep:
     role: Delegated coordinator for self-contained multi-part work
     mode: active
     model: opus
@@ -74,7 +74,7 @@ agents:
       MUTE BY DESIGN. Cannot ask the user anything. If a decision needs human
       judgement, a gate would be crossed, or a conflict cannot be settled from
       evidence, STOP and return the question in handoff rather than guessing.
-    escalates_to: main-thread orchestrator skill
+    escalates_to: main-thread JARVIS skill
 
   delivery-orchestrator:
     role: Cross-division sequencing for a whole feature
@@ -92,7 +92,7 @@ agents:
       of the feature. swarm-dispatcher decides HOW that phase list is executed —
       batching, model tier, budget. Semantics beat mechanics: if batching would
       reorder work the delivery plan says must be sequential, the delivery plan wins.
-    escalates_to: main-thread orchestrator skill
+    escalates_to: main-thread JARVIS skill
 
   research-orchestrator:
     role: Parallel investigation before anything is decided
@@ -109,7 +109,7 @@ agents:
       conclusions; research-orchestrator ANALYSES to explain something nobody
       understands yet. If the question is "where does this live", it is the broker's
       and must not become a fan-out. If it is "why does this happen", it is research.
-    escalates_to: main-thread orchestrator skill
+    escalates_to: main-thread JARVIS skill
 
   # ═════════════════════════════════════════════ PLANNING & ANALYSIS (5)
   requirements-analyst:
@@ -493,7 +493,7 @@ agents:
     owns: >
       Detecting orphan, duplicate, broken-reference and stale skills, and proposing new
       skills for recurring gaps. Proposals only — never creates or deletes.
-    runs: node scripts/orchestrator.mjs health
+    runs: node scripts/jarvis.mjs health
     governance: >
       Detect -> Recommend -> Review -> Approve -> Apply. This agent stops at Recommend.
 
@@ -507,7 +507,7 @@ agents:
     owns: >
       Detecting agents never selected, overlapping ownership, agents whose skills no
       longer exist, and routing coverage gaps.
-    runs: node scripts/orchestrator.mjs doctor
+    runs: node scripts/jarvis.mjs doctor
 
   routing-auditor:
     role: Quality of routing decisions
@@ -526,7 +526,7 @@ agents:
       and a cheap dispatch can still be wrong. On a finding both could claim, correctness
       is reported first — an agent that should not have run at all is a routing defect,
       not a cost one.
-    runs: node scripts/orchestrator.mjs route "<request>"
+    runs: node scripts/jarvis.mjs route "<request>"
 
   knowledge-guardian:
     role: Consistency of shared knowledge
@@ -573,7 +573,7 @@ agents:
     frappe: false
     tools: [Read, Grep, Glob]
     skills: []
-    selected_by: orchestrator
+    selected_by: jarvis
     owns: >
       Deciding the smallest execution mode a request can be answered in — direct
       answer, one specialist, or the full pipeline — and refusing to escalate beyond
@@ -585,7 +585,7 @@ agents:
       when the request touches schema, deployment, security or more than three files —
       those are never fast-path, regardless of how small the wording makes them sound.
     produces: [mode, reason, escalate_if]
-    escalates_to: main-thread orchestrator skill
+    escalates_to: main-thread JARVIS skill
 
   context-broker:
     role: Map the ground once, not once per agent
@@ -594,13 +594,13 @@ agents:
     frappe: false
     tools: [Read, Grep, Glob, Bash]
     skills: []
-    selected_by: orchestrator
+    selected_by: jarvis
     owns: >
       Producing ONE shared Context Pack per run — the file map, app ownership and
       active constraints that every downstream specialist would otherwise rediscover
       separately.
     constraints: >
-      Run `orchestrator.mjs pack` first and build on its output; that half is
+      Run `jarvis.mjs pack` first and build on its output; that half is
       deterministic and costs nothing, so regenerating it by hand is waste. Add only
       what a command cannot know: which files actually matter for THIS request, and
       why. Report locations and constraints; draw no conclusions and propose no
@@ -611,7 +611,7 @@ agents:
       See research-orchestrator. "Where does this live" is the broker's; "why does
       this happen" is research.
     produces: [file_map, ownership, constraints, relevant_paths]
-    escalates_to: main-thread orchestrator skill
+    escalates_to: main-thread JARVIS skill
 
   swarm-dispatcher:
     role: Cheapest correct execution order
@@ -620,7 +620,7 @@ agents:
     frappe: false
     tools: [Read, Grep, Glob, Bash]
     skills: []
-    selected_by: orchestrator
+    selected_by: jarvis
     owns: >
       Turning a chosen agent list into the cheapest correct execution order — which
       agents share a parallel batch, which model tier each one runs at, and what must
@@ -635,7 +635,7 @@ agents:
     conflict_rule: >
       See delivery-orchestrator. Semantics beat mechanics.
     produces: [batches, tier_per_agent, blocked_on, estimated_savings]
-    escalates_to: main-thread orchestrator skill
+    escalates_to: main-thread JARVIS skill
 
   result-synthesizer:
     role: Many handoffs in, one brief out
@@ -644,7 +644,7 @@ agents:
     frappe: false
     tools: [Read, Grep, Glob]
     skills: []
-    selected_by: orchestrator
+    selected_by: jarvis
     owns: >
       Collapsing many finished handoffs into one deduplicated brief — merging repeated
       findings, reconciling contradictions, and carrying every unanswered question
@@ -657,7 +657,7 @@ agents:
       merged brief cannot be audited. If two agents disagree on fact, say so and
       escalate rather than picking the more confident wording.
     produces: [merged_summary, findings, contradictions, open_questions, attribution]
-    escalates_to: main-thread orchestrator skill
+    escalates_to: main-thread JARVIS skill
 
   quality-sentinel:
     role: Review effort follows risk
@@ -666,7 +666,7 @@ agents:
     frappe: false
     tools: [Read, Grep, Glob, Bash]
     skills: []
-    selected_by: orchestrator
+    selected_by: jarvis
     owns: >
       Choosing which outputs of a run need deep review and which need none, ranked by
       blast radius, so verification effort lands where the risk actually is.
@@ -677,7 +677,7 @@ agents:
       and anything a specialist flagged as risky in its own handoff. This agent may
       reduce review effort; it may never reduce it to zero on that list.
     produces: [review_targets, skipped, justification]
-    escalates_to: main-thread orchestrator skill
+    escalates_to: main-thread JARVIS skill
 
   efficiency-auditor:
     role: What each dispatch cost against what it returned
@@ -686,7 +686,7 @@ agents:
     frappe: false
     tools: [Read, Grep, Glob, Bash]
     skills: []
-    selected_by: orchestrator
+    selected_by: jarvis
     owns: >
       Measuring what each dispatch cost against what it returned, and naming the
       dispatches that were not worth making.
@@ -700,7 +700,7 @@ agents:
     conflicts_with: [routing-auditor]
     conflict_rule: >
       See routing-auditor. Correctness is reported before cost.
-    runs: node scripts/orchestrator.mjs plan "<request>"
+    runs: node scripts/jarvis.mjs plan "<request>"
     governance: >
       Detect -> Recommend -> Review -> Approve -> Apply. This agent stops at Recommend.
       It may propose a model tier change; it never edits registry/agents.yaml.
@@ -708,26 +708,42 @@ agents:
 # --------------------------------------------------------------- protocol
 # Every agent returns these fields. Structured handoff, not prose (§7, §10).
 protocol:
-  required: [summary, voice, handoff]
+  required: [summary, voice, log, handoff]
   fields:
     summary: One paragraph. What was done, in plain terms.
     voice: >
-      One clause, six words or fewer, emitted as a final line reading
-      "VOICE: <clause>". It is spoken aloud to someone who is not looking at
-      the screen, so it must say what CHANGED and contain no paths or identifiers.
+      A SPOKEN ENGLISH SENTENCE, emitted as a final line reading
+      "VOICE: <sentence>". A real verb and a named subject -- "the Vendor Audit
+      schema is in", never "schema done, 3 tables". About six words for a routine
+      outcome, up to twelve for a problem or a blocked approval. No file paths, no
+      snake_case or camelCase identifiers, no count without a noun, no symbols:
+      it is read aloud to someone not looking at the screen, and an identifier
+      does not survive being spoken. Lead with the problem if there is one.
       Two optional companions, same rules, read back at the end of the session:
       "PENDING: <clause>" for work not finished, and "HEADS-UP: <clause>" for a
       consequence someone should know before it surprises them.
+    log: >
+      A fuller written record, emitted as a final line reading "LOG: <text>". It is
+      NEVER spoken -- it goes to the daily log, which is read rather than heard, so it
+      may carry the things the voice clause must not: exact paths, identifiers, counts,
+      and above all WHY. Two or three sentences. The voice clause answers "does this
+      need me"; this answers "what did the swarm do today, and why".
+    gate: >
+      Emitted ONLY when you refuse and escalate because a human-approval gate is in the
+      way, as a final line reading "GATE: <the gate, worded exactly as listed>". It is
+      announced immediately, at the highest priority, ahead of every other event -- a
+      run that stopped for authorisation is not a run that finished. Optional by nature:
+      omit the line entirely on a turn that crossed no gate.
     files_changed: Exact paths. Empty if none.
     decisions: Architectural or implementation choices worth carrying forward.
     findings: For review agents — what was discovered, one line each.
     risks: Known risks introduced or discovered. Say "none" explicitly if none.
     testing: What was run and the real result. Never assert a pass without output.
     remaining: Anything unfinished, stated plainly.
-    handoff: What the next agent or the orchestrator needs to continue.
+    handoff: What the next agent or JARVIS needs to continue.
 
 # ------------------------------------------------------------ human gates
-# §24. The orchestrator skill enforces these; agents must refuse and escalate.
+# §24. The JARVIS skill enforces these; agents must refuse and escalate.
 human_approval_required:
   - destructive database changes
   - production deployment

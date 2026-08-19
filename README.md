@@ -1,15 +1,15 @@
-# Orchestrator Agent for ERP
+# JARVIS for ERP
 
-[![ci](https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP/actions/workflows/ci.yml/badge.svg)](https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP/actions/workflows/ci.yml)
+[![ci](https://github.com/SumanthUExponent/JARVIS-For-ERP/actions/workflows/ci.yml/badge.svg)](https://github.com/SumanthUExponent/JARVIS-For-ERP/actions/workflows/ci.yml)
 
 A sub-agent swarm for [Claude Code](https://claude.com/claude-code), tuned for Frappe/ERPNext development.
 
 45 specialist agents across 9 divisions, coordinated by an orchestrator, policed by passive governance agents that audit the swarm itself, and paced by a control plane whose entire job is to convene less of it.
 
-You describe the work. The orchestrator decides which specialist skills apply, what order they run in, what can run in parallel, and which gates the work must clear before it can be called done.
+You describe the work. JARVIS decides which specialist skills apply, what order they run in, what can run in parallel, and which gates the work must clear before it can be called done.
 
 ```
-$ node scripts/orchestrator.mjs plan "System Console installer for a Vendor Audit DocType with approval workflow"
+$ node scripts/jarvis.mjs plan "System Console installer for a Vendor Audit DocType with approval workflow"
 
 Effort: standard  ·  Gates: verify
 Skills routed: console-automation-engine, frappe-doctype, frappe-workflow
@@ -105,7 +105,7 @@ The cheapest fix is upstream of all four: **most requests should never reach the
 
 They are constrained accordingly. A control agent holds no `Write` or `Edit` tool and `doctor` fails the build if one appears — the moment it can build, it stops being cheaper than the specialist it was meant to replace. `quality-sentinel` may reduce review effort but never to zero on schema, deployment, security, or anything a specialist flagged as risky in its own handoff. `result-synthesizer` may merge a duplicate finding but may never drop one for brevity, and surfaces contradictions as contradictions rather than averaging them into a position no agent held.
 
-**Where the orchestrator lives, and why it matters.** A Claude Code sub-agent cannot address the user — only the main thread can. So human-approval gates, live observability and conflict escalation stay in the orchestrator **skill** running in the main thread; that is the only surface which can both dispatch agents and talk to you. The three orchestrator *sub-agents* exist for delegated work needing no mid-flight decision, and they are mute by design: they return a question in `handoff` rather than guess.
+**Where JARVIS lives, and why it matters.** A Claude Code sub-agent cannot address the user — only the main thread can. So human-approval gates, live observability and conflict escalation stay in JARVIS **skill** running in the main thread; that is the only surface which can both dispatch agents and talk to you. The three orchestrator *sub-agents* exist for delegated work needing no mid-flight decision, and they are mute by design: they return a question in `handoff` rather than guess.
 
 **Every agent returns fields, not prose** — `summary`, `files_changed`, `decisions`, `findings`, `risks`, `testing`, `remaining`, `handoff`. An agent that finishes with "done" has failed the protocol.
 
@@ -114,7 +114,7 @@ They are constrained accordingly. A control agent holds no `Write` or `Edit` too
 ### Governance that audits its own author
 
 ```bash
-node scripts/orchestrator.mjs doctor
+node scripts/jarvis.mjs doctor
 ```
 
 Fails on agent theatre (an agent with no measurable responsibility), duplicate responsibilities, asymmetric conflicts, broken dependencies and missing protocol fields. It caught three defects in this repository's own registry during the build — including three ghost agents left by renames, since a stale agent still installs and can still be dispatched.
@@ -128,13 +128,13 @@ dependencies. On Windows you also need a bash: [Git for
 Windows](https://gitforwindows.org) or WSL. Claude Code itself is assumed.
 
 ```bash
-git clone https://github.com/SumanthUExponent/Orchestrator-Agent-For-ERP.git
-cd Orchestrator-Agent-For-ERP
+git clone https://github.com/SumanthUExponent/JARVIS-For-ERP.git
+cd JARVIS-For-ERP
 
-node scripts/orchestrator.mjs install              # dry run — shows the plan, writes nothing
-node scripts/orchestrator.mjs install --apply      # install the skills AND the 45 agents
-node scripts/orchestrator.mjs health               # verify the skills
-node scripts/orchestrator.mjs doctor               # verify the swarm
+node scripts/jarvis.mjs install              # dry run — shows the plan, writes nothing
+node scripts/jarvis.mjs install --apply      # install the skills AND the 45 agents
+node scripts/jarvis.mjs health               # verify the skills
+node scripts/jarvis.mjs doctor               # verify the swarm
 ```
 
 Skills land in `~/.claude/skills`, agents in `~/.claude/agents` (override with
@@ -150,7 +150,7 @@ Optional third-party skill packs are declared in `registry/overlay.yaml` and fet
 only when asked:
 
 ```bash
-node scripts/orchestrator.mjs install --apply --external
+node scripts/jarvis.mjs install --apply --external
 ```
 
 Those are **not vendored** — they are other people's work under their own licences,
@@ -159,8 +159,8 @@ resolved from source so upstream fixes reach you.
 ### Adding the voice layer
 
 ```bash
-node scripts/orchestrator.mjs voice               # dry run — shows every hook it will register
-node scripts/orchestrator.mjs voice --apply
+node scripts/jarvis.mjs voice               # dry run — shows every hook it will register
+node scripts/jarvis.mjs voice --apply
 jarvisctl doctor                                  # names the backends it found on your machine
 ```
 
@@ -224,8 +224,8 @@ permission prompt while the other three work. You find out ten minutes later.
 session is doing, so the terminal does not have to be watched:
 
 ```bash
-node scripts/orchestrator.mjs voice          # dry run — shows every hook it will register
-node scripts/orchestrator.mjs voice --apply
+node scripts/jarvis.mjs voice          # dry run — shows every hook it will register
+node scripts/jarvis.mjs voice --apply
 jarvisctl doctor                             # verify
 jarvisctl test                               # hear every alert
 ```
@@ -440,6 +440,103 @@ literal yesterday has no log at all. Today's own log is never reported back as y
 Outstanding items come last, because they are the only part you can act on and the eye
 lands on the end of a briefing.
 
+### The handoff document — one file per session
+
+The daily log answers *what did I do today*. It cannot answer *what was that session
+for, what did we decide, and what is still open* — which is what a **new** session needs
+before it can be useful. That is a different document with a different shape, and it is
+written per session, as the session runs.
+
+```
+~/frappe-bench/Referencedocs/CLI-Session-Context/     (JARVIS_CTX_DIR)
+├── README.md          the naming and structure rules, written once
+├── INDEX.md           one row per session — read this first
+└── sessions/
+    └── 2026-08/
+        ├── 2026-08-19--frappe-bench--durable-session-context--6655d427.md
+        └── .journal/
+            └── 2026-08-19--frappe-bench--durable-session-context--6655d427.jsonl
+```
+
+The short id is the first eight characters of the session id, which is **also the prefix
+of the raw transcript** under `~/.claude/projects/`. That is how you get from a document
+back to the conversation that produced it.
+
+The name comes from the **first prompt**, not from the session title. The title is
+written asynchronously and does not exist for the first several turns, so naming from it
+would mean creating the file under a placeholder and renaming it later — and a rename
+races every append already in flight. The title is recorded in the front matter instead,
+where being late costs nothing.
+
+Sections are in a fixed order and the order is the argument: Objective, **Decisions**,
+Files touched, Gotchas, Compaction snapshots, Turn log, **Open threads last** — because
+open threads are the only part you can act on, and the eye lands on the end of a
+document.
+
+#### Compaction is where context is actually lost
+
+Not session closure. Compaction happens repeatedly inside one long session and it is
+silent, so a `PreCompact` hook snapshots the window that is about to be discarded and a
+`PostCompact` hook records what survived.
+
+`PreCompact`'s payload does **not** carry the conversation. It carries
+`transcript_path` — a pointer. So the snapshot is built by reading the transcript window
+since the last watermark, which means repeated compactions capture **disjoint** windows
+rather than re-reading everything, and the cost is proportional to new content rather
+than to a transcript that can reach twenty megabytes.
+
+Everything in a snapshot is deterministic and free: files edited, commands run, prompts,
+markers, how much was dropped. The one thing deterministic extraction cannot recover is
+a decision's *reasoning* — so that, and only that, is an optional Haiku pass, detached so
+it never blocks a turn, floored so a small window is not worth a request, and capped per
+day. **When a cap bites it is written into the document**, because a snapshot with no
+reasoning and no explanation reads as "there was nothing to say", which is a different
+and much worse claim.
+
+#### The journal is the truth; the markdown is a view
+
+```
+hook (bash, hot)  ──►  <session>.jsonl   append-only, one printf, no process spawn
+context.mjs (cold) ──►  <session>.md     rendered projection, temp + rename
+```
+
+`Stop` fires after every turn, so it stays pure bash — one extra `write()` beside the
+daily-log line it was already writing. `node` is reached only at compaction, at session
+end, and by the sweep at the next `SessionStart`. A process killed at any instant loses
+at most the event in flight: the journal is line-delimited so a torn final line is one
+lost event rather than an unreadable file, and `rename` gives the markdown no state
+between "the previous valid render" and "the next one".
+
+A session left `active` by a closed terminal or a reboot is marked `abandoned` by that
+sweep, so the index never claims work is in flight forever.
+
+#### Reading it back
+
+```bash
+jarvisctl context              # what is still open on this project
+jarvisctl context <path>       # ...on another one
+jarvisctl context --speak      # read the open threads aloud
+jarvisctl context --reindex    # rebuild INDEX.md from the documents
+/load-context <name>           # pull one document into a conversation
+```
+
+`SessionStart` injects a **pointer**, never contents: at most three lines naming recent
+sessions for this project that still have open threads. Whether that is worth the tokens
+is the reader's decision, not the hook's.
+
+#### What never reaches these files
+
+Credentials. Every string is filtered on the way in — API keys, PATs, AWS keys, JWTs,
+bearer tokens, private-key headers and `SOMETHING_SECRET = …` assignments including
+prefixed names. Files whose path looks like `.env`, `*.pem`, `*.key` or `credentials`
+have their **path recorded and their contents never read**. `tests/context.test.mjs`
+asserts it against a fixture seeded with every shape.
+
+Two quality rules that keep the file worth its tokens: it is **capped** — past
+`JARVIS_CTX_MAX_LINES` the turn log is compressed from the old end while decisions,
+gotchas, threads and snapshots are never dropped — and a session that did nothing
+**produces no file at all**. Silence is the correct record for "nothing happened".
+
 ### The end-of-session briefing
 
 Two optional lines sit alongside the required one, and they are read back when the
@@ -596,8 +693,8 @@ first, writes atomically, and refuses to touch a `settings.json` it cannot parse
 | `pack [dir]` | Deterministic Context Pack. No model involved, so it costs nothing to regenerate. |
 | `agents [--apply]` | Generate `agents/*.md` from the registry. |
 | `doctor` | Audit the agent roster. |
-| `voice [--apply] [--force]` | Install the voice layer and its eight hooks. Dry run by default. |
-| `npm test` | Routing, execution-plan, installer, voice-installer and tone-synthesis suites (105 tests). |
+| `voice [--apply] [--force]` | Install the voice layer and its ten hooks. Dry run by default. |
+| `npm test` | Routing, execution-plan, installer, voice-installer, tone-synthesis and session-context suites (134 tests). |
 | `npm run test:audio` | Platform backends, installed-tone integrity, name handling, phrase-length budgets (35 checks). |
 | `npm run test:voice` | The above plus the concurrency harness (117 checks, stubbed audio). |
 | `npm run test:all` | Everything. |
@@ -605,7 +702,7 @@ first, writes atomically, and refuses to touch a `settings.json` it cannot parse
 ## Health check
 
 ```
-$ node scripts/orchestrator.mjs health
+$ node scripts/jarvis.mjs health
 
 ✓ Skills discovered: 20        ✓ Invalid metadata: 0
 ✓ Skills registered: 20        ✓ Routing conflicts: 0
@@ -620,7 +717,7 @@ It catches: a skill declared in the overlay with no directory; a directory with 
 
 1. Drop the directory into `skills/`. Auto-discovery finds any `skills/<name>/SKILL.md`.
 2. Add an entry to `registry/overlay.yaml` — category, mode, priority, triggers, dependencies.
-3. `node scripts/orchestrator.mjs build && node scripts/orchestrator.mjs health`
+3. `node scripts/jarvis.mjs build && node scripts/jarvis.mjs health`
 4. Add a routing test if the skill introduces a new request shape.
 
 Step 2 is not optional: `health` reports an unregistered skill as an orphan, because a skill the router can never select is worse than one that is not installed — it looks present and never fires.
@@ -640,18 +737,19 @@ Orchestration metadata lives in the overlay rather than in each `SKILL.md` becau
 ## Repository layout
 
 ```
-orchestrator/SKILL.md      the skill Claude Code loads
+jarvis/SKILL.md      the skill Claude Code loads
 registry/taxonomy.yaml     categories and execution phases
 registry/overlay.yaml      per-skill orchestration metadata + external manifest
 registry/routing.yaml      decision table, composites, scorer weights, thresholds
 registry/agents.yaml       the 45 agents: mode, model tier, ownership, conflicts
-scripts/orchestrator.mjs   CLI: build, health, route, plan, pack, install, agents, doctor
+scripts/jarvis.mjs   CLI: build, health, route, plan, pack, install, agents, doctor
 scripts/route.mjs          routing engine — request to skills
 scripts/plan.mjs           execution planner — skills to agents, batches, tiers, cost
 scripts/pack.mjs           deterministic context pack
 scripts/swarm.mjs          agent generation and roster audit
 scripts/install.mjs        installer
 scripts/voice.mjs          voice-layer installer and settings.json merge
+scripts/context.mjs        session handoff documents: journal, render, index, snapshots
 voice/jarvis.sh            hook entry point — enqueues and exits, never speaks
 voice/speaker.sh           the single drainer: one lock, one voice
 voice/platform.sh          every OS-specific call, and nothing else
@@ -664,6 +762,7 @@ skills/                    in-tree skills
 tests/                     regression suites
 tests/tones.test.mjs       motif tables, pitch, measured loudness of the generated WAVs
 tests/voice-audio.sh       platform backends, installed tones, names, phrase budgets
+tests/context.test.mjs     handoff documents: compaction capture, secrets, caps, crash safety
 tests/voice-concurrency.sh voice behaviour under genuine parallel load
 ```
 

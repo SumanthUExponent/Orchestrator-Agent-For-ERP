@@ -10,7 +10,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { build, readYaml, ROOT } from '../scripts/orchestrator.mjs';
+import { build, readYaml, ROOT } from '../scripts/jarvis.mjs';
 import { plan } from '../scripts/route.mjs';
 
 const reg = build({ quiet: true });

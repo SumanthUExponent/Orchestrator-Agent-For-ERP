@@ -13,7 +13,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { build, readYaml, ROOT } from '../scripts/orchestrator.mjs';
+import { build, readYaml, ROOT } from '../scripts/jarvis.mjs';
 import * as routeModule from '../scripts/route.mjs';
 import * as swarmModule from '../scripts/swarm.mjs';
 import * as planModule from '../scripts/plan.mjs';
@@ -59,14 +59,19 @@ describe('the spoken-summary contract', () => {
   test('the generated agent file explains the format, not just the field name', () => {
     // The field being declared is not enough: an agent that returns a paragraph, or a
     // file path, produces something unintelligible when read aloud.
+    //
+    // The contract changed from a LENGTH rule ("six words or fewer", which said nothing
+    // about language and yielded "schema done, 3 tables") to a LANGUAGE rule demanding a
+    // spoken sentence. The literals below track the new wording; the examples the
+    // contract now ships are asserted in full by tests/agents.test.mjs.
     const dir = path.join(ROOT, 'agents');
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('.md'));
     assert.ok(files.length > 0, 'no agents generated');
     for (const f of files) {
       const body = fs.readFileSync(path.join(dir, f), 'utf8');
       assert.match(body, /VOICE: <one clause>/, `${f} does not show the marker format`);
-      assert.match(body, /six words or fewer/, `${f} does not state the length limit`);
-      assert.match(body, /No paths, no identifiers/, `${f} does not warn against paths`);
+      assert.match(body, /About six words for a routine outcome/, `${f} does not state the budget`);
+      assert.match(body, /No file paths, ever/, `${f} does not warn against paths`);
     }
   });
 });

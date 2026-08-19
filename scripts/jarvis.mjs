@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Orchestrator CLI — registry build, health check, routing.
+ * JARVIS CLI — registry build, health check, routing.
  *
- *   node scripts/orchestrator.mjs build     regenerate registry.generated.json
- *   node scripts/orchestrator.mjs health    validate the ecosystem (§17)
- *   node scripts/orchestrator.mjs route "<request>"   explain a routing decision
- *   node scripts/orchestrator.mjs voice --apply       install the voice layer
+ *   node scripts/jarvis.mjs build     regenerate registry.generated.json
+ *   node scripts/jarvis.mjs health    validate the ecosystem (§17)
+ *   node scripts/jarvis.mjs route "<request>"   explain a routing decision
+ *   node scripts/jarvis.mjs voice --apply       install the voice layer
  *
  * Zero runtime dependencies, deliberately. This tool verifies that a skill
  * ecosystem is sound; making it depend on an npm install would put a supply
@@ -36,7 +36,7 @@ const P = {
  *
  * The old form was `.replace(/^["']|["']$/g, '')`, which strips a leading or a
  * trailing quote independently. Any value merely ENDING in a quote lost it:
- *   runs: node scripts/orchestrator.mjs route "<request>"
+ *   runs: node scripts/jarvis.mjs route "<request>"
  * became `... route "<request>` — an unterminated quote, shipped into the generated
  * agent as its primary command. Silent, and only visible if you ran the command.
  */
@@ -295,7 +295,7 @@ function health() {
 
   const mark = (b, label) => `${b ? '✓' : '✗'} ${label}`;
   const count = (arr, p) => arr.filter((x) => x.startsWith(p)).length;
-  console.log('ORCHESTRATOR HEALTH\n');
+  console.log('JARVIS HEALTH\n');
   console.log(mark(true, `Skills discovered: ${reg.counts.discovered}`));
   console.log(mark(reg.counts.registered === reg.counts.discovered, `Skills registered: ${reg.counts.registered}`));
   console.log(mark(!count(fail, 'missing'), `Missing skills: ${count(fail, 'missing')}`));
@@ -362,18 +362,39 @@ try {
       // than imported by plan.mjs, so nothing points back at this file.
       const routeModule = await import('./route.mjs');
       const swarmModule = await import('./swarm.mjs');
-      const { render } = await import('./plan.mjs');
+      const { render, executionPlan } = await import('./plan.mjs');
       const args = rest.filter((a) => !a.startsWith('--'));
       const effortFlag = rest.find((a) => a.startsWith('--effort='));
-      process.exit(
-        render(build({ quiet: true }), args.join(' '), {
-          readYaml,
-          root: ROOT,
-          routeModule,
-          swarmModule,
-          effort: effortFlag ? effortFlag.split('=')[1] : undefined,
-        })
-      );
+      const request = args.join(' ');
+      const reg = build({ quiet: true });
+      const planOpts = {
+        readYaml,
+        root: ROOT,
+        routeModule,
+        swarmModule,
+        effort: effortFlag ? effortFlag.split('=')[1] : undefined,
+      };
+      const rc = render(reg, request, planOpts);
+
+      // Speak the decisions AFTER printing them, so the text is on screen before the
+      // voice starts. Announced from HERE and not from plan.mjs render(), which stays
+      // pure: executionPlan is unit-tested and must not spawn anything.
+      //
+      // Wrapped, and silent on failure. A planner that cannot plan because the voice
+      // layer is missing would be a far worse tool than a quiet one. --quiet-voice
+      // suppresses it entirely.
+      if (!rest.includes('--quiet-voice')) {
+        try {
+          const { announcePlan } = await import('./voice.mjs');
+          const { gates: humanGates } = swarmModule.loadAgents({ root: ROOT, readYaml });
+          announcePlan(executionPlan(reg, request, planOpts), {
+            requestedEffort: planOpts.effort,
+            request,
+            gates: humanGates,
+          });
+        } catch { /* voice layer absent: nothing to announce through */ }
+      }
+      process.exit(rc);
       break;
     }
     case 'bench': {
@@ -443,7 +464,7 @@ try {
     default:
       console.log(
         [
-          'usage: orchestrator.mjs <command>',
+          'usage: jarvis.mjs <command>',
           '',
           '  build                      regenerate the skill registry',
           '  health                     validate the skill ecosystem (§17)',
