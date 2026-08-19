@@ -26,11 +26,11 @@ chk()  { if [ "$1" = 0 ]; then ok "$2"; else bad "$2" "${3:-}"; fi; }
 
 # A sandbox install, so the suite never depends on what happens to be in ~/.claude.
 SB=$(mktemp -d /tmp/jv-audio-XXXXXX)
-export CLAUDE_JARVIS_DIR="$SB/jarvis"
-export CLAUDE_SETTINGS_FILE="$SB/settings.json"
-echo '{}' > "$CLAUDE_SETTINGS_FILE"
+export JARVIS_DIR="$SB/jarvis"
+export JARVIS_SETTINGS_FILE="$SB/settings.json"
+echo '{}' > "$JARVIS_SETTINGS_FILE"
 node "$REPO/scripts/jarvis.mjs" voice --apply >/dev/null 2>&1
-J="$CLAUDE_JARVIS_DIR"
+J="$JARVIS_DIR"
 trap 'rm -rf "$SB"' EXIT
 
 . "$J/platform.sh"

@@ -24,9 +24,9 @@ mkdir -p "$J" "$SB/bin"
 # Install through the REAL installer rather than copying files by hand. Hand-copying
 # missed platform.sh and the generated tones the moment those were introduced, and the
 # harness would have gone on testing an install nobody ships.
-export CLAUDE_JARVIS_DIR="$J"
-export CLAUDE_SETTINGS_FILE="$SB/settings.json"
-echo '{}' > "$CLAUDE_SETTINGS_FILE"
+export JARVIS_DIR="$J"
+export JARVIS_SETTINGS_FILE="$SB/settings.json"
+echo '{}' > "$JARVIS_SETTINGS_FILE"
 node "$REPO/scripts/jarvis.mjs" voice --apply >/dev/null 2>&1 || { echo "install failed"; exit 1; }
 
 AUDIT="$SB/audit.log"

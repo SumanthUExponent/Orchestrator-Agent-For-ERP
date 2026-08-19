@@ -28,12 +28,12 @@ const SAFE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 
 /** Where Claude Code keeps user skills. Overridable for tests and odd setups. */
 export function skillsDir() {
-  return process.env.CLAUDE_SKILLS_DIR || path.join(os.homedir(), '.claude', 'skills');
+  return process.env.JARVIS_SKILLS_DIR || process.env.CLAUDE_SKILLS_DIR || path.join(os.homedir(), '.claude', 'skills');
 }
 
 /** Where Claude Code looks for sub-agent definitions. Agents are inert until they land here. */
 export function agentsDir() {
-  return process.env.CLAUDE_AGENTS_DIR || path.join(os.homedir(), '.claude', 'agents');
+  return process.env.JARVIS_AGENTS_DIR || process.env.CLAUDE_AGENTS_DIR || path.join(os.homedir(), '.claude', 'agents');
 }
 
 function assertSafeName(name) {

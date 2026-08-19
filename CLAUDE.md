@@ -328,7 +328,7 @@ jarvisctl audition      # speak every variant of every event
 
 **Run `npm run test:all` alone — never two runs in parallel, and not under other
 load.** State isolation is already correct: `voice-audio.sh` installs into a `mktemp`
-sandbox via `CLAUDE_JARVIS_DIR`/`CLAUDE_SETTINGS_FILE`, and `voice-concurrency.sh`
+sandbox via `JARVIS_DIR`/`JARVIS_SETTINGS_FILE`, and `voice-concurrency.sh`
 overrides `HOME` outright. What breaks is **timing**. The daemon is sleep-driven (a 0.5 s
 poll, a 1.2 s trailing debounce, a 240-tick idle exit) and the harness asserts against
 wall-clock windows — "speech starts after the last tone", "escalated once", "a hanging

@@ -138,7 +138,7 @@ node scripts/jarvis.mjs doctor               # verify the swarm
 ```
 
 Skills land in `~/.claude/skills`, agents in `~/.claude/agents` (override with
-`CLAUDE_SKILLS_DIR` / `CLAUDE_AGENTS_DIR`).
+`JARVIS_SKILLS_DIR` / `JARVIS_AGENTS_DIR`).
 
 **Restart Claude Code afterwards.** Agent definitions are read at session start — until
 then they are on disk and invisible.

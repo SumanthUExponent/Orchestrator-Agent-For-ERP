@@ -57,10 +57,22 @@ export const HOOKS = [
 ];
 
 export function jarvisDir() {
-  return process.env.CLAUDE_JARVIS_DIR || path.join(os.homedir(), '.claude', 'jarvis');
+  // JARVIS_DIR is the name; CLAUDE_JARVIS_DIR is still read so an environment set up
+  // before the rename keeps working rather than silently installing somewhere else.
+  return (
+    process.env.JARVIS_DIR ||
+    process.env.CLAUDE_JARVIS_DIR ||
+    path.join(os.homedir(), '.claude', 'jarvis')
+  );
 }
 export function settingsFile() {
-  return process.env.CLAUDE_SETTINGS_FILE || path.join(os.homedir(), '.claude', 'settings.json');
+  // The path itself is HOST-OWNED and cannot move: the agent host reads its hooks from
+  // exactly this file. Only the override variable is ours to name.
+  return (
+    process.env.JARVIS_SETTINGS_FILE ||
+    process.env.CLAUDE_SETTINGS_FILE ||
+    path.join(os.homedir(), '.claude', 'settings.json')
+  );
 }
 
 /**

@@ -80,9 +80,9 @@ jobs:
       - name: Install end to end, then verify with doctor
         if: matrix.node == '20'
         run: |
-          export CLAUDE_JARVIS_DIR="$HOME/.claude/jarvis"
-          export CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json"
-          mkdir -p "$HOME/.claude" && echo '{}' > "$CLAUDE_SETTINGS_FILE"
+          export JARVIS_DIR="$HOME/.claude/jarvis"
+          export JARVIS_SETTINGS_FILE="$HOME/.claude/settings.json"
+          mkdir -p "$HOME/.claude" && echo '{}' > "$JARVIS_SETTINGS_FILE"
           node scripts/jarvis.mjs voice --apply
           "$HOME/.claude/jarvis/jarvisctl" doctor
           "$HOME/.claude/jarvis/jarvisctl" report --text
@@ -115,9 +115,9 @@ jobs:
       - name: Install, and check the hook command is executable here
         shell: bash
         run: |
-          export CLAUDE_JARVIS_DIR="$HOME/.claude/jarvis"
-          export CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json"
-          mkdir -p "$HOME/.claude" && echo '{}' > "$CLAUDE_SETTINGS_FILE"
+          export JARVIS_DIR="$HOME/.claude/jarvis"
+          export JARVIS_SETTINGS_FILE="$HOME/.claude/settings.json"
+          mkdir -p "$HOME/.claude" && echo '{}' > "$JARVIS_SETTINGS_FILE"
           node scripts/jarvis.mjs voice --apply
           node --input-type=module -e "
             const fs=await import('node:fs');
@@ -126,7 +126,7 @@ jobs:
             // 8 went stale twice without anyone noticing until Windows CI failed: once
             // when PreCompact/PostCompact were added, once for SubagentStart.
             const { HOOKS }=await import(url.pathToFileURL('scripts/voice.mjs').href);
-            const s=JSON.parse(fs.readFileSync(process.env.CLAUDE_SETTINGS_FILE,'utf8'));
+            const s=JSON.parse(fs.readFileSync(process.env.JARVIS_SETTINGS_FILE,'utf8'));
             const cmds=Object.values(s.hooks).flatMap(g=>g.flatMap(x=>x.hooks.map(h=>h.command)));
             // jarvis.sh, not 'jarvis' -- the routing skill now lives at a path that
             // contains the word, and matching loosely counted it as a voice hook.
