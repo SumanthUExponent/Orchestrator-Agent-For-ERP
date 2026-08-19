@@ -290,6 +290,18 @@ motif() {
   return 0
 }
 
+# cap <text> -- upper-case the first letter.
+#
+# Speech does not care: `say` reads "the" and "The" identically. The BANNER and the
+# daily log do care, and both render this text, so a clause dropped in after a full
+# stop was showing up as a sentence that starts mid-thought. Applied only where the
+# template actually puts it after a stop -- after a colon, lower case is correct.
+cap() {
+  local t="$1"
+  [ -z "$t" ] && return 0
+  printf '%s%s' "$(printf '%s' "${t:0:1}" | tr 'a-z' 'A-Z')" "${t:1}"
+}
+
 plural() { [ "$1" = "1" ] && printf '%s' "$2" || printf '%s' "$2s"; }
 
 dur() {
@@ -480,9 +492,12 @@ render() {
         speak "$_line"
         banner "$name" "$summary  ($(dur "$el"))"
       else
+        # All three carry $SIR. Two of them did not, so the persona addressed you on
+        # one completion in three -- which reads as two different narrators rather
+        # than one assistant with a habit.
         speak "$(pick "$who done$SIR.$crew $(dur "$el")." \
-                      "$who finished.$crew $(dur "$el")." \
-                      "$who, all done.$crew $(dur "$el").")"
+                      "$who finished$SIR.$crew $(dur "$el")." \
+                      "$who, all done$SIR.$crew $(dur "$el").")"
         banner "$name" "Complete - $(dur "$el")${crew:+ -$crew}"
       fi ;;
 
@@ -503,7 +518,7 @@ render() {
       # the deliberate 200ms pause to it as well.
       _gframe=$(( $(spoken_ms "Approval needed on $who$SIR. .") + 200 ))
       extra="$(budget blocked "$extra" "$_gframe")"
-      speak "Approval needed on $who$SIR. [[slnc 200]] $extra."
+      speak "Approval needed on $who$SIR. [[slnc 200]] $(cap "$extra")."
       banner "$name" "GATE - $extra" ;;
 
     route)
@@ -560,7 +575,7 @@ render() {
       if [ -n "$summary" ]; then
         _eframe=$(spoken_ms "$who has a problem $SIR . .")
         summary="$(budget problem "$summary" "$_eframe")"
-        [ -n "$summary" ] && etail=" $summary."
+        [ -n "$summary" ] && etail=" $(cap "$summary")."
       fi
       speak "$(wpick 3 "$who has a problem$SIR.$etail" \
                      2 "Trouble in $who$SIR.$etail" \
@@ -572,7 +587,7 @@ render() {
       # priority 3 — ahead of the farewell, behind anything urgent — so a session that is
       # shutting down still gets its say before "all sessions closed".
       motif idle "$ord"
-      speak "$who closing$SIR. [[slnc 150]] $extra." ;;
+      speak "$who closing$SIR. [[slnc 150]] $(cap "$extra")." ;;
 
     bye)
       # Reaching here at all means this session won the farewell — see the guard at

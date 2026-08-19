@@ -387,5 +387,36 @@ else
 fi
 
 echo
+echo "R3  every announcement obeys the register"
+# The register is declared in config.sh as a persona, not a preference: dry,
+# understated, addresses you as sir, never cheerful, never apologetic, no exclamations.
+# These are the parts of it a machine can check, and each one has already been broken:
+#   * two of three completions dropped "sir", so the persona addressed you on one turn
+#     in three and read as two different narrators
+#   * a clause dropped in after a full stop stayed lower case, which the desktop banner
+#     and the daily log both render as a sentence starting mid-thought
+aud=$("$J/jarvisctl" audition --text 2>/dev/null)
+variants=$(printf '%s\n' "$aud" | grep -E '^  [a-z]')
+
+R3FAIL=""
+# One address per announcement -- not zero, not two.
+bad=$(printf '%s\n' "$variants" | awk '{ n=gsub(/sir/,"sir"); if (n!=1) print }')
+[ -z "$bad" ] || R3FAIL="$R3FAIL\n    address count not exactly one:\n$bad"
+
+# A clause after a full stop begins a sentence.
+bad=$(printf '%s\n' "$variants" | grep -oE '\. [a-z][a-z]+' | sort -u)
+[ -z "$bad" ] || R3FAIL="$R3FAIL\n    lower case after a full stop: $(printf '%s' "$bad" | tr '\n' ' ')"
+
+# Never cheerful, never apologetic, no exclamations.
+bad=$(printf '%s\n' "$variants" | grep -iE '!|sorry|afraid|unfortunately|great |excellent|awesome|oops|please note')
+[ -z "$bad" ] || R3FAIL="$R3FAIL\n    off-register wording:\n$bad"
+
+if [ -z "$R3FAIL" ]; then
+  ok "$(printf '%s\n' "$variants" | grep -c .) variants, all in register"
+else
+  bad "an announcement is off-register" "$(printf '%b' "$R3FAIL")"
+fi
+
+echo
 printf 'RESULT: %s passed, %s failed, %s skipped\n' "$PASS" "$FAIL" "$SKIP"
 [ "$FAIL" = 0 ] || exit 1

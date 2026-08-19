@@ -573,6 +573,10 @@ case "${1:-status}" in
     WHO="$(spoken "wt_svc")"
     EL="4 minutes"
 
+    # NOTE: these lines MIRROR the templates in speaker.sh render() -- they are not
+    # produced by it. That has drifted three times (the error variants, $SIR on two
+    # completions, cap() after a full stop). The R3 assertions in tests/voice-audio.sh
+    # check the PROPERTIES both must satisfy, which is what catches the next drift.
     echo "THE REGISTER"
     # "unset" and not "<unset>": tests/voice.test.mjs treats a fallback of exactly
     # `unset` as a diagnostic placeholder rather than a competing default, which is what
@@ -615,8 +619,8 @@ case "${1:-status}" in
     echo
     echo "COMPLETION, nothing to report"
     say_one "done a" "$WHO done$SIR. 3 specialists, $EL."
-    say_one "done b" "$WHO finished. 3 specialists, $EL."
-    say_one "done c" "$WHO, all done. 3 specialists, $EL."
+    say_one "done b" "$WHO finished$SIR. 3 specialists, $EL."
+    say_one "done c" "$WHO, all done$SIR. 3 specialists, $EL."
     echo
     echo "BLOCKED ON APPROVAL  (the expensive failure)"
     say_one "approve a" "$WHO needs your approval$SIR."
@@ -628,24 +632,24 @@ case "${1:-status}" in
     say_one "escalate"  "$WHO has been waiting 5 minutes$SIR. It is going nowhere without you."
     echo
     echo "A HUMAN GATE  (the loudest thing this layer says, and it names which gate)"
-    say_one "gate: production" "Approval needed on $WHO$SIR. production deployment."
-    say_one "gate: database"   "Approval needed on $WHO$SIR. destructive database changes."
+    say_one "gate: production" "Approval needed on $WHO$SIR. $(cap "production deployment")."
+    say_one "gate: database"   "Approval needed on $WHO$SIR. $(cap "destructive database changes")."
     _gf=$(( $(spoken_ms "Approval needed on $WHO$SIR. .") + 200 ))
-    say_one "gate: git"        "Approval needed on $WHO$SIR. $(budget blocked "destructive git operations force push history rewrite branch deletion" "$_gf")."
+    say_one "gate: git"        "Approval needed on $WHO$SIR. $(cap "$(budget blocked "destructive git operations force push history rewrite branch deletion" "$_gf")")."
     echo
     echo "A ROUTING DECISION  (information, not an interruption)"
     say_one "route a" "$WHO: the console report engineer was dropped$SIR."
     say_one "route b" "On $WHO, effort capped at standard$SIR."
     echo
     echo "A PROBLEM"
-    say_one "err a" "$WHO has a problem$SIR. $SUM_BAD."
-    say_one "err b" "Trouble in $WHO$SIR. $SUM_BAD."
-    say_one "err c" "$WHO has hit a problem$SIR. $SUM_BAD."
+    say_one "err a" "$WHO has a problem$SIR. $(cap "$SUM_BAD")."
+    say_one "err b" "Trouble in $WHO$SIR. $(cap "$SUM_BAD")."
+    say_one "err c" "$WHO has hit a problem$SIR. $(cap "$SUM_BAD")."
     echo
     echo "WAITING, AND CLOSING"
     say_one "idle a" "$WHO is standing by$SIR."
     say_one "idle b" "$WHO awaits instruction$SIR."
-    say_one "brief"  "$WHO closing$SIR. $PEND."
+    say_one "brief"  "$WHO closing$SIR. $(cap "$PEND")."
     say_one "bye"    "All sessions closed$SIR. 7 turns, nothing outstanding."
     echo
     echo "Anything marked OVER CEILING is too long to be heard out."
