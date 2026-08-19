@@ -31,10 +31,10 @@ disagree, **the design system wins**.
 Resolve its location in this order — first hit wins:
 
 ```
-  $ERP_DESIGN_SYSTEM          (environment variable, if set)
+  $JARVIS_DESIGN_SYSTEM          (environment variable, if set)
   ./Referencedocs/Design System
   ../Referencedocs/Design System
-  ~/frappe-bench/Referencedocs/Design System
+  ~/Referencedocs/Design System
 ```
 
 Then read `ERPNext Design System-handoff/erpnext-design-system/README.md` first, and follow it to the primary file under `project/`

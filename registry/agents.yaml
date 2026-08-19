@@ -44,11 +44,11 @@ defaults:
 # is worthless on another. Set the env var to override anywhere.
 resources:
   design_system:
-    env: ERP_DESIGN_SYSTEM
+    env: JARVIS_DESIGN_SYSTEM
     search:
       - ./Referencedocs/Design System
       - ../Referencedocs/Design System
-      - ~/frappe-bench/Referencedocs/Design System
+      - ~/Referencedocs/Design System
     entry: ERPNext Design System-handoff/erpnext-design-system/README.md
     contains: HTML/CSS prototypes under project/, embedded fonts, design tokens
     usage: >
