@@ -119,12 +119,19 @@ jobs:
           export CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json"
           mkdir -p "$HOME/.claude" && echo '{}' > "$CLAUDE_SETTINGS_FILE"
           node scripts/jarvis.mjs voice --apply
-          node -e "
-            const fs=require('fs');
+          node --input-type=module -e "
+            const fs=await import('node:fs');
+            const url=await import('node:url');
+            // Derive the expected count from HOOKS instead of hardcoding it. The literal
+            // 8 went stale twice without anyone noticing until Windows CI failed: once
+            // when PreCompact/PostCompact were added, once for SubagentStart.
+            const { HOOKS }=await import(url.pathToFileURL('scripts/voice.mjs').href);
             const s=JSON.parse(fs.readFileSync(process.env.CLAUDE_SETTINGS_FILE,'utf8'));
             const cmds=Object.values(s.hooks).flatMap(g=>g.flatMap(x=>x.hooks.map(h=>h.command)));
-            const jarvis=cmds.filter(c=>c.includes('jarvis'));
-            if(jarvis.length!==8) throw new Error('expected 8 hooks, got '+jarvis.length);
+            // jarvis.sh, not 'jarvis' -- the routing skill now lives at a path that
+            // contains the word, and matching loosely counted it as a voice hook.
+            const jarvis=cmds.filter(c=>c.includes('jarvis.sh'));
+            if(jarvis.length!==HOOKS.length) throw new Error('expected '+HOOKS.length+' hooks, got '+jarvis.length);
             for(const c of jarvis){
               if(c.includes('\\\\')) throw new Error('backslash in hook command: '+c);
               if(!c.startsWith('bash ')) throw new Error('hook does not invoke bash: '+c);
