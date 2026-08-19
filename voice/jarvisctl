@@ -8,6 +8,8 @@
 #   demo              narrated simulation of four parallel sessions, end to end
 #   report            speak where every session stands right now
 #   brief [name]      the end-of-session record: done, heads up, pending
+#   daily [date]      the raw markdown log for a day (default today)
+#   yesterday         digest of the last day you worked; --speak reads it aloud
 #   log [n]           the last n announcements
 #   mute <minutes> / unmute
 #   reset             clear all state (orphan daemons stand down on their own)
@@ -258,6 +260,86 @@ case "${1:-status}" in
       [ "$n" -gt 3 ] && echo "($n briefings in $d)"
     fi ;;
 
+  daily)
+    # A given day's raw log. Defaults to today.
+    d="${2:-$(date +%Y-%m-%d)}"
+    f="$J/daily/$d.md"
+    [ -r "$f" ] || { echo "No log for $d."; exit 1; }
+    cat "$f" ;;
+
+  yesterday|last)
+    # The most recent day BEFORE today that actually has a log.
+    #
+    # Not `date -d yesterday`, which is GNU-only, and not `date -v-1d`, which is BSD-only
+    # — deriving it from the listing needs no date arithmetic at all, and it answers the
+    # question correctly after a weekend or a week off, where literal yesterday has no log.
+    today=$(date +%Y-%m-%d)
+    prev=""
+    for f in "$J"/daily/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md; do
+      [ -r "$f" ] || continue
+      b=$(basename "$f" .md)
+      [ "$b" \< "$today" ] && prev="$f"
+    done
+    if [ -z "$prev" ]; then
+      echo "No earlier day logged yet. Today's log builds as you work:"
+      echo "  $J/daily/$today.md"
+      exit 0
+    fi
+    day=$(basename "$prev" .md)
+
+    turns=$(grep -c '^- \*\*[0-9]' "$prev" 2>/dev/null); turns=${turns:-0}
+    probs=$(grep -c 'PROBLEM' "$prev" 2>/dev/null); probs=${probs:-0}
+
+    echo "Last worked: $day  —  $turns turn$([ "$turns" = 1 ] || echo s) across $(grep -o '`[^`]*`' "$prev" 2>/dev/null | sort -u | grep -c . || echo 0) project(s)"
+    echo
+    # Projects, busiest first. This is the "where was I" question.
+    echo "PROJECTS"
+    awk -F'`' '/^- \*\*[0-9]/ {c[$2]++} END {for (p in c) printf "  %-28s %d turn%s\n", p, c[p], (c[p]==1?"":"s")}' "$prev" | sort -k2 -rn
+    # Parsed by splitting on the separator rather than by a fixed regex: the specialists
+    # field is optional, so a pattern that assumes it is absent leaks "3 specialists" into
+    # the clause, and one that assumes it is present matches nothing. $NF is the clause
+    # and $2 the project whether or not the field is there.
+    _turns() { awk -F' · ' '/^- \*\*[0-9][0-9]:[0-9][0-9]\*\*/ {
+                 proj=$2; gsub(/`/, "", proj)
+                 clause=$NF
+                 bad = (clause ~ /^\*\*PROBLEM\*\* /)
+                 sub(/^\*\*PROBLEM\*\* /, "", clause)
+                 if (clause == "_(nothing reported)_") next
+                 printf "%d\t%s\t%s\n", bad, proj, clause
+               }' "$1"; }
+
+    # What actually happened. Counts alone answer "was I busy"; this answers "what did I
+    # do", which is the question someone opening their laptop the next morning has.
+    if _turns "$prev" | grep -q '^0'; then
+      echo; echo "DONE"
+      _turns "$prev" | awk -F'\t' '$1==0 {printf "  - %s  (%s)\n", $3, $2}' | head -10
+    fi
+    if _turns "$prev" | grep -q '^1'; then
+      echo; echo "PROBLEMS REPORTED"
+      _turns "$prev" | awk -F'\t' '$1==1 {printf "  - %s  (%s)\n", $3, $2}' | head -6
+    fi
+
+    # What is still outstanding comes last: it is the only part you can act on, and the
+    # eye lands on the end of a briefing.
+    if grep -q '^- \*\*Heads up\*\*' "$prev" 2>/dev/null; then
+      echo; echo "HEADS UP"
+      sed -n 's/^- \*\*Heads up\*\* · /  - /p' "$prev"
+    fi
+    if grep -q '^- \*\*Pending\*\*' "$prev" 2>/dev/null; then
+      echo; echo "STILL PENDING"
+      sed -n 's/^- \*\*Pending\*\* · /  - /p' "$prev"
+    fi
+    echo; echo "Full log: $prev"
+
+    if [ "${2:-}" = "--speak" ] || [ "${3:-}" = "--speak" ]; then
+      msg="Yesterday$SIR. $turns turns."
+      pend=$(sed -n 's/^- \*\*Pending\*\* · //p' "$prev" | head -2 | tr '\n' ';' | sed 's/;$//; s/;/. And /g')
+      [ -n "$pend" ] && msg="$msg Still pending: $pend."
+      [ -z "$pend" ] && [ "$probs" -gt 0 ] && msg="$msg $probs problems were reported."
+      [ -z "$pend" ] && [ "$probs" = 0 ] && msg="$msg Nothing left outstanding."
+      jv_say "$msg"
+    fi ;;
+
   log)
     tail -"${2:-25}" "$J/log" 2>/dev/null || echo "nothing announced yet" ;;
 
@@ -396,5 +478,6 @@ case "${1:-status}" in
       *) echo "Unsupported platform: $(uname -s)" ;;
     esac ;;
 
-  *) echo "usage: jarvisctl [status|doctor|report|brief [name]|test|chimes|demo|log [n]|mute <min>|unmute|reset|voices]"; exit 2 ;;
+  *) echo "usage: jarvisctl [status|doctor|report|brief [name]|daily [date]|yesterday [--speak]|
+                 test|chimes|demo|log [n]|mute <min>|unmute|reset|voices]"; exit 2 ;;
 esac
