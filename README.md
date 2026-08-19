@@ -1,30 +1,84 @@
-# JARVIS for ERP
+<div align="center">
+
+# JARVIS
+
+**A swarm of 45 specialists, a butler who tells you which one needs you, and a control plane whose whole job is to convene less of it.**
 
 [![ci](https://github.com/SumanthUExponent/JARVIS-For-ERP/actions/workflows/ci.yml/badge.svg)](https://github.com/SumanthUExponent/JARVIS-For-ERP/actions/workflows/ci.yml)
+![zero dependencies](https://img.shields.io/badge/dependencies-0-000)
+![node](https://img.shields.io/badge/node-%E2%89%A518-000)
+![platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-000)
+![offline](https://img.shields.io/badge/speech-local%20only-000)
 
-A sub-agent swarm for [Claude Code](https://claude.com/claude-code), tuned for Frappe/ERPNext development.
+*For [Claude Code](https://claude.com/claude-code). Tuned for Frappe/ERPNext work.*
 
-45 specialist agents across 9 divisions, coordinated by JARVIS routing, policed by passive governance agents that audit the swarm itself, and paced by a control plane whose entire job is to convene less of it.
+</div>
 
-You describe the work. JARVIS decides which specialist skills apply, what order they run in, what can run in parallel, and which gates the work must clear before it can be called done.
+---
+
+> *"Sir, the checkout schema is in, with three line-item tables. Four minutes."*
+>
+> *"Approval needed on billing. Production deployment."*
+
+You describe the work. JARVIS decides which specialists apply, what order they run
+in, what can run in parallel, and which gates the work must clear before anyone is
+allowed to call it done. Then it tells you — out loud, by name — which of your four
+open sessions is the one waiting on you.
+
+It has no dependencies, makes no network calls, and says nothing it has not measured.
+
+## Contents
+
+| | |
+|---|---|
+| [Why this exists](#why-this-exists) | the problem a plain agent list does not solve |
+| [How it works](#how-it-works) | route → plan → dispatch → gate |
+| [Speed](#speed-is-a-design-problem-not-a-model-problem) | why it is cheaper than an all-opus run |
+| [The swarm](#the-swarm) | 45 agents, 9 divisions, and who audits the author |
+| [Install](#install) | two commands |
+| [The voice layer](#the-voice-layer) | the half that talks |
+| [Commands](#commands) | everything you can type |
+| [Design decisions](#design-decisions-worth-knowing) | the ones that cost a cycle to learn |
+| [Status and limits](#status-and-limits) | what is not done |
+
+## The shape of it
+
+```mermaid
+flowchart LR
+  R["you describe<br/>the work"] --> ROUTE["route<br/><i>which skills</i>"]
+  ROUTE --> PLAN["plan<br/><i>which agents, what order,<br/>which tier</i>"]
+  PLAN --> GATE{"human<br/>gate?"}
+  GATE -->|"yes"| YOU["JARVIS says so,<br/>loudly, by name"]
+  GATE -->|"no"| BATCH["parallel batches<br/>of specialists"]
+  BATCH --> VERIFY["verify phase<br/><i>evidence, not assertion</i>"]
+  VERIFY --> VOICE["queue → one drainer → speech"]
+  YOU --> VOICE
+```
+
+Two halves, one name. **JARVIS routing** picks and sequences the specialists.
+**JARVIS voice** is the only thing in the system allowed to speak, and it speaks from
+a single drainer so four parallel sessions never talk over each other.
+
+## What a plan looks like
 
 ```
-$ node scripts/jarvis.mjs plan "System Console installer for a Vendor Audit DocType with approval workflow"
+$ node scripts/jarvis.mjs plan "System Console installer for an Invoice DocType with approval workflow"
 
+Request: System Console installer for an Invoice DocType with approval workflow
 Effort: standard  ·  Gates: verify
 Skills routed: console-automation-engine, frappe-doctype, frappe-workflow
 
 Execution plan
   Batch 1  (phase 2)
-       - requirements-analyst   sonnet  required by frappe-architect
+       - requirements-analyst   sonnet  required by architect
   Batch 2  (phase 2)
-       - frappe-architect       opus    required by data-model-architect
+       - architect              opus    required by data-model-architect
   Batch 3  (phase 2)
        - data-model-architect   opus    via frappe-doctype
   Batch 4  (phase 2)
-       - frappe-data            sonnet  required by frappe-backend
+       - schema-builder         sonnet  required by backend
   Batch 5  (phase 2)
-       - frappe-backend         sonnet  via frappe-workflow
+       - backend                sonnet  via frappe-workflow
   Batch 6  (phase 4)
        - console-deployer       opus    via console-automation-engine
 
@@ -37,7 +91,9 @@ Cost
   Relative cost index: 54 vs 90 all-opus baseline (40% lower)
 ```
 
-`route` answers *which skills*. `plan` answers *which agents, in what batches, at which tier* — and tells you what the run cost.
+`route` answers *which skills*. `plan` answers *which agents, in what batches, at
+which tier* — and tells you what the run cost. Nothing is dispatched by either:
+they print, you decide.
 
 ## Why this exists
 
@@ -90,9 +146,9 @@ The cheapest fix is upstream of all four: **most requests should never reach the
 
 | Division | Agents |
 |---|---|
-| Orchestration | `orchestrator-deep`, `delivery-orchestrator`, `research-orchestrator` |
-| Planning | `requirements-analyst`, `business-analyst`, `frappe-architect`, `data-model-architect`, `impact-analyst` |
-| Development | `frappe-data`, `frappe-backend`, `frappe-frontend`, `integration-developer`, `console-deployer`, `reporting-developer` |
+| Orchestration | `jarvis-deep`, `delivery-orchestrator`, `research-orchestrator` |
+| Planning | `requirements-analyst`, `business-analyst`, `architect`, `data-model-architect`, `impact-analyst` |
+| Development | `schema-builder`, `backend`, `frontend`, `integration-developer`, `console-deployer`, `reporting-developer` |
 | UI/UX | `ux-researcher`, `ui-designer`, `interaction-designer`, `mobile-ux`, `accessibility` |
 | Data | `data-analyst`, `data-scientist`, `dataviz-specialist` |
 | Quality | `test-engineer`, `uat-coordinator`, `qa-engineer`, `code-reviewer`, `performance-analyst` |
@@ -260,7 +316,7 @@ What that buys, beyond not overlapping:
 | Turns under 25s get a tick, not a sentence | `Stop` fires after **every** turn. Un-gated, asking the time is announced as a completed task |
 | Six completions collapse to one | A burst is debounced 1.2s, then the newest is spoken and the rest deleted |
 | Completions older than 50s are dropped | An announcement 90s late is noise, not information |
-| Session name spoken only when 2+ are live | With one session, "frappe-bench, finished" is padding; with four it is the message |
+| Session name spoken only when 2+ are live | With one session, "checkout, finished" is padding; with four it is the message |
 | One voice, always | Four parallel sessions do **not** get four voices. Four voices read as four different *people*; the point is one assistant with an eye on everything, naming the session it is talking about |
 | **Every announcement names its session** | Not conditionally. Sessions sharing a directory get the ordinal too — *"frappe bench two"* — and that ordinal is the same number as the chime pitch, so the two cues reinforce each other |
 | The name never changes mid-session | Fixed when the session registers. `cd` into a subdirectory and it is still the project you know it as |
@@ -280,7 +336,7 @@ chime, and what they *found* is carried into the completion instead. Set
 Every agent in the swarm is required to end its output with one line:
 
 ```
-VOICE: Vendor Audit schema is in, three child tables
+VOICE: Invoice schema is in, three child tables
 ```
 
 Those clauses are collected as each specialist finishes, and read out on completion:
@@ -288,7 +344,7 @@ Those clauses are collected as each specialist finishes, and read out on complet
 | | |
 |---|---|
 | without | *"Done, sir. Six specialists, four minutes."* — 3.5s, and it reports only that time passed |
-| with | *"Vendor Audit schema is in, sir. Four minutes."* — 2.8s, and it reports what changed |
+| with | *"Invoice schema is in, sir. Four minutes."* — 2.8s, and it reports what changed |
 
 The specialist count disappears when there is a summary, because that count was never
 information — it was a proxy for "something substantial happened", added because there
@@ -357,12 +413,12 @@ Two further things follow from that:
 
 ```
 Active sessions: 3
-  [1] frappe-bench             working 4m12s
-      /Users/you/frappe-bench
-  [2] wt_nst                   idle
-      /Users/you/wt_nst
-  [3] frappe-bench             working 0m18s   ** BLOCKED ON APPROVAL **
-      /Users/you/frappe-bench
+  [1] checkout             working 4m12s
+      /Users/you/checkout
+  [2] wt_svc                   idle
+      /Users/you/wt_svc
+  [3] checkout             working 0m18s   ** BLOCKED ON APPROVAL **
+      /Users/you/checkout
 ```
 
 The cost is measured: a word of speech is about 0.38s, and naming the session plus the
@@ -379,11 +435,11 @@ left pending when each session closed.
 ```markdown
 # Daily log — 2026-08-18
 
-- **09:12** · `frappe-bench` · 4m · Vendor Audit schema and fixtures done
-- **10:02** · `wt_nst` · 6m · 3 specialists · Material Movement schema is in
-- **11:40** · `wt_nst` · 1m · **PROBLEM** four tests failing on the refund path
+- **09:12** · `checkout` · 4m · Invoice schema and fixtures done
+- **10:02** · `wt_svc` · 6m · 3 specialists · shipment schema is in
+- **11:40** · `wt_svc` · 1m · **PROBLEM** four tests failing on the refund path
 
-### 18:40 · `wt_nst` closed
+### 18:40 · `wt_svc` closed
 - **Heads up** · submit hook now fires on amend
 - **Pending** · permissions matrix needs an Auditor role
 ```
@@ -417,15 +473,15 @@ jarvisctl daily [2026-08-18]   # the raw log for a day
 Last worked: 2026-08-18  —  6 turns across 3 project(s)
 
 PROJECTS
-  frappe-bench                 3 turns
-  wt_nst                       2 turns
+  checkout                 3 turns
+  wt_svc                       2 turns
 
 DONE
-  - Vendor Audit schema and fixtures done  (frappe-bench)
-  - Material Movement schema is in  (wt_nst)
+  - Invoice schema and fixtures done  (checkout)
+  - shipment schema is in  (wt_svc)
 
 PROBLEMS REPORTED
-  - four tests failing on the refund path  (wt_nst)
+  - four tests failing on the refund path  (wt_svc)
 
 STILL PENDING
   - permissions matrix needs an Auditor role
@@ -448,14 +504,14 @@ before it can be useful. That is a different document with a different shape, an
 written per session, as the session runs.
 
 ```
-~/frappe-bench/Referencedocs/CLI-Session-Context/     (JARVIS_CTX_DIR)
+~/checkout/Referencedocs/CLI-Session-Context/     (JARVIS_CTX_DIR)
 ├── README.md          the naming and structure rules, written once
 ├── INDEX.md           one row per session — read this first
 └── sessions/
     └── 2026-08/
-        ├── 2026-08-19--frappe-bench--durable-session-context--6655d427.md
+        ├── 2026-08-19--checkout--durable-session-context--6655d427.md
         └── .journal/
-            └── 2026-08-19--frappe-bench--durable-session-context--6655d427.jsonl
+            └── 2026-08-19--checkout--durable-session-context--6655d427.jsonl
 ```
 
 The short id is the first eight characters of the session id, which is **also the prefix
@@ -543,7 +599,7 @@ Two optional lines sit alongside the required one, and they are read back when t
 session closes rather than when the turn ends:
 
 ```
-VOICE:    Material Movement schema is in
+VOICE:    shipment schema is in
 PENDING:  permissions matrix still needs an Auditor role
 HEADS-UP: the submit hook now fires on amend as well
 ```
@@ -561,7 +617,7 @@ picking the work up tomorrow having forgotten the detail. So the split is:
 
 ```
 $ jarvisctl brief
-== 2026-08-18-wt_nst.txt
+== 2026-08-18-wt_svc.txt
   DONE
     - DocTypes built and fixtures exported
     - all twenty two tests pass
@@ -621,10 +677,10 @@ Three other things measurement settled:
 | Measured RMS differs **4.6×** across the macOS system sounds, so at one fixed volume the *error* chime came out quieter than the routine completion | Each tone is normalised then scaled by its category, so loudness tracks importance. A test reads the generated WAVs back and asserts an urgent alert is never quieter than a routine one |
 | Announcements ran **4.4–5.4s each**, and `Stop` fires after every turn | Two registers. Alone, "Done, sir. Four minutes." is 1.67s; the project name is only worth its 1.1–1.6s when there is more than one session to tell apart |
 
-`say` also mangles directory basenames: `wt_nst` is a worktree prefix plus an
+`say` also mangles directory basenames: `wt_svc` is a worktree prefix plus an
 initialism, and it reads as one nonsense syllable. Names are now normalised —
 underscores and hyphens to spaces, the `wt` prefix dropped, and a short vowel-less
-token spelled out, so `wt_nst` becomes "N S T". `JARVIS_NAMES="wt_nst=the N S T tree"`
+token spelled out, so `wt_svc` becomes "N S T". `JARVIS_NAMES="wt_svc=the N S T tree"`
 overrides any of it.
 
 To judge all of this by ear rather than by table:
@@ -643,8 +699,8 @@ sessions said goodbye four times.
 ```
 $ jarvisctl status
 Active sessions: 2
-  [1] frappe-bench             idle
-  [2] wt_nst                   working 0m27s  ** BLOCKED ON APPROVAL **
+  [1] checkout             idle
+  [2] wt_svc                   working 0m27s  ** BLOCKED ON APPROVAL **
 Queued announcements: 0
 Speaker: running (pid 51749)
 ```

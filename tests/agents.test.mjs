@@ -130,3 +130,37 @@ describe('generated agents carry the spoken-line contract', () => {
     assert.deepEqual(missing, [], 'contract rules missing from generated agents');
   });
 });
+
+describe('the README describes the real roster', () => {
+  // The division table listed frappe-architect, frappe-data, frappe-backend,
+  // frappe-frontend and orchestrator-deep for a while after those agents were renamed.
+  // Nothing failed, because no test had ever read the README. A doc that names agents
+  // which do not exist is worse than one that names none.
+  const README = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+
+  test('every agent in the division table exists', () => {
+    const table = README.split('| Division | Agents |')[1].split('\n\n')[0];
+    const listed = [...new Set([...table.matchAll(/`([a-z][a-z0-9-]+)`/g)].map((m) => m[1]))];
+    const real = new Set(FILES.map((f) => f.replace(/\.md$/, '')));
+    assert.deepEqual(listed.filter((id) => !real.has(id)), [], 'README names agents that do not exist');
+  });
+
+  test('every agent appears in the division table', () => {
+    const table = README.split('| Division | Agents |')[1].split('\n\n')[0];
+    const listed = new Set([...table.matchAll(/`([a-z][a-z0-9-]+)`/g)].map((m) => m[1]));
+    const missing = FILES.map((f) => f.replace(/\.md$/, '')).filter((id) => !listed.has(id));
+    assert.deepEqual(missing, [], 'agents missing from the README table');
+  });
+
+  test('no contents link points at a heading that is not there', () => {
+    const heads = new Set(
+      [...README.matchAll(/^#{2,3} (.+)$/gm)].map((m) =>
+        m[1].toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/ /g, '-')
+      )
+    );
+    const broken = [...README.matchAll(/\]\(#([a-z0-9-]+)\)/g)]
+      .map((m) => m[1])
+      .filter((a) => !heads.has(a));
+    assert.deepEqual([...new Set(broken)], [], 'broken in-page links');
+  });
+});
