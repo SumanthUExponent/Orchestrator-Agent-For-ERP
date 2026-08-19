@@ -225,7 +225,11 @@ budget() {
   while [ "$on_clause" -eq 0 ] && [ "$cut" -gt 2 ]; do
     last=$(printf '%s' "${w[$(( cut - 1 ))]}" | tr 'A-Z' 'a-z')
     last="${last//[^a-z]/}"
-    case " a an the of in on at to for with and or but from by into as is are was were that which than its their his her our i had has have been being will would can could should may might must do does did " in
+    # The list is held in a variable so the `case` subject is not a constant --
+    # same logic, but shellcheck SC2194 rightly flags "case <literal> in" as the
+    # sort of thing that is usually a forgotten $.
+    local funcwords=" a an the of in on at to for with and or but from by into as is are was were that which than its their his her our i had has have been being will would can could should may might must do does did "
+    case "$funcwords" in
       *" $last "*) cut=$(( cut - 1 )) ;;
       *) break ;;
     esac

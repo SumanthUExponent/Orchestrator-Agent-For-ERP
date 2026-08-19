@@ -331,9 +331,13 @@ spoken_pipeline() {
 }
 
 R1FAIL=""
+# The tilde below is literal TEST DATA -- text to be pronounced, not a path to open --
+# so it must NOT expand. Held in a variable because shellcheck SC2088 flags a quoted
+# tilde as a probable mistake, and here it is the point.
+LIT_TILDE='~'
 for probe in \
   'updated apps/exponent_utilities/hooks.py and the DocType' \
-  '~/.claude/statusline.sh: /bin/bash' \
+  "$LIT_TILDE/.claude/statusline.sh: /bin/bash" \
   'frappe_exponent_crm schema is in, 3 tables' \
   'wt_nst build green; ran bench --site macdev migrate' \
   'getValue returned null from safe_exec' \
