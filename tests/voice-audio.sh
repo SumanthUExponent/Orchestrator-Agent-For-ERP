@@ -40,9 +40,28 @@ echo "platform: $JV_OS"
 echo
 
 # ------------------------------------------------------------------ backends
-echo "P1  a speech and an audio backend were found on THIS machine"
-sayb=$(jv_backend_say);  case "$sayb"  in NONE*) bad "speech backend ($sayb)" ;; *) ok "speech backend: $sayb" ;; esac
-playb=$(jv_backend_play); case "$playb" in NONE*) bad "audio backend ($playb)" ;; *) ok "audio backend: $playb" ;; esac
+echo "P1  the platform layer detects what is actually installed"
+# The distinction that matters: a tool present on PATH but reported as NONE is a
+# DETECTION bug and must fail. Nothing installed at all is not a bug — there is nothing
+# to detect, and it is `jarvisctl doctor` that tells a user to install an engine, not the
+# test suite. Conflating the two made an apt outage on a CI runner look like a defect.
+present() { for c in "$@"; do command -v "$c" >/dev/null 2>&1 && return 0; done; return 1; }
+
+sayb=$(jv_backend_say)
+case "$sayb" in
+  NONE*) if present piper spd-say espeak-ng espeak festival pico2wave; then
+           bad "speech backend" "an engine is on PATH but the layer reports: $sayb"
+         else skip "speech backend — no engine installed here"; fi ;;
+  *) ok "speech backend: $sayb" ;;
+esac
+
+playb=$(jv_backend_play)
+case "$playb" in
+  NONE*) if present afplay paplay aplay ffplay mpv play cvlc; then
+           bad "audio backend" "a player is on PATH but the layer reports: $playb"
+         else skip "audio backend — no player installed here"; fi ;;
+  *) ok "audio backend: $playb" ;;
+esac
 ok "banner backend: $(jv_backend_notify)"
 
 echo
