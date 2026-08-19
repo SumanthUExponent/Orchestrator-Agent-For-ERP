@@ -14,6 +14,9 @@ jobs:
   test:
     name: ${{ matrix.os }} · node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
+    # A hung step should fail in minutes, not burn the default six hours. The apt step
+    # below hung for over twenty minutes once with nothing to show for it.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -29,9 +32,30 @@ jobs:
       # alsa-utils gives it a genuine audio backend. There is no sound card on a runner,
       # so playback fails — which is itself worth exercising, because a missing device
       # must degrade to silence and never to a non-zero hook.
-      - name: Linux audio and speech backends
-        if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends espeak-ng alsa-utils
+      #
+      # Only on the job that actually runs the shell suites. It was running on all three
+      # Linux jobs, so two of them spent minutes installing packages they never touched —
+      # and it was one of those two that hung for twenty minutes on apt.
+      # espeak-ng gives the Linux job a genuine speech backend to detect and to measure
+      # phrase lengths against. It is BEST EFFORT: `apt-get update` hung for six minutes
+      # producing no output at all on two consecutive runs, and an apt outage on a runner
+      # is not a reason to fail a build. The suite skips what it cannot exercise, and
+      # still fails if a tool is present but the platform layer does not detect it.
+      - name: Linux audio and speech backends (best effort)
+        if: runner.os == 'Linux' && matrix.node == '20'
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          timeout 120 sudo apt-get update -o Acquire::Retries=2 || echo "apt-get update did not finish; continuing"
+          timeout 120 sudo apt-get install -y -qq --no-install-recommends espeak-ng || echo "espeak-ng not installed; speech checks will skip"
+          # ffmpeg ships on the runner image and ffplay is one of the audio backends the
+          # platform layer accepts, so alsa-utils is only a fallback — it was what hung
+          # the very first version of this step.
+          command -v ffplay >/dev/null 2>&1 || timeout 120 sudo apt-get install -y -qq --no-install-recommends alsa-utils || true
+          echo "speech backend: $(command -v espeak-ng || echo NONE)"
+          echo "audio backend:  $(command -v ffplay || command -v aplay || command -v paplay || echo NONE)"
 
       - run: node --version && bash --version | head -1
 
@@ -66,6 +90,7 @@ jobs:
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends shellcheck
@@ -76,6 +101,7 @@ jobs:
   windows:
     name: windows · path handling
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

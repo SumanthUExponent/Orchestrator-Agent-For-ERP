@@ -17,7 +17,7 @@ J="$HOME/.claude/jarvis"
 
 Q="$J/queue"; S="$J/state"
 mkdir -p "$Q" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" \
-         "$S/done" "$S/todo" "$S/heads" "$S/cwd" "$J/briefings" "$J/run" 2>/dev/null
+         "$S/done" "$S/todo" "$S/heads" "$S/cwd" "$J/briefings" "$J/daily" "$J/run" 2>/dev/null
 
 MODE="$1"
 
@@ -134,6 +134,35 @@ first_sentence() {
 }
 
 voice_note() { marker_note VOICE; }
+
+# The permanent record of the day, as distinct from what gets announced.
+#
+# EVERY completed turn is written here, including the ones the voice deliberately stays
+# quiet about. The log is a record and the voice is selective; conflating the two would
+# mean the quiet turns vanished from history, which is exactly the history you want when
+# you come back tomorrow having forgotten what you did.
+#
+# Append-only and written as it happens, not assembled at session end — a terminal that
+# is killed, or a machine that reboots, must not take the day with it.
+daily_append() {
+  local d f
+  d=$(date +%Y-%m-%d)
+  f="$J/daily/$d.md"
+  # Create the header atomically. Two sessions finishing a turn in the same instant would
+  # otherwise both find no file and both write one. noclobber makes the create-or-skip a
+  # single operation instead of a check followed by a write.
+  ( set -C; printf '# Daily log — %s\n\n' "$d" > "$f" ) 2>/dev/null
+  # The trailing newline is added HERE, not by the caller. Callers build their entry in a
+  # command substitution, and `$( )` strips trailing newlines — so a caller that ended its
+  # own line found the newline silently removed, and every entry in the file ran into the
+  # next one. Owning it at the sink means no caller can get it wrong.
+  #
+  # ONE printf, so the append is a single write() that cannot interleave with another
+  # session's. Entries stay far below PIPE_BUF: clauses are capped at 140 characters and
+  # the per-session lists at eight items.
+  printf '%s\n' "$1" >> "$f" 2>/dev/null
+  return 0
+}
 
 # Append a clause to a per-session list, without duplicates. The same PENDING item
 # repeated by three agents across four turns is one item, not twelve.
@@ -368,6 +397,22 @@ case "$MODE" in
       printf '%s|%s|%s\n' "$NAME" "$flag" "$SUMMARY" >> "$S/day" 2>/dev/null
     fi
 
+    # Written whether or not it will be spoken. A turn the voice skips is still a turn
+    # that happened.
+    if [ "${JARVIS_DAILY_LOG:-1}" = "1" ]; then
+      if [ "$el" -lt 60 ]; then _d="${el}s"; else _d="$(( el / 60 ))m"; fi
+      _crew=""
+      [ "$subs" -ge 2 ] && _crew=" · $subs specialists"
+      _what="$SUMMARY"
+      [ -z "$_what" ] && _what="_(nothing reported)_"
+      _flag=""
+      case "$SUMMARY" in
+        *fail*|*error*|*broken*|*blocked*|*cannot*|*missing*|*unsafe*|*conflict*|*risk*) _flag="**PROBLEM** " ;;
+      esac
+      daily_append "$(printf -- '- **%s** · `%s` · %s%s · %s%s' \
+        "$(date +%H:%M)" "$NAME" "$_d" "$_crew" "$_flag" "$_what")"
+    fi
+
     if [ "$el" -lt "${JARVIS_MIN_SECONDS:-25}" ] || [ "$speak_it" = 0 ]; then
       enqueue 7 tick "$el"
     else
@@ -440,6 +485,24 @@ case "$MODE" in
       fi
     fi
     [ -n "$SPOKEN" ] && enqueue 3 brief "$SPOKEN"
+
+    # And into the day's record — only when there is something outstanding, so a clean
+    # session leaves the log uncluttered. Built as one string and written once, because
+    # two sessions closing together must not interleave their blocks.
+    if [ "${JARVIS_DAILY_LOG:-1}" = "1" ] && { [ -s "$S/todo/$KEY" ] || [ -s "$S/heads/$KEY" ]; }; then
+      # Joined with real newlines held INSIDE the string, never at the end of a
+      # substitution, for the same reason: a trailing newline would be stripped.
+      _blk=$(printf '\n### %s · `%s` closed' "$(date +%H:%M)" "$NAME")
+      if [ -s "$S/heads/$KEY" ]; then
+        _blk="$_blk
+$(sed 's/^/- **Heads up** · /' "$S/heads/$KEY" 2>/dev/null)"
+      fi
+      if [ -s "$S/todo/$KEY" ]; then
+        _blk="$_blk
+$(sed 's/^/- **Pending** · /' "$S/todo/$KEY" 2>/dev/null)"
+      fi
+      daily_append "$_blk"
+    fi
 
     rm -f "$S/active/$KEY" "$S/start/$KEY" "$S/pending/$KEY" "$S/subs/$KEY" "$S/notes/$KEY" \
           "$S/done/$KEY" "$S/todo/$KEY" "$S/heads/$KEY" "$S/cwd/$KEY"

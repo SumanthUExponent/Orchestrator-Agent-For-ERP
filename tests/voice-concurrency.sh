@@ -834,6 +834,125 @@ rc=0; "$J/jarvisctl" status 2>/dev/null | grep -qF "$(cat "$ST/cwd/s1" 2>/dev/nu
 check "$rc" "and status shows it, so names map back to paths"
 quiet 40
 
+# ---------------------------------------------------------------- T24
+echo
+echo "T24 the daily log — one file a day, every session, written as work happens"
+fresh
+ST="$HOME/.claude/jarvis/state"
+DAY="$J/daily/$(date +%Y-%m-%d).md"
+rm -rf "$J/daily"
+printf 'alpha|1\n' > "$ST/active/s1"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: schema is in\nPENDING: permissions matrix needs a role"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+rc=0; grep -q '^# Daily log' "$DAY" 2>/dev/null || rc=1
+check "$rc" "the day's file is created with a header" "$(cat "$DAY" 2>/dev/null)"
+rc=0; grep -qF 'schema is in' "$DAY" 2>/dev/null || rc=1
+check "$rc" "and the turn is recorded" "$(cat "$DAY" 2>/dev/null)"
+
+echo
+echo "T24b it records turns the VOICE stays quiet about"
+# The log is a record; the voice is selective. Conflating them would make the quiet turns
+# vanish from history — which is exactly the history you want tomorrow.
+fresh; rm -rf "$J/daily"
+printf 'alpha|1\n' > "$ST/active/s1"
+printf 'bravo|2\n' > "$ST/active/s2"   # two live, so a summary-less turn is not spoken
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+quiet 40
+n=$(says); rc=0; [ "$n" = 0 ] || rc=1
+check "$rc" "the turn was not announced ($n utterances)"
+rc=0; grep -q '^- \*\*' "$DAY" 2>/dev/null || rc=1
+check "$rc" "but it IS in the day's log" "$(cat "$DAY" 2>/dev/null)"
+
+echo
+echo "T24c a killed session still leaves its turns behind"
+# SessionEnd may never fire. Assembling the log at close would lose the whole session.
+fresh; rm -rf "$J/daily"
+printf 'alpha|1\n' > "$ST/active/s1"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: work that must survive a kill"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+rm -f "$ST/active/s1"   # terminal killed: no SessionEnd
+rc=0; grep -qF 'must survive a kill' "$DAY" 2>/dev/null || rc=1
+check "$rc" "the turn survives with no SessionEnd"
+
+echo
+echo "T24d eight sessions appending at once do not corrupt the file"
+fresh; rm -rf "$J/daily"
+for i in 1 2 3 4 5 6 7 8; do
+  ( printf 'p%s|%s\n' "$i" "$i" > "$ST/active/c$i"
+    printf '%s' "{\"last_assistant_message\":\"VOICE: writer number $i finished\"}" \
+      | JARVIS_SESSION_KEY="c$i" JARVIS_SESSION_NAME="proj$i" "$J/jarvis.sh" subagent >/dev/null 2>&1
+    echo $(( $(date +%s) - 200 )) > "$ST/start/c$i"
+    printf '%s' '{}' | JARVIS_SESSION_KEY="c$i" JARVIS_SESSION_NAME="proj$i" "$J/jarvis.sh" 'done' >/dev/null 2>&1 ) &
+done
+wait
+n=$(grep -c '^- \*\*' "$DAY" 2>/dev/null); n=${n:-0}
+rc=0; [ "$n" = 8 ] || rc=1; check "$rc" "all eight entries present (got $n)"
+h=$(grep -c '^# Daily log' "$DAY" 2>/dev/null); h=${h:-0}
+rc=0; [ "$h" = 1 ] || rc=1; check "$rc" "exactly one header, despite the race to create it (got $h)"
+bad=$(grep -vcE '^(#|$|- \*\*[0-9]|### |- \*\*(Pending|Heads up)\*\*)' "$DAY" 2>/dev/null); bad=${bad:-0}
+rc=0; [ "$bad" = 0 ] || rc=1; check "$rc" "no interleaved or malformed lines ($bad)"
+d=$(grep -o 'writer number [0-9]' "$DAY" 2>/dev/null | sort -u | grep -c .); d=${d:-0}
+rc=0; [ "$d" = 8 ] || rc=1; check "$rc" "all eight are distinct, none overwritten (got $d)"
+quiet 40
+
+echo
+echo "T24e closing a session appends what is still outstanding"
+fresh; rm -rf "$J/daily"
+printf 'alpha|1\n' > "$ST/active/s1"
+say_hook begin '{}'
+say_hook subagent '{"last_assistant_message":"VOICE: done\nPENDING: the offline sync path is untested\nHEADS-UP: submit fires on amend now"}'
+echo $(( $(date +%s) - 200 )) > "$ST/start/s1"
+say_hook 'done' '{}'
+say_hook end '{}'
+rc=0; grep -q '^### .* closed' "$DAY" 2>/dev/null || rc=1
+check "$rc" "a close block is written" "$(cat "$DAY" 2>/dev/null)"
+rc=0; grep -qF 'Pending** · the offline sync path is untested' "$DAY" 2>/dev/null || rc=1
+check "$rc" "with the pending item"
+rc=0; grep -qF 'Heads up** · submit fires on amend now' "$DAY" 2>/dev/null || rc=1
+check "$rc" "and the heads-up"
+
+echo
+echo "T24f reset clears STATE and never the records"
+rc=0; [ -s "$DAY" ] || rc=1; check "$rc" "log present before reset"
+"$J/jarvisctl" reset >/dev/null
+rc=0; [ -s "$DAY" ] || rc=1
+check "$rc" "and still present after — a reset is for state, not for history"
+
+echo
+echo "T24g yesterday resolves the last day WORKED, not literal yesterday"
+rm -rf "$J/daily"; mkdir -p "$J/daily"
+# No date arithmetic anywhere: `date -d` is GNU-only and `date -v` is BSD-only, and a
+# weekend means literal yesterday has no log at all.
+printf '# Daily log — 2000-01-03\n\n- **09:00** · `old` · 1m · ancient work\n' > "$J/daily/2000-01-03.md"
+printf '# Daily log — 2000-01-07\n\n- **09:00** · `alpha` · 4m · the last thing I did\n- **10:00** · `alpha` · 2m · **PROBLEM** a test is failing\n- **Pending** · pick this up next\n' > "$J/daily/2000-01-07.md"
+out=$("$J/jarvisctl" yesterday 2>/dev/null)
+rc=0; printf '%s' "$out" | grep -q '2000-01-07' || rc=1
+check "$rc" "picks the most recent earlier day" "$out"
+rc=0; printf '%s' "$out" | grep -q '2000-01-03' && rc=1
+check "$rc" "and not an older one"
+rc=0; printf '%s' "$out" | grep -q 'the last thing I did' || rc=1
+check "$rc" "reports what was done"
+rc=0; printf '%s' "$out" | grep -qi 'pending' || rc=1
+check "$rc" "and what is still pending"
+# Today's own log must never be reported back as 'yesterday'.
+printf '# Daily log — %s\n\n- **09:00** · `alpha` · 1m · today only\n' "$(date +%Y-%m-%d)" > "$J/daily/$(date +%Y-%m-%d).md"
+out=$("$J/jarvisctl" yesterday 2>/dev/null)
+rc=0; printf '%s' "$out" | grep -q 'today only' && rc=1
+check "$rc" "today is excluded from 'yesterday'"
+
+echo
+echo "T24h no history at all is reported, not crashed"
+rm -rf "$J/daily"; mkdir -p "$J/daily"
+out=$("$J/jarvisctl" yesterday 2>&1); rc=$?
+check "$rc" "exits cleanly with no logs (rc=$rc)"
+rc=0; printf '%s' "$out" | grep -qi 'no earlier day' || rc=1
+check "$rc" "and says so plainly" "$out"
+
 # ---------------------------------------------------------------- teardown
 echo
 stop_daemon

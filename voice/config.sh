@@ -139,6 +139,15 @@ JARVIS_SPEAK_WITHOUT_SUMMARY="${JARVIS_SPEAK_WITHOUT_SUMMARY:-auto}"
 # written either way; read it with `jarvisctl brief`. 0 disables the spoken part.
 JARVIS_BRIEF="${JARVIS_BRIEF:-1}"
 
+# A single markdown file per day, in ~/.claude/jarvis/daily/, recording every completed
+# turn across EVERY session — what was done, how long it took, and what was left pending
+# when each session closed. Written as work happens rather than assembled at the end, so
+# a killed terminal cannot take the day with it.
+#
+# It records more than the voice announces: a turn the voice stays quiet about is still a
+# turn that happened. Read it back with `jarvisctl yesterday`. 0 disables.
+JARVIS_DAILY_LOG="${JARVIS_DAILY_LOG:-1}"
+
 # One line at the very end of the day, when the last session closes: how many turns
 # there were across ALL sessions, and whether anything is still outstanding. 0 disables.
 JARVIS_DAY_DIGEST="${JARVIS_DAY_DIGEST:-1}"

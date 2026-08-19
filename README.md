@@ -370,6 +370,76 @@ duration spends roughly two seconds before the clause starts. That is why the ag
 contract caps a clause at **six words** — five lands the whole announcement at 4.1s, eight
 takes it to 5.7s, which is longer than anyone keeps listening.
 
+### The daily log
+
+One markdown file a day, in `~/.claude/jarvis/daily/`, recording every completed turn
+across **every** session — what was done, in which project, how long it took, and what was
+left pending when each session closed.
+
+```markdown
+# Daily log — 2026-08-18
+
+- **09:12** · `frappe-bench` · 4m · Vendor Audit schema and fixtures done
+- **10:02** · `wt_nst` · 6m · 3 specialists · Material Movement schema is in
+- **11:40** · `wt_nst` · 1m · **PROBLEM** four tests failing on the refund path
+
+### 18:40 · `wt_nst` closed
+- **Heads up** · submit hook now fires on amend
+- **Pending** · permissions matrix needs an Auditor role
+```
+
+Three properties it needs to have, and each one shaped the implementation:
+
+- **It records more than the voice announces.** A turn the voice deliberately stays quiet
+  about is still a turn that happened. The log is a record; the voice is selective.
+  Conflating them would make the quiet turns vanish from exactly the history you want
+  tomorrow.
+- **It is written as work happens, never assembled at the end.** `SessionEnd` may never
+  fire — a killed terminal, a reboot — and a log built at close would lose the session.
+- **Concurrent sessions cannot corrupt it.** Each entry is a single `printf`, so the
+  append is one `write()` that cannot interleave; the header is created under `noclobber`
+  so a race to create it produces one header, not two. A test runs eight sessions
+  appending simultaneously and checks all eight entries, one header, and no malformed
+  lines.
+
+`jarvisctl reset` clears state and never touches these — a reset is for state, not for
+history.
+
+### Picking up where you left off
+
+```bash
+jarvisctl yesterday            # a digest of the last day you actually worked
+jarvisctl yesterday --speak    # ...read aloud
+jarvisctl daily [2026-08-18]   # the raw log for a day
+```
+
+```
+Last worked: 2026-08-18  —  6 turns across 3 project(s)
+
+PROJECTS
+  frappe-bench                 3 turns
+  wt_nst                       2 turns
+
+DONE
+  - Vendor Audit schema and fixtures done  (frappe-bench)
+  - Material Movement schema is in  (wt_nst)
+
+PROBLEMS REPORTED
+  - four tests failing on the refund path  (wt_nst)
+
+STILL PENDING
+  - permissions matrix needs an Auditor role
+  - the offline sync path is untested
+```
+
+**"Yesterday" means the last day you worked, not literal yesterday.** It is derived from
+the file listing rather than by date arithmetic — which sidesteps `date -d` being GNU-only
+and `date -v` being BSD-only, and answers correctly after a weekend or a week away, where
+literal yesterday has no log at all. Today's own log is never reported back as yesterday's.
+
+Outstanding items come last, because they are the only part you can act on and the eye
+lands on the end of a briefing.
+
 ### The end-of-session briefing
 
 Two optional lines sit alongside the required one, and they are read back when the
@@ -492,8 +562,8 @@ $ jarvisctl report
 Working: frappe bench, 6 minutes, exponent utilities, 9 seconds. Idle: N S T.
 ```
 
-`jarvisctl` also has `doctor`, `brief`, `log`, `mute <min>`, `unmute`, `reset`,
-`voices`, `chimes` and `demo`. Everything is tunable in `config.sh`, which an upgrade will not
+`jarvisctl` also has `doctor`, `brief`, `daily`, `yesterday`, `log`, `mute <min>`,
+`unmute`, `reset`, `voices`, `chimes` and `demo`. Everything is tunable in `config.sh`, which an upgrade will not
 overwrite.
 
 **Extensions.** Anything executable in `~/.claude/jarvis/hooks.d/` receives every event
@@ -529,7 +599,7 @@ first, writes atomically, and refuses to touch a `settings.json` it cannot parse
 | `voice [--apply] [--force]` | Install the voice layer and its eight hooks. Dry run by default. |
 | `npm test` | Routing, execution-plan, installer, voice-installer and tone-synthesis suites (105 tests). |
 | `npm run test:audio` | Platform backends, installed-tone integrity, name handling, phrase-length budgets (35 checks). |
-| `npm run test:voice` | The above plus the concurrency harness (96 checks, stubbed audio). |
+| `npm run test:voice` | The above plus the concurrency harness (117 checks, stubbed audio). |
 | `npm run test:all` | Everything. |
 
 ## Health check
@@ -600,8 +670,8 @@ tests/voice-concurrency.sh voice behaviour under genuine parallel load
 ## Status and limits
 
 Working: registry, auto-discovery, health checks, hybrid routing, skill→agent mapping, dependency-aware batching, model tiering, the deterministic context pack, conflict and contest handling, effort modes, user overrides, installer with dry-run and traversal defence, the cross-platform voice layer, spoken
-agent summaries and end-of-session briefings, 105 passing regression tests plus 131
-audio and concurrency checks.
+agent summaries, end-of-session briefings, the daily log, 105 passing regression tests
+plus 152 audio and concurrency checks.
 
 Known gaps, stated plainly:
 
