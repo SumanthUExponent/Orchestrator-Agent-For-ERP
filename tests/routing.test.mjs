@@ -13,6 +13,10 @@ import assert from 'node:assert/strict';
 import { build, readYaml, ROOT } from '../scripts/jarvis.mjs';
 import { plan } from '../scripts/route.mjs';
 import * as E from '../scripts/evaluate.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import * as L from '../scripts/learn.mjs';
+import path from 'node:path';
 
 const reg = build({ quiet: true });
 const P = (request, opts = {}) => plan(reg, request, { readYaml, root: ROOT, cwd: ROOT, ...opts });
@@ -182,5 +186,59 @@ describe('flip-centered evaluation', () => {
     assert.equal(E.checkProbe({ id: 'p', expect: { reviewPanel: true } }, plan, []).pass, false,
       'an empty panel means nothing would review the work');
     assert.equal(E.checkProbe({ id: 'p', expect: { humanGateCount: 1 } }, plan, ['production deployment']).pass, true);
+  });
+});
+
+describe('learning proposes from evidence, and refuses to invent', () => {
+  const rows = (agent, n, over = {}) =>
+    Array.from({ length: n }, () => ({ agent, status: 'SUCCESS', next: 'none', unverified: 0, ...over }));
+
+  test('a thin pattern proposes nothing', () => {
+    // Three runs is superstition. This is the whole difference between learning and
+    // pattern-matching on noise, so it is asserted rather than trusted.
+    const p = L.propose(L.summarise(rows('x', 3, { status: 'FAILED' })));
+    assert.deepEqual(p, []);
+  });
+
+  test('an agent that never succeeds is a routing question, not a verdict', () => {
+    const p = L.propose(L.summarise(rows('x', 6, { status: 'FAILED' })));
+    const r = p.find((q) => q.kind === 'routing');
+    assert.ok(r, 'no routing proposal');
+    assert.match(r.evidence, /6 runs, 0 SUCCESS/);
+    assert.match(r.proposal, /Look before re-routing/);
+  });
+
+  test('an agent that never reports is a protocol failure, and says so', () => {
+    const p = L.propose(L.summarise(rows('x', 6, { status: 'unreported' })));
+    const r = p.find((q) => q.kind === 'protocol');
+    assert.ok(r, 'no protocol proposal');
+    assert.match(r.proposal, /not a routing problem/);
+    // and it must NOT also be reported as a routing failure — that would send someone
+    // to re-tune a router over an agent that simply never spoke.
+    assert.equal(p.filter((q) => q.kind === 'routing').length, 0);
+  });
+
+  test('repeated unverified work proposes a pairing', () => {
+    const mixed = [...rows('x', 5, { unverified: 1 }), ...rows('x', 3)];
+    const r = L.propose(L.summarise(mixed)).find((q) => q.kind === 'verification');
+    assert.ok(r);
+    assert.match(r.evidence, /5 of 8/);
+  });
+
+  test('a recurring recommendation proposes a dependency the registry lacks', () => {
+    const r = L.propose(L.summarise(rows('x', 6, { next: 'test-engineer' })))
+      .find((q) => q.kind === 'dependency');
+    assert.ok(r);
+    assert.match(r.proposal, /recommended_after/);
+  });
+
+  test('a torn ledger line is skipped, not fatal', () => {
+    // The ledger is appended by shell under concurrency. One bad line must not take
+    // the whole learning pass down with it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jv-led-'));
+    fs.writeFileSync(path.join(dir, '2026-08.jsonl'),
+      '{"agent":"a","status":"SUCCESS"}\n{ this is not json\n{"agent":"a","status":"SUCCESS"}\n');
+    assert.equal(L.readLedger(dir).length, 2);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

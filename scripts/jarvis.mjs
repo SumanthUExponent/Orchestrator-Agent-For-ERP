@@ -473,6 +473,20 @@ try {
       render(buildAgents({ root: ROOT, readYaml, apply: rest.includes('--apply') }));
       break;
     }
+    case 'learn': {
+      // Reads the ledger, proposes, writes a file nothing loads. The last step is a
+      // human on purpose -- see the header of learn.mjs.
+      const learnModule = await import('./learn.mjs');
+      const voiceModule = await import('./voice.mjs');
+      process.exit(
+        learnModule.render({
+          root: ROOT,
+          ledgerDir: path.join(voiceModule.jarvisDir(), 'ledger'),
+          apply: rest.includes('--apply'),
+        })
+      );
+      break;
+    }
     case 'evaluate': {
       // Flip-centered, per the assessment. Cheap because routing involves no model.
       const evalModule = await import('./evaluate.mjs');

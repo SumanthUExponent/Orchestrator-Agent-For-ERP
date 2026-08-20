@@ -15,6 +15,7 @@
     "pack": "node scripts/jarvis.mjs pack",
     "doctor": "node scripts/jarvis.mjs doctor",
     "evaluate": "node scripts/jarvis.mjs evaluate",
+    "learn": "node scripts/jarvis.mjs learn",
     "install:skills": "node scripts/jarvis.mjs install",
     "install:voice": "node scripts/jarvis.mjs voice",
     "test": "node scripts/test.mjs",
