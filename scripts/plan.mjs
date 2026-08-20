@@ -66,6 +66,17 @@ export function executionPlan(reg, request, opts = {}) {
 
   const picked = new Map(); // agentId -> { via: [skills], phase }
   const contested = [];
+
+  // Agents a decision-table rule named directly. This is the ONLY way to reach an
+  // agent that carries no skill -- the six governance agents whose subject is JARVIS
+  // itself, and the reviewers whose only skill lives outside this repo. Seeded before
+  // the skill pass so a later skill match merges into the same entry rather than
+  // fighting it.
+  for (const id of routed.directAgents || []) {
+    const a = byId.get(id);
+    if (!a) continue;
+    picked.set(id, { via: [], phase: 1, why: 'named by a routing rule' });
+  }
   for (const [skill, phase] of phaseOfSkill) {
     // never auto-selected by a skill: passive audits the swarm, control decides how
     // much swarm to convene — neither is domain work someone asked for.

@@ -81,19 +81,15 @@
     },
     {
       "id": "meta-work-is-routable",
-      "pass": false,
-      "fails": [
-        "0 agents, expected at least 1"
-      ],
-      "agents": 0
+      "pass": true,
+      "fails": [],
+      "agents": 3
     },
     {
       "id": "review-request-reaches-reviewers",
-      "pass": false,
-      "fails": [
-        "0 agents, expected at least 1"
-      ],
-      "agents": 0
+      "pass": true,
+      "fails": [],
+      "agents": 2
     }
   ]
 }
