@@ -243,3 +243,46 @@ Not "JARVIS is more intelligent". Specifically:
 - `plan` prints a flip-centered verdict against the probe set
 - a deliberately bad routing hint is **blocked** by the P→F gate, demonstrated
 - every existing test still passes, and the new behaviour has its own
+
+
+---
+
+# Addendum — Phase 5 measured, and partly refused
+
+W5 assumed the context problem was the shared pack and that role-scoped slices would
+pay. **Measurement says otherwise, and the premise was wrong.**
+
+| Where | Size | Shared how |
+|---|---|---|
+| context pack | **2,121 bytes** | once, across the whole run |
+| generated agent prompt | **12,390 bytes** | per dispatch |
+| — of which boilerplate identical across all 45 | **10,576 bytes (85%)** | per dispatch |
+
+So role-scoping the pack would have saved nothing: it is 2KB, shared once, and already
+the cheap deterministic path it was designed to be. The cost is in the prompts, where a
+six-agent dispatch ships roughly **63KB of duplication**.
+
+Within a prompt, `## The spoken line` is **42%** of it — a VOICE tutorial carried by all
+45 agents including the eleven `passive` and `control` agents that never announce
+anything, and in a system where sub-agents are mute by design.
+
+**Delivered:** the repeated measurement rationale is cut — the per-syllable budget
+argument was stated identically 45 times and belongs in the skill. ~7.4KB, about 1%.
+
+**Refused, and honestly:** mode-scoping the sections (no VOICE tutorial for
+passive/control, reviewer half only for validation, author half only for active) is the
+change worth ~26KB. I attempted it twice and both attempts produced invalid JavaScript.
+The prompt is one ~350-line template literal whose text is escaped for exactly that
+depth; lifting a block into a function, or nesting a conditional literal inside it,
+changes the escaping requirements in ways that are not visible in a diff. Both times
+`swarm.mjs` was restored from the last green commit.
+
+**The right fix is a refactor, not an insertion:** move the prompt body out of the
+template literal into an array of plain strings assembled by `join`, then gate the
+entries by mode. That removes the escaping trap permanently instead of stepping around
+it. It is a contained, testable change — and it is not something to graft on at the end
+of a session, because the failure mode is a prompt that still compiles while quietly
+missing a section, which no current test would catch.
+
+Scope this as its own phase, with a test asserting per-mode section presence *before*
+the refactor rather than after.

@@ -137,11 +137,9 @@ Six rules. The first is what most agents get wrong:
 - **A real verb and a named subject.** Something must DO something. "Vendor Audit schema
   is in" has both; "schema done, 3 tables" has neither, and it is the single most common
   failure.
-- **Length follows importance.** About six words for a routine outcome. A problem, or
-  something blocked and waiting on a human, earns up to about twelve — that is the
-  announcement worth listening to. This is measured, not taste: a word costs roughly
-  0.38 seconds, and naming the session and the elapsed time spends about two seconds
-  before your clause starts. Past five seconds total, nobody is still listening.
+- **Length follows importance.** About six words for a routine outcome, up to twelve for
+  a problem or something blocked on a human. Measured, not taste — the budget, the
+  per-syllable costs and the reasoning are in the JARVIS skill, not repeated here.
 - **No file paths, ever.** Name the thing, not its location. A path read aloud is one
   long nonsense word.
 - **No identifiers.** No snake_case, no camelCase, no CONSTANT_CASE. "safe_exec" is heard
