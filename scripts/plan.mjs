@@ -40,6 +40,48 @@ function affinity(agent, q) {
   return hits;
 }
 
+/**
+ * Chunk sorted rows into parallel batches, refusing to co-batch two agents that write
+ * the same scope.
+ *
+ * Exported so the collision rule can be tested directly. It has to be: `conflicts_with`
+ * already stops most same-scope pairs at ROUTING time, so a natural request almost never
+ * reaches this guard -- which makes it exactly the kind of code that rots undetected.
+ * This is defence in depth, not the primary mechanism, and it is honest to say so.
+ *
+ * Batching is (phase, depth): phase carries the taxonomy's semantic order, depth
+ * guarantees nothing shares a batch with something it requires. The collision check is a
+ * third constraint on top, and it only ever SPLITS -- it never merges, so it cannot
+ * introduce a dependency violation.
+ */
+export function batchRows(rows, maxBatch = MAX_BATCH) {
+  // A reader (no declared scope) never conflicts, so read-only fan-out -- the case
+  // parallelism actually exists for -- is untouched. "any" overlaps everything.
+  const collides = (a, b) => {
+    const A = a.agent && a.agent.writes;
+    const B = b.agent && b.agent.writes;
+    if (!A || !B) return false;
+    return A === B || A === 'any' || B === 'any';
+  };
+
+  const batches = [];
+  const splits = [];
+  for (const r of rows) {
+    const key = `${r.phase}:${r.depth}`;
+    const last = batches[batches.length - 1];
+    const clash = last && last.key === key ? last.members.find((m) => collides(m, r)) : null;
+    if (clash) {
+      splits.push({ held: r.id, behind: clash.id, scope: r.agent && r.agent.writes });
+      batches.push({ key, phase: r.phase, depth: r.depth, members: [r], splitFrom: clash.id });
+    } else if (last && last.key === key && last.members.length < maxBatch) {
+      last.members.push(r);
+    } else {
+      batches.push({ key, phase: r.phase, depth: r.depth, members: [r] });
+    }
+  }
+  return { batches, splits };
+}
+
 /** Layer an agent by its hard dependencies, so a requirement never shares a batch. */
 function depthOf(id, byId, seen = new Set()) {
   if (seen.has(id)) return 0; // a cycle is doctor's problem, not this function's
@@ -141,13 +183,7 @@ export function executionPlan(reg, request, opts = {}) {
     .map(([id, meta]) => ({ id, ...meta, depth: depthOf(id, byId), agent: byId.get(id) }))
     .sort((a, b) => a.phase - b.phase || a.depth - b.depth || a.id.localeCompare(b.id));
 
-  const batches = [];
-  for (const r of rows) {
-    const key = `${r.phase}:${r.depth}`;
-    const last = batches[batches.length - 1];
-    if (last && last.key === key && last.members.length < MAX_BATCH) last.members.push(r);
-    else batches.push({ key, phase: r.phase, depth: r.depth, members: [r] });
-  }
+  const { batches, splits } = batchRows(rows);
 
   const cost = rows.reduce((n, r) => n + (COST[r.agent.model] ?? COST.opus), 0);
   const baseline = rows.length * COST.opus;
@@ -159,6 +195,7 @@ export function executionPlan(reg, request, opts = {}) {
     routedSkills: routed.selected.map((s) => s.id),
     repoSignals: routed.repoSignals,
     batches,
+    writeSplits: splits,
     dropped: [
       ...routed.dropped.map((d) => ({ ...d, layer: 'skill' })),
       ...dropped.map((d) => ({ ...d, layer: 'agent' })),
@@ -199,6 +236,13 @@ export function render(reg, request, opts = {}) {
   console.log('\nExecution plan');
   p.batches.forEach((b, i) => {
     const par = b.members.length > 1 ? `  [${b.members.length} in parallel]` : '';
+    // A batch that was split for a write collision looks identical to one split by a
+    // dependency, and they mean opposite things -- one is "waits for output", the other
+    // is "would have overwritten it". Say which.
+    if (b.splitFrom) {
+      const scope = b.members[0]?.agent?.writes;
+      console.log(`  -- held back: writes ${scope}, same as ${b.splitFrom} above (§9 collision, not a dependency)`);
+    }
     console.log(`  Batch ${i + 1}  (phase ${b.phase})${par}`);
     for (const m of b.members) {
       const via = m.via.length ? `via ${m.via.join(', ')}` : m.why || 'dependency';

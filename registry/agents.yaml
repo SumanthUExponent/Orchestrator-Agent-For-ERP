@@ -65,6 +65,7 @@ agents:
     mode: active
     model: opus
     tools: [Read, Grep, Glob, Bash, Edit, Write, Agent, Skill]
+    writes: any
     skills: []
     owns: >
       Decomposing a self-contained brief into sub-tasks, dispatching specialists, and
@@ -176,6 +177,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: schema
     skills: [frappe-fixtures, frappe-doctype-development]
     owns: Building the DocTypes, child tables, fields and fixtures the data model specifies.
     requires: [data-model-architect]
@@ -185,6 +187,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: server-logic
     skills: [frappe-api, frappe-hooks, frappe-workflow, frappe-app-dev]
     owns: Whitelisted methods, doc events, scheduler entries and workflow state machines.
     requires: [schema-builder]
@@ -199,6 +202,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: ui-code
     skills: [frappe-ui-page, frappe-web-page, frappe-web-forms, frappe-desk-customization, frontend-development]
     uses_design_system: true
     owns: >
@@ -215,6 +219,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: integrations
     skills: [frappe-api]
     owns: >
       Connections to systems outside this one — outbound calls, inbound webhooks,
@@ -230,6 +235,7 @@ agents:
     mode: active
     model: opus
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: deploy-scripts
     skills: [console-automation-engine, console-report-engineer]
     owns: >
       Idempotent, re-runnable System Console installers. On managed hosting this is the
@@ -244,6 +250,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: reports
     skills: [frappe-report, frappe-print-format, frappe-reports, frappe-printing-templates]
     owns: Report SQL, filter wiring and print layout. Builds reports; data-analyst decides what they should measure.
     conflicts_with: [data-analyst]
@@ -269,6 +276,7 @@ agents:
     mode: active
     model: opus
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: design-system
     skills: [ui-ux-pro-max, frontend-design, uupm-design-system]
     uses_design_system: true
     owns: >
@@ -283,6 +291,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: design-system
     skills: [impeccable, uupm-ui-styling]
     uses_design_system: true
     owns: >
@@ -295,6 +304,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: ui-code
     skills: [ui-ux-pro-max, frappe-ui-patterns]
     uses_design_system: true
     owns: >
@@ -333,6 +343,7 @@ agents:
     mode: active
     model: opus
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: analytics
     skills: []
     owns: >
       Anything where the output is a prediction, score or ranking rather than a
@@ -344,6 +355,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: reports
     skills: [uupm-design-system]
     uses_design_system: true
     owns: >
@@ -356,6 +368,7 @@ agents:
     mode: validation
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: tests
     skills: [frappe-testing]
     owns: >
       Producing evidence a change works. Runs tests, reports real output. A failure is
@@ -367,6 +380,7 @@ agents:
     mode: validation
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: docs
     skills: [business-process-doc]
     owns: >
       Turning acceptance criteria into a UAT script a non-technical user can follow —
@@ -413,6 +427,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: demo-data
     skills: [console-automation-engine]
     uses_design_system: true
     owns: >
@@ -425,6 +440,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: docs
     skills: [gdoc-user-guide]
     owns: >
       End-user guides written from the user's side of the screen, with every state,
@@ -435,6 +451,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: docs
     skills: [business-process-doc]
     owns: SOPs, handover documents and runbooks — how the process operates, not how the UI works.
 
@@ -443,6 +460,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
+    writes: docs
     skills: [context-keeper]
     owns: >
       Capturing architectural decisions and hard-won gotchas at the moment they are
@@ -711,6 +729,17 @@ agents:
 # Every agent returns these fields. Structured handoff, not prose (§7, §10).
 protocol:
   required: [status, summary, voice, log, handoff]
+  # Fields every agent must ADDRESS, though not every one applies to every turn. The
+  # rule that makes them enforceable is that silence is not an option: an inapplicable
+  # field is written as "none". Otherwise "risks:" missing is indistinguishable from
+  # "no risks", and the loop driver cannot gate on a field it cannot tell apart from an
+  # omission.
+  #
+  # Kept separate from `required` rather than merged into it, deliberately. `required`
+  # is what a turn is INVALID without. Making all twelve unconditional buys ceremony:
+  # forty-five agents emitting "dependencies: none" on a typo fix, and a protocol that
+  # is mostly filler stops being read.
+  when_applicable: [objective, findings, testing, files_changed, dependencies, risks, questions]
   fields:
     summary: One paragraph. What was done, in plain terms.
     voice: >
@@ -769,6 +798,21 @@ protocol:
     testing: What was run and the real result. Never assert a pass without output.
     remaining: Anything unfinished, stated plainly.
     handoff: What the next agent or JARVIS needs to continue.
+    objective: >
+      The task as YOU understood it, in one sentence, before you say what you did. It is
+      the cheapest defect detector in the protocol: a coordinator comparing your
+      objective against the one it dispatched catches a misread brief in one line,
+      instead of after the work is built on it.
+    dependencies: >
+      What your work now depends on, and what must be true for it to keep working --
+      another agent's output, a migration having run, a field existing. Not a list of
+      files you read. Say "none" explicitly. This is what makes an ordering mistake
+      visible before it becomes a broken deployment.
+    questions: >
+      What you could not resolve and had to assume. Every question here is a decision
+      someone made by default, so an empty list is a claim that the brief was complete.
+      Say "none" when you mean it. Distinct from `handoff`, which says what comes next;
+      this says what nobody has answered.
 
 # --------------------------------------------------------- conflict reconciliation
 # Two agents that both did the work and disagree about the finding.

@@ -17,6 +17,7 @@ import { build, readYaml, ROOT } from '../scripts/jarvis.mjs';
 import * as routeModule from '../scripts/route.mjs';
 import * as swarmModule from '../scripts/swarm.mjs';
 import * as planModule from '../scripts/plan.mjs';
+import { batchRows } from '../scripts/plan.mjs';
 import { executionPlan } from '../scripts/plan.mjs';
 import { collect } from '../scripts/pack.mjs';
 import { bench } from '../scripts/bench.mjs';
@@ -218,5 +219,57 @@ describe('context pack', () => {
     // Regression: this searched downward only, so scanning apps/<app> answered "no
     // bench" on a machine that has one — the bench root is a PARENT of the app.
     assert.equal(collect(ROOT).benchRoot, null, 'this repo is not a bench');
+  });
+});
+
+describe('two agents that write the same scope never share a batch (§9)', () => {
+  // Defence in depth, and it is honest to say so: `conflicts_with` already stops most
+  // same-scope pairs at ROUTING time, so a natural request rarely reaches this guard.
+  // That is exactly why it is unit-tested rather than exercised through a request --
+  // a guard that never fires in practice is the kind of code that rots undetected.
+  const row = (id, writes, depth = 0, phase = 1) => ({ id, phase, depth, agent: { writes } });
+
+  test('same scope splits into sequential batches', () => {
+    const { batches, splits } = batchRows([row('user-guide-writer', 'docs'), row('process-documenter', 'docs')]);
+    assert.equal(batches.length, 2, 'two docs writers were dispatched concurrently');
+    assert.equal(splits.length, 1);
+    assert.equal(splits[0].scope, 'docs');
+    assert.equal(batches[1].splitFrom, 'user-guide-writer');
+  });
+
+  test('different scopes still run in parallel — the guard must not kill throughput', () => {
+    const { batches, splits } = batchRows([row('backend', 'server-logic'), row('frontend', 'ui-code')]);
+    assert.equal(batches.length, 1, 'non-colliding writers were serialised');
+    assert.equal(splits.length, 0);
+  });
+
+  test('readers never collide, so read-only fan-out is untouched', () => {
+    const { batches } = batchRows([row('impact-analyst', null), row('code-reviewer', null), row('performance-analyst', null)]);
+    assert.equal(batches.length, 1, 'read-only agents were serialised');
+  });
+
+  test('a reader and a writer can share a batch', () => {
+    const { batches } = batchRows([row('impact-analyst', null), row('backend', 'server-logic')]);
+    assert.equal(batches.length, 1);
+  });
+
+  test('"any" overlaps everything, so a delegated coordinator runs alone', () => {
+    const { batches } = batchRows([row('backend', 'server-logic'), row('jarvis-deep', 'any')]);
+    assert.equal(batches.length, 2, 'a coordinator that may touch anything shared a batch');
+  });
+
+  test('the split never violates dependency order', () => {
+    // The collision check only ever SPLITS. Two rows at different depths were already in
+    // different batches, and nothing here may merge them back.
+    const { batches } = batchRows([row('a', 'docs', 0), row('b', 'docs', 1)]);
+    assert.equal(batches.length, 2);
+    assert.equal(batches[0].members[0].id, 'a');
+  });
+
+  test('every declared write scope belongs to an agent that can actually write', () => {
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const scopes = [...y.matchAll(/^    writes: (.+)$/gm)].map((m) => m[1].trim());
+    assert.ok(scopes.length >= 15, `only ${scopes.length} write scopes declared`);
+    assert.ok(!scopes.includes(''), 'an empty write scope disables the check silently');
   });
 });
