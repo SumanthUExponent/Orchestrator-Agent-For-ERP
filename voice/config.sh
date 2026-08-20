@@ -315,3 +315,16 @@ JARVIS_MODEL_SLACK_MS="${JARVIS_MODEL_SLACK_MS:-800}"
 # both still carry the duration, because reading a timeline afterwards is a different
 # question from being told something now. Set to 1 to hear it again.
 JARVIS_SPEAK_ELAPSED="${JARVIS_SPEAK_ELAPSED:-0}"
+
+# Record what each agent actually produced, one line per completion, in
+# ~/.claude/jarvis/ledger/YYYY-MM.jsonl.
+#
+# This is the only thing in the system that observes OUTCOMES. doctor and health are
+# static -- they validate the registry against itself and have never watched a task
+# run. Without this there is no evidence base for "which agent is useful", "which
+# verification caught something" or "which dispatch was wasted", so those questions
+# could only be answered by assertion.
+#
+# It records; it does not judge. The evaluator judges, and a human gates whatever the
+# judgement would change. 0 disables.
+JARVIS_LEDGER="${JARVIS_LEDGER:-1}"

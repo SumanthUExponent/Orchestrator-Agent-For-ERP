@@ -710,7 +710,7 @@ agents:
 # --------------------------------------------------------------- protocol
 # Every agent returns these fields. Structured handoff, not prose (§7, §10).
 protocol:
-  required: [summary, voice, log, handoff]
+  required: [status, summary, voice, log, handoff]
   fields:
     summary: One paragraph. What was done, in plain terms.
     voice: >
@@ -736,6 +736,27 @@ protocol:
       announced immediately, at the highest priority, ahead of every other event -- a
       run that stopped for authorisation is not a run that finished. Optional by nature:
       omit the line entirely on a turn that crossed no gate.
+    status: >
+      SUCCESS | PARTIAL | BLOCKED | FAILED. One word, and it is the field JARVIS reads
+      to decide what happens next -- so it must describe the WORK, not your effort.
+      PARTIAL means some of the objective is done and you can say which part is not.
+      BLOCKED means you stopped on something outside your control and named it in
+      `handoff`. FAILED means you tried and it did not work; say what you observed.
+      "SUCCESS" on unverified work is the one answer that makes every other field
+      worthless.
+    confidence: >
+      HIGH | MEDIUM | LOW, about the WORK rather than about yourself. HIGH means you
+      verified it and the evidence is in `testing`. MEDIUM means it is right as far as
+      you could check. LOW means you are handing over something you could not confirm --
+      which is useful information, not an admission.
+    recommended_next_agent: >
+      The agent that should pick this up, or "none" if the work is finished. Name one.
+      This is a recommendation and not a dispatch: JARVIS decides, but a specialist who
+      has just read the code knows better than a router who has not.
+    unverified: >
+      What you did NOT check. Empty is a claim, so only write it when you mean it.
+      Anything asserted without evidence belongs here rather than in `testing` -- and a
+      reviewer reads this field first.
     verdict: >
       REVIEWERS ONLY, and required of them: "accept" or "revise". A verdict of revise
       must name what would satisfy you -- an objection nobody can act on is not a

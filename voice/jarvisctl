@@ -659,7 +659,59 @@ case "${1:-status}" in
     echo "Anything marked OVER CEILING is too long to be heard out."
     ;;
 
+  ledger)
+    # Read the outcome ledger. This exists so the ledger cannot become a write-only
+    # log: if nobody can see it, nobody trusts it, and an untrusted record is worse
+    # than none because it invites decisions made on a feeling instead.
+    #
+    # Reports OBSERVATIONS, never a score. "schema-builder: 12 success, 1 partial" is a
+    # fact. "schema-builder is good" is a judgement, and judging is the evaluator's job
+    # behind a human gate.
+    LEDGER_DIR="$J/ledger"
+    if [ ! -d "$LEDGER_DIR" ] || [ -z "$(ls -A "$LEDGER_DIR" 2>/dev/null)" ]; then
+      echo "No ledger yet. It fills as sub-agents report, one line each."
+      echo "Set JARVIS_LEDGER=0 in config.sh to keep it that way."
+      exit 0
+    fi
+    WHICH="${2:-}"
+    case "$WHICH" in
+      --raw) cat "$LEDGER_DIR"/*.jsonl; exit 0 ;;
+    esac
+    cat "$LEDGER_DIR"/*.jsonl 2>/dev/null | awk -F'"' '
+      /"agent"/ {
+        a=""; st=""; cf=""; uv=""
+        for (i = 1; i <= NF; i++) {
+          if ($i == "agent")       a  = $(i+2)
+          if ($i == "status")      st = $(i+2)
+          if ($i == "confidence")  cf = $(i+2)
+        }
+        if ($0 ~ /"unverified":1/) uv = 1
+        n[a]++; s[a "|" st]++; total[st]++
+        if (cf == "LOW") low[a]++
+        if (uv == 1) unv[a]++
+        if (st == "unreported") silent[a]++
+        seen[a] = 1
+      }
+      END {
+        printf "AGENT OUTCOMES  (observations, not a score)\n\n"
+        printf "  %-22s %5s  %8s %8s %8s %8s   %s\n", "agent", "runs", "success", "partial", "blocked", "failed", "flags"
+        for (a in seen) {
+          f = ""
+          if (silent[a]) f = f sprintf("%d silent ", silent[a])
+          if (unv[a])    f = f sprintf("%d unverified ", unv[a])
+          if (low[a])    f = f sprintf("%d low-confidence", low[a])
+          printf "  %-22s %5d  %8d %8d %8d %8d   %s\n", a, n[a], \
+            s[a "|SUCCESS"], s[a "|PARTIAL"], s[a "|BLOCKED"], s[a "|FAILED"], f
+        }
+        printf "\n  totals: %d success · %d partial · %d blocked · %d failed · %d unreported\n", \
+          total["SUCCESS"], total["PARTIAL"], total["BLOCKED"], total["FAILED"], total["unreported"]
+        if (total["unreported"] > 0)
+          printf "  unreported means the agent did not emit STATUS. That is a protocol\n  failure in practice, whatever the registry says.\n"
+      }'
+    ;;
+
   *) echo "usage: jarvisctl [status|doctor|report|brief [name]|context [project] [--speak|--reindex]|
                  daily [date]|yesterday [--speak]|test|chimes|demo|audition [--text]|log [n]|
+                 ledger [--raw]|
                  mute <min>|unmute|reset|voices]"; exit 2 ;;
 esac

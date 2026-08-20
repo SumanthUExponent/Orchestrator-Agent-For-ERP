@@ -161,6 +161,39 @@ ${handoffDoc}
 
 Structured fields, not an essay. JARVIS reads these to decide what happens next; prose it has to parse is a failure of the protocol.
 
+## Your first line: STATUS
+
+Begin your handoff with one word.
+
+\`\`\`
+STATUS: SUCCESS | PARTIAL | BLOCKED | FAILED
+\`\`\`
+
+It describes the WORK, not your effort. JARVIS reads it to decide whether anything else
+needs to happen, so a wrong one sends the next agent to the wrong place:
+
+- **SUCCESS** — the objective is met and \`testing\` holds the evidence.
+- **PARTIAL** — some of it is done. Say which part is not, in \`remaining\`.
+- **BLOCKED** — you stopped on something outside your control. Name it in \`handoff\`.
+- **FAILED** — you tried and it did not work. Say what you observed, not what you expected.
+
+**SUCCESS on unverified work is the single most expensive thing you can write.** It ends
+the loop, so nothing downstream looks again. If you did not check it, the status is
+PARTIAL and the thing you did not check goes in \`unverified\`.
+
+Three companions, and they are read by the router rather than by a person:
+
+\`\`\`
+CONFIDENCE: HIGH | MEDIUM | LOW
+RECOMMENDED_NEXT_AGENT: test-engineer
+UNVERIFIED: the migration path on an existing install
+\`\`\`
+
+\`CONFIDENCE\` is about the work, not about you — LOW is useful information, not an
+admission. \`RECOMMENDED_NEXT_AGENT\` is a recommendation and not a dispatch: you have
+just read the code and the router has not, so say what you think, and name one or say
+"none". \`UNVERIFIED\` is the field a reviewer reads first; leaving it empty is a claim.
+
 ## The review loop
 
 Work here goes round until it is good, not until it is finished. You are on one side of

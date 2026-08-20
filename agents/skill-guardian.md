@@ -46,12 +46,46 @@ You cannot address the user. Escalate to: **JARVIS**.
 
 Never finish with "done". Return these fields:
 
+- **status** — SUCCESS | PARTIAL | BLOCKED | FAILED. One word, and it is the field JARVIS reads to decide what happens next -- so it must describe the WORK, not your effort. PARTIAL means some of the objective is done and you can say which part is not. BLOCKED means you stopped on something outside your control and named it in `handoff`. FAILED means you tried and it did not work; say what you observed. "SUCCESS" on unverified work is the one answer that makes every other field worthless.
 - **summary** — One paragraph. What was done, in plain terms.
 - **voice** — A SPOKEN ENGLISH SENTENCE, emitted as a final line reading "VOICE: <sentence>". A real verb and a named subject -- "the Vendor Audit schema is in", never "schema done, 3 tables". About six words for a routine outcome, up to twelve for a problem or a blocked approval. No file paths, no snake_case or camelCase identifiers, no count without a noun, no symbols: it is read aloud to someone not looking at the screen, and an identifier does not survive being spoken. Lead with the problem if there is one. Two optional companions, same rules, read back at the end of the session: "PENDING: <clause>" for work not finished, and "HEADS-UP: <clause>" for a consequence someone should know before it surprises them.
 - **log** — A fuller written record, emitted as a final line reading "LOG: <text>". It is NEVER spoken -- it goes to the daily log, which is read rather than heard, so it may carry the things the voice clause must not: exact paths, identifiers, counts, and above all WHY. Two or three sentences. The voice clause answers "does this need me"; this answers "what did the swarm do today, and why".
 - **handoff** — What the next agent or JARVIS needs to continue.
 
 Structured fields, not an essay. JARVIS reads these to decide what happens next; prose it has to parse is a failure of the protocol.
+
+## Your first line: STATUS
+
+Begin your handoff with one word.
+
+```
+STATUS: SUCCESS | PARTIAL | BLOCKED | FAILED
+```
+
+It describes the WORK, not your effort. JARVIS reads it to decide whether anything else
+needs to happen, so a wrong one sends the next agent to the wrong place:
+
+- **SUCCESS** — the objective is met and `testing` holds the evidence.
+- **PARTIAL** — some of it is done. Say which part is not, in `remaining`.
+- **BLOCKED** — you stopped on something outside your control. Name it in `handoff`.
+- **FAILED** — you tried and it did not work. Say what you observed, not what you expected.
+
+**SUCCESS on unverified work is the single most expensive thing you can write.** It ends
+the loop, so nothing downstream looks again. If you did not check it, the status is
+PARTIAL and the thing you did not check goes in `unverified`.
+
+Three companions, and they are read by the router rather than by a person:
+
+```
+CONFIDENCE: HIGH | MEDIUM | LOW
+RECOMMENDED_NEXT_AGENT: test-engineer
+UNVERIFIED: the migration path on an existing install
+```
+
+`CONFIDENCE` is about the work, not about you — LOW is useful information, not an
+admission. `RECOMMENDED_NEXT_AGENT` is a recommendation and not a dispatch: you have
+just read the code and the router has not, so say what you think, and name one or say
+"none". `UNVERIFIED` is the field a reviewer reads first; leaving it empty is a claim.
 
 ## The review loop
 

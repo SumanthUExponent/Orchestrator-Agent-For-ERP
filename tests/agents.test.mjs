@@ -204,3 +204,41 @@ describe('the review loop is on every agent, on both sides of it', () => {
     assert.deepEqual(missing, [], 'agents not told when the loop stops');
   });
 });
+
+describe('the handoff carries decisions, not just description', () => {
+  // Twelve fields existed and all of them were DESCRIPTIVE, so the router could not
+  // answer the questions it is supposed to answer automatically: is this done, is
+  // another agent needed, was verification enough. Those were read out of prose by a
+  // human. These four fields are what make them mechanical.
+  const DECISION = [
+    'STATUS: SUCCESS | PARTIAL | BLOCKED | FAILED',
+    'CONFIDENCE: HIGH | MEDIUM | LOW',
+    'RECOMMENDED_NEXT_AGENT:',
+    'UNVERIFIED:',
+  ];
+
+  test('every agent is told to open with a status', () => {
+    const missing = [];
+    for (const f of FILES) {
+      const b = read(f);
+      for (const d of DECISION) if (!b.includes(d)) missing.push(`${f}: ${d}`);
+    }
+    assert.deepEqual(missing, [], 'agents that cannot report a decision');
+  });
+
+  test('and told what the expensive mistake is', () => {
+    // A wrong SUCCESS ends the loop, so nothing downstream looks again. That is the
+    // one failure mode worth naming explicitly in every prompt.
+    const missing = FILES.filter(
+      (f) => !read(f).includes('SUCCESS on unverified work is the single most expensive')
+    );
+    assert.deepEqual(missing, [], 'agents not warned about a false SUCCESS');
+  });
+
+  test('status is required by the protocol, not optional', () => {
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const req = y.match(/^  required: \[(.*?)\]/m);
+    assert.ok(req, 'no required list in the protocol');
+    assert.ok(req[1].includes('status'), `status is not required: ${req[1]}`);
+  });
+});
