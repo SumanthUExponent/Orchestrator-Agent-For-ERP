@@ -12,6 +12,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { build, readYaml, ROOT } from '../scripts/jarvis.mjs';
 import { plan } from '../scripts/route.mjs';
+import * as E from '../scripts/evaluate.mjs';
 
 const reg = build({ quiet: true });
 const P = (request, opts = {}) => plan(reg, request, { readYaml, root: ROOT, cwd: ROOT, ...opts });
@@ -130,5 +131,56 @@ describe('scorer fallback (§9)', () => {
       assert.ok(r.score >= 0 && r.score <= 1, `score ${r.score} out of range`);
       assert.equal(typeof r.band, 'string');
     }
+  });
+});
+
+describe('flip-centered evaluation', () => {
+  // The whole point is that an aggregate total hides regressions. These assert the
+  // classification directly, because that is the logic a release decision rests on.
+  test('a pass that becomes a fail is a regression, and it blocks', () => {
+    const flips = E.compare(
+      [{ id: 'a', pass: false, fails: ['x'] }, { id: 'b', pass: true, fails: [] }],
+      { results: [{ id: 'a', pass: true }, { id: 'b', pass: true }] }
+    );
+    assert.equal(flips.regressions.length, 1);
+    assert.equal(flips.regressions[0].id, 'a');
+    assert.equal(flips.fixes.length, 0);
+  });
+
+  test('a fail that becomes a pass is a fix, and it is the evidence', () => {
+    const flips = E.compare(
+      [{ id: 'a', pass: true, fails: [] }],
+      { results: [{ id: 'a', pass: false }] }
+    );
+    assert.equal(flips.fixes.length, 1);
+    assert.equal(flips.regressions.length, 0);
+  });
+
+  test('a swapped pair does NOT look unchanged', () => {
+    // Two probes trade places. The total is identical -- 1 of 2 both times -- which is
+    // exactly the case a score cannot see and this must.
+    const flips = E.compare(
+      [{ id: 'a', pass: false, fails: ['broke'] }, { id: 'b', pass: true, fails: [] }],
+      { results: [{ id: 'a', pass: true }, { id: 'b', pass: false }] }
+    );
+    assert.equal(flips.regressions.length, 1, 'the regression must surface');
+    assert.equal(flips.fixes.length, 1, 'and so must the fix');
+    assert.equal(flips.unchanged, 0);
+  });
+
+  test('a probe with no baseline is new, not a flip', () => {
+    const flips = E.compare([{ id: 'z', pass: false, fails: ['x'] }], { results: [] });
+    assert.equal(flips.new.length, 1);
+    assert.equal(flips.regressions.length, 0, 'a new probe must not read as a regression');
+  });
+
+  test('the shape check reads a plan, not a feeling', () => {
+    const plan = { effort: 'standard', batches: [{ members: [{ id: 'backend' }] }], panel: [] };
+    assert.equal(E.checkProbe({ id: 'p', expect: { minAgents: 1 } }, plan, []).pass, true);
+    assert.equal(E.checkProbe({ id: 'p', expect: { maxAgents: 0 } }, plan, []).pass, false);
+    assert.equal(E.checkProbe({ id: 'p', expect: { mustInclude: ['nope'] } }, plan, []).pass, false);
+    assert.equal(E.checkProbe({ id: 'p', expect: { reviewPanel: true } }, plan, []).pass, false,
+      'an empty panel means nothing would review the work');
+    assert.equal(E.checkProbe({ id: 'p', expect: { humanGateCount: 1 } }, plan, ['production deployment']).pass, true);
   });
 });

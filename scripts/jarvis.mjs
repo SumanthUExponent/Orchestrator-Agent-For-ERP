@@ -473,6 +473,27 @@ try {
       render(buildAgents({ root: ROOT, readYaml, apply: rest.includes('--apply') }));
       break;
     }
+    case 'evaluate': {
+      // Flip-centered, per the assessment. Cheap because routing involves no model.
+      const evalModule = await import('./evaluate.mjs');
+      const planModule = await import('./plan.mjs');
+      const routeModule = await import('./route.mjs');
+      const swarmModule = await import('./swarm.mjs');
+      const voiceModule = await import('./voice.mjs');
+      process.exit(
+        evalModule.render({
+          root: ROOT,
+          readYaml,
+          buildRegistry: build,
+          planModule,
+          routeModule,
+          swarmModule,
+          voiceModule,
+          save: rest.includes('--save'),
+        })
+      );
+      break;
+    }
     case 'doctor': {
       const { doctor } = await import('./swarm.mjs');
       process.exit(doctor({ root: ROOT, readYaml, registry: build({ quiet: true }) }));

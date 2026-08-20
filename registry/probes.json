@@ -1,0 +1,109 @@
+{
+  "_comment": [
+    "Routing probes. Each is a request with the SHAPE its plan must have.",
+    "",
+    "This exists because 'JARVIS is better now' was previously unfalsifiable. Every",
+    "expectation below was verified by hand against the real command before being",
+    "written down, so a failure here means behaviour changed, not that the probe was",
+    "optimistic.",
+    "",
+    "Judged by FLIPS, not by score. A total that stays at 18/20 while two probes swap",
+    "places has hidden a regression behind an average -- so `evaluate` reports P->F and",
+    "F->P per probe and treats a single P->F as blocking.",
+    "",
+    "Keep these cheap: routing is deterministic and involves no model, so the whole set",
+    "runs in seconds and can gate every commit."
+  ],
+  "probes": [
+    {
+      "id": "typo-convenes-nobody",
+      "request": "fix a typo in the readme",
+      "why": "the control plane exists to refuse. If this ever convenes a swarm the whole cost argument is dead.",
+      "expect": { "effort": "minimal", "maxAgents": 0 }
+    },
+    {
+      "id": "rename-stays-minimal",
+      "request": "rename a variable",
+      "why": "same class of work; must not drift into standard effort",
+      "expect": { "effort": "minimal", "maxAgents": 0 }
+    },
+    {
+      "id": "schema-work-routes",
+      "request": "add a field to a DocType",
+      "why": "the core domain case. Must reach the data-model agents.",
+      "expect": { "minAgents": 2, "mustInclude": ["data-model-architect"] }
+    },
+    {
+      "id": "neutral-phrasing-routes",
+      "request": "add a field to a form",
+      "why": "a stranger's wording for the same job. Routed nothing until the triggers were widened.",
+      "expect": { "minAgents": 2 }
+    },
+    {
+      "id": "workflow-plus-report",
+      "request": "build an approval workflow with a report",
+      "why": "multi-skill work must batch rather than serialise into one chain",
+      "expect": { "minAgents": 4, "mustInclude": ["requirements-analyst"] }
+    },
+    {
+      "id": "tests-reach-the-panel",
+      "request": "add a DocType and test it",
+      "why": "a validation agent must actually be routed, or the review loop has no panel",
+      "expect": { "minAgents": 2, "mustInclude": ["test-engineer"], "reviewPanel": true }
+    },
+    {
+      "id": "production-hits-the-gate",
+      "request": "deploy the retrofit module to production",
+      "why": "gate 2. The loudest thing the system does; it must not go quiet.",
+      "expect": { "humanGates": ["production deployment"] }
+    },
+    {
+      "id": "dropped-table-hits-the-gate",
+      "request": "drop the audit table and rebuild it",
+      "why": "gate 1, and it printed nothing at all before the gates were surfaced in plan",
+      "expect": { "humanGates": ["destructive database changes"] }
+    },
+    {
+      "id": "force-push-hits-the-gate",
+      "request": "force push the develop branch",
+      "why": "gate 3",
+      "expect": { "humanGates": ["destructive git operations (force push, history rewrite, branch deletion)"] }
+    },
+    {
+      "id": "two-gates-both-named",
+      "request": "deploy to production and drop the audit table",
+      "why": "naming one gate and swallowing the other is worse than naming neither",
+      "expect": { "humanGateCount": 2 }
+    },
+    {
+      "id": "near-miss-stays-silent",
+      "request": "drop the trailing comma from the list",
+      "why": "the false-positive case. A gate warning people learn to ignore is worse than none.",
+      "expect": { "humanGateCount": 0 }
+    },
+    {
+      "id": "production-noun-stays-silent",
+      "request": "the production numbers look wrong in the report",
+      "why": "one signal only -- 'production' as a noun is not a deployment",
+      "expect": { "humanGateCount": 0 }
+    },
+    {
+      "id": "nonsense-convenes-nobody",
+      "request": "xyzzy plugh frobnicate",
+      "why": "an unroutable request must degrade to an answer, never to a crash or a full swarm",
+      "expect": { "maxAgents": 0 }
+    },
+    {
+      "id": "meta-work-is-routable",
+      "request": "audit the swarm roster for unused agents",
+      "why": "the system could not route work about itself at all. Six governance agents were unreachable.",
+      "expect": { "minAgents": 1 }
+    },
+    {
+      "id": "review-request-reaches-reviewers",
+      "request": "review this change for correctness",
+      "why": "asking for a review convened nobody, because code-reviewer's only skill is external",
+      "expect": { "minAgents": 1 }
+    }
+  ]
+}
