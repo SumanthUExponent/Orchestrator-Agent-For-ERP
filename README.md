@@ -100,7 +100,7 @@ It stops and says which.
 | [Why this exists](#-why-this-exists) | the problem a plain agent list does not solve |
 | [How it works](#-how-it-works) | route → plan → dispatch → gate |
 | [Speed](#-speed-is-a-design-problem-not-a-model-problem) | why it beats an all-opus run |
-| [The swarm](#-the-swarm) | 45 agents, 9 divisions, and who audits the author |
+| [The swarm](#-the-swarm) | 46 agents, 9 divisions, and who audits the author |
 | [Install](#-install) | two commands |
 | [The voice layer](#adding-the-voice-layer) | the half that talks |
 | [Commands](#-commands) | everything you can type |
@@ -234,7 +234,7 @@ The cheapest fix is upstream of all four: **most requests should never reach the
 
 ## 🛠️ The swarm
 
-45 agents, generated from `registry/agents.yaml` — `agents/*.md` is build output, so adding an agent is a registry edit rather than 45 files to keep in sync.
+46 agents, generated from `registry/agents.yaml` — `agents/*.md` is build output, so adding an agent is a registry edit rather than 46 files to keep in sync.
 
 | Division | Agents |
 |---|---|
@@ -243,11 +243,13 @@ The cheapest fix is upstream of all four: **most requests should never reach the
 | Development | `schema-builder`, `backend`, `frontend`, `integration-developer`, `console-deployer`, `reporting-developer` |
 | UI/UX | `ux-researcher`, `ui-designer`, `interaction-designer`, `mobile-ux`, `accessibility` |
 | Data | `data-analyst`, `data-scientist`, `dataviz-specialist` |
-| Quality | `test-engineer`, `uat-coordinator`, `qa-engineer`, `code-reviewer`, `performance-analyst` |
+| Quality | `test-engineer`, `uat-coordinator`, `qa-engineer`, `code-reviewer`, `security-reviewer`, `performance-analyst` |
 | Demo & docs | `demo-builder`, `user-guide-writer`, `process-documenter`, `knowledge-curator` |
 | Ops | `git-safety`, `deployment-safety`, `migration-analyst` |
 | Passive governance | `skill-guardian`, `agent-guardian`, `routing-auditor`, `knowledge-guardian`, `swarm-evolution`, `efficiency-auditor` |
 | Control plane | `fast-path-triage`, `context-broker`, `swarm-dispatcher`, `result-synthesizer`, `quality-sentinel` |
+
+`code-reviewer` asks whether the code is right; `security-reviewer` asks what an attacker could do with it. Both run on one diff and usually should — they are different questions, so they are deliberately NOT declared as conflicting. Its routing rule fires on the obvious words *and* on the changes that need it without being described as security work: a whitelisted endpoint, a portal page, a token in a fixture. Those are the ones nobody thinks to ask about.
 
 **The control plane exists to prevent dispatches, not to add them.** An extra agent is a full round trip, so one that does not pay for its own latency is agent theatre with better vocabulary. Each is named for the specific waste it removes: triage decides how much swarm a request deserves → broker maps the ground once → dispatcher batches the run → *[specialists]* → synthesizer collapses the returns → sentinel decides what actually needs reviewing → auditor scores the run afterwards.
 
@@ -280,7 +282,7 @@ git clone https://github.com/SumanthUExponent/JARVIS-For-ERP.git
 cd JARVIS-For-ERP
 
 node scripts/jarvis.mjs install              # dry run — shows the plan, writes nothing
-node scripts/jarvis.mjs install --apply      # install the skills AND the 45 agents
+node scripts/jarvis.mjs install --apply      # install the skills AND the 46 agents
 node scripts/jarvis.mjs health               # verify the skills
 node scripts/jarvis.mjs doctor               # verify the swarm
 ```
@@ -889,7 +891,7 @@ jarvis/SKILL.md      the skill Claude Code loads
 registry/taxonomy.yaml     categories and execution phases
 registry/overlay.yaml      per-skill orchestration metadata + external manifest
 registry/routing.yaml      decision table, composites, scorer weights, thresholds
-registry/agents.yaml       the 45 agents: mode, model tier, ownership, conflicts
+registry/agents.yaml       the 46 agents: mode, model tier, ownership, conflicts
 scripts/jarvis.mjs   CLI: build, health, route, plan, pack, install, agents, doctor
 scripts/route.mjs          routing engine — request to skills
 scripts/plan.mjs           execution planner — skills to agents, batches, tiers, cost

@@ -276,7 +276,7 @@ agents:
     mode: active
     model: opus
     tools: [Read, Grep, Glob, Bash, Edit, Write]
-    writes: design-system
+    writes: design/tokens/** design/system/**
     skills: [ui-ux-pro-max, frontend-design, uupm-design-system]
     uses_design_system: true
     owns: >
@@ -291,7 +291,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
-    writes: design-system
+    writes: design/flows/**
     skills: [impeccable, uupm-ui-styling]
     uses_design_system: true
     owns: >
@@ -304,7 +304,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
-    writes: ui-code
+    writes: mobile/**
     skills: [ui-ux-pro-max, frappe-ui-patterns]
     uses_design_system: true
     owns: >
@@ -355,7 +355,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
-    writes: reports
+    writes: reports/charts/**
     skills: [uupm-design-system]
     uses_design_system: true
     owns: >
@@ -380,7 +380,7 @@ agents:
     mode: validation
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
-    writes: docs
+    writes: docs/uat/**
     skills: [business-process-doc]
     owns: >
       Turning acceptance criteria into a UAT script a non-technical user can follow —
@@ -411,6 +411,53 @@ agents:
       Writes nothing — findings only.
     checks: [safe_exec, idempotency, no-bench assumptions, unrequested abstraction]
 
+  # Added on instruction, and the reasoning is recorded because it overrides the
+  # assessment. §13 says no agent without measurable value, and the ledger was empty, so
+  # docs/ARCHITECTURE-ASSESSMENT.md argued for waiting. The owner decided otherwise. That
+  # is a legitimate call -- "there is no evidence yet" is an argument for caution, not a
+  # veto -- and what mattered was that the absence be deliberate rather than unnoticed.
+  #
+  # The gap it fills is real and was named before it was filled: security existed as a
+  # human GATE (nothing crosses without approval) and as a checklist item inside
+  # code-reviewer's correctness pass. That is enough to stop a bad change shipping and not
+  # enough to FIND one -- nobody was dispatched to ask what an attacker could do.
+  #
+  # Deliberately NOT given Write. A reviewer that can rewrite the thing it reviews will
+  # fix the finding instead of reporting it, and the finding is the product.
+  security-reviewer:
+    role: What an attacker could do with this
+    mode: validation
+    selected_by: jarvis
+    model: opus
+    tools: [Read, Grep, Glob, Bash]
+    skills: []
+    owns: >
+      Reviewing a change for exploitable weakness rather than for correctness — permission
+      and role checks that can be bypassed, injection through query or template
+      construction, secrets in code or fixtures, unauthenticated endpoints, and data
+      exposed across tenant or role boundaries. Reports findings; writes nothing.
+    # NOT `conflicts_with: [code-reviewer]`, though the first draft said so and doctor
+    # rejected it as an asymmetric conflict -- correctly, and for a better reason than the
+    # asymmetry. `conflicts_with` means "never route both", and both SHOULD often run on
+    # one diff: they are not contesting the same question. Declaring the conflict would
+    # have made every security review cost a correctness review.
+    conflict_rule: >
+      code-reviewer asks whether the code is right; security-reviewer asks what an
+      attacker could do with it. Both may run on one diff and usually should. Where they
+      overlap is safe_exec: code-reviewer owns it as a correctness and platform
+      constraint, and security-reviewer defers rather than duplicating the finding.
+    checks:
+      - permission and role checks that can be bypassed or are absent
+      - SQL and query construction built from unvalidated input
+      - template and print-format injection
+      - secrets, tokens or credentials in code, fixtures or test data
+      - whitelisted endpoints reachable without authentication
+      - data crossing a role, company or tenant boundary
+      - escalation through a workflow transition or a doc event
+    governance: >
+      Security-sensitive changes are one of the seven human gates. Finding one is this
+      agent's job; APPROVING one is never its job. Report and escalate.
+
   performance-analyst:
     role: Speed and cost of the change
     mode: validation
@@ -440,7 +487,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
-    writes: docs
+    writes: docs/guides/**
     skills: [gdoc-user-guide]
     owns: >
       End-user guides written from the user's side of the screen, with every state,
@@ -451,7 +498,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
-    writes: docs
+    writes: docs/sop/**
     skills: [business-process-doc]
     owns: SOPs, handover documents and runbooks — how the process operates, not how the UI works.
 
@@ -460,7 +507,7 @@ agents:
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
-    writes: docs
+    writes: docs/decisions/**
     skills: [context-keeper]
     owns: >
       Capturing architectural decisions and hard-won gotchas at the moment they are

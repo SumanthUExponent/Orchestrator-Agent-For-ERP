@@ -534,7 +534,7 @@ try {
       // `--round 2 --history h.json` back in as three files named "2" and "h.json",
       // and the run died on ENOENT reading "2" -- with the error swallowed if stderr
       // was redirected, which is exactly how it was found.
-      const VALUED = new Set(['round', 'history']);
+      const VALUED = new Set(['round', 'history', 'session']);
       const consumed = new Set();
       for (let i = 0; i < rest.length; i++) {
         const m = rest[i].match(/^--(.+)$/);
@@ -580,6 +580,23 @@ try {
       const code = loopModule.render(v);
       // Carry the objection keys forward, or no-progress cannot be detected next round.
       if (historyFile) fs.writeFileSync(historyFile, JSON.stringify(v.history, null, 2) + '\n');
+
+      // Record, unless told not to. ON by default: the ledger's whole problem was that
+      // nothing ever wrote to it, and an opt-in recorder would have reproduced that
+      // exactly. The driver already holds every handoff, so this costs one append.
+      if (!rest.includes('--no-record')) {
+        const voiceMod = await import('./voice.mjs');
+        const res = loopModule.recordLedger(v, handoffs, {
+          dir: path.join(voiceMod.jarvisDir(), 'ledger'),
+          session: flag('session') || 'loop',
+        });
+        if (res.written) {
+          console.log(`Ledger: +${res.written} row${res.written === 1 ? '' : 's'} -> ${res.file}`);
+          console.log('  `jarvis.mjs learn` reads these. It proposes nothing until 5+ runs per agent.');
+        } else if (res.error) {
+          console.log(`Ledger: not written (${res.error}). The verdict above stands regardless.`);
+        }
+      }
       process.exit(code);
       break;
     }

@@ -132,6 +132,45 @@ rules:
       quality-sentinel rides along because it owns which outputs deserve deep review --
       the panel question is its job, not the requester's.
 
+  # ------------------------------------------------------------ security review
+  # security-reviewer is selected_by: jarvis, so without a rule naming it the agent exists
+  # and is unreachable -- which is the "agent theatre" doctor warns about, arrived at from
+  # the other direction. Adding it to the roster and not to the router would have been
+  # worse than not adding it, because the roster would then claim a capability nothing
+  # can invoke.
+  #
+  # Two trigger families, and the second matters more than the first. Anyone who types
+  # "security" gets it, obviously. But the changes that NEED a security review are mostly
+  # not described as security work -- a whitelisted endpoint, a permission change, a
+  # portal page, a token. Those are the ones where nobody thinks to ask.
+  - id: security-review
+    when_any:
+      - security
+      - vulnerability
+      - exploit
+      - injection
+      - authentication
+      - authorization
+      - permission bypass
+      - whitelisted
+      - api endpoint
+      - public endpoint
+      - guest access
+      - portal page
+      - credential
+      - api key
+      - token
+      - password
+    # "permission" alone is far too broad -- ordinary role setup is not a security review,
+    # and a reviewer convened on every permission tweak is one people learn to skip.
+    unless: [permission matrix, permission report, list permissions]
+    agents: [security-reviewer]
+    note: >
+      Finding a weakness is this agent's job; approving one never is. "security-sensitive
+      changes" is one of the seven human gates, so a finding escalates rather than being
+      signed off. It runs ALONGSIDE code-reviewer rather than instead of it -- correctness
+      and exploitability are different questions about the same diff.
+
   - id: console-script-report
     when_all: [console]
     when_any: [report, script report, query report]

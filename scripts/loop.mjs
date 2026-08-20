@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 /**
  * The review-loop driver — the thing that says "not done yet", and why.
  *
@@ -102,6 +105,12 @@ export function parseHandoff(text, { agent = 'unknown' } = {}) {
     }
   }
 
+  // A handoff that names itself is authoritative over the filename. Ledger rows keyed on
+  // a filename are only as meaningful as whatever the caller happened to call the file --
+  // "a1.md" tells `learn` nothing, and agent-health metrics keyed on it are noise.
+  const named = (out.fields.agent || out.fields.agent_id || '').trim();
+  if (named && /^[a-z][a-z0-9-]{1,40}$/i.test(named)) out.agent = named.toLowerCase();
+
   out.status = (out.fields.status || '').toUpperCase().split(/[^A-Z]/).filter(Boolean)[0] || '';
   out.confidence = (out.fields.confidence || '').toUpperCase().split(/[^A-Z]/).filter(Boolean)[0] || '';
   out.verdict = (out.fields.verdict || '').toLowerCase().includes('revise')
@@ -142,6 +151,44 @@ export function checkProtocol(h, protocol) {
 }
 
 /**
+ * Does `testing` contain EVIDENCE, or an assertion that testing happened?
+ *
+ * The driver's stated limitation was that it cannot judge quality, and that is still
+ * true — it cannot tell whether a reviewer was right. But there is one quality question
+ * it CAN answer mechanically, and it is the one that matters most: "testing: passed" and
+ * "testing: 4 passed, 0 failed" are not the same claim. The first is an agent's opinion
+ * of its own work; the second is output. The protocol already says "never assert a pass
+ * without output" and nothing checked it.
+ *
+ * Evidence looks like: a count, a command, a file:line, a duration, a diff stat. A bare
+ * adjective does not. Deliberately generous — the cost of a false "no evidence" is one
+ * extra round, and the cost of accepting "looks good" as proof is the whole point of the
+ * gate.
+ */
+export const EVIDENCE_PATTERNS = [
+  /\b\d+\s*(pass|passed|fail|failed|ok|error|warning|test|assertion|row|record|node|edge)/i,
+  /\b(pass|passed|fail|failed|ok)\b[^.]{0,20}\b\d+/i,
+  /\b(npm|node|bench|pytest|yarn|pnpm|make|cargo|go|python|sh|bash)\b.{0,40}\b(test|run|check|lint|build)/i,
+  /\bexit (code )?\d+/i,
+  /\d+\s*(ms|s|sec|seconds|m)\b/i,
+  /[\w./-]+\.(mjs|js|ts|py|json|yaml|yml|sh|md):\d+/,
+  /\b\d+\s*(insertion|deletion|file)s?\b/i,
+  /\b\d+\s*\/\s*\d+\b/,
+];
+
+/** Words that sound like verification and carry none. */
+const BARE_ASSERTION = /^(it\s+)?(all\s+)?(tests?\s+)?(pass(ed|es)?|ok|fine|good|works?|working|done|verified|checked|confirmed|success(ful)?|no issues?|looks good|as expected)\.?$/i;
+
+export function hasEvidence(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  const bare = t.toLowerCase().replace(/[^a-z0-9 /]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (BARE_ASSERTION.test(bare)) return false;
+  if (/^(none|n\/a|nothing|not run|not tested|skipped)$/i.test(bare)) return false;
+  return EVIDENCE_PATTERNS.some((re) => re.test(t));
+}
+
+/**
  * Normalise an objection so "the same objection twice" can actually be detected.
  *
  * Without this the halt condition is unenforceable: a reviewer restating the same
@@ -149,12 +196,53 @@ export function checkProtocol(h, protocol) {
  * discovering it is stuck. Aggressive on purpose — punctuation, case, filler and
  * whitespace all go, because the question is whether the SUBSTANCE repeated.
  */
+const STOPWORDS = /\b(the|a|an|is|are|was|were|be|been|to|of|in|on|at|it|its|this|that|these|those|and|but|so|or|if|as|has|have|had|will|does|do|did|should|would|could|must|still|also|now|again|yet|just|very|really|there|here)\b/g;
+
+/**
+ * Crude stemming, so an inflection is not mistaken for a new objection.
+ *
+ * "rows orphan", "rows will orphan", "orphaned rows" and "orphaning rows" are one
+ * objection restated. Without this they produce four different keys and the loop spends
+ * its whole cap discovering it is stuck — which is the exact waste the no-progress halt
+ * exists to prevent, so the halt condition is only as good as this function.
+ *
+ * Suffix stripping rather than a real stemmer: no dependency is permitted, and Porter in
+ * fifty lines would be a liability nobody maintains. It over-stems occasionally ("has" is
+ * already a stopword, "class" -> "clas") and that is harmless here, because both sides of
+ * a comparison are stemmed identically — a consistent wrong stem still matches itself.
+ */
+function stem(w) {
+  if (w.length <= 4) return w;
+  // Longest suffix first, and NOMINALISATIONS before inflections. Inflection alone
+  // ("orphaned" -> "orphan") was not enough: reviewers restate a verb as a noun, so
+  // "rows orphan on delete" and "orphaned rows on deletion" scored 0.5 and read as two
+  // different objections. `-ion` plus the trailing-`e` rule below collapses
+  // delete/deletion, validate/validation, deploy/deployment onto one stem.
+  for (const suf of ['ations', 'ation', 'ments', 'ment', 'nesses', 'ness', 'ions', 'ion', 'ingly', 'edly', 'ing', 'ied', 'ies', 'ed', 'es', 'ly', 's']) {
+    if (w.endsWith(suf) && w.length - suf.length >= 3) {
+      let base = w.slice(0, -suf.length);
+      if (suf === 'ied' || suf === 'ies') base += 'y';
+      // Undo a doubled consonant: "orphanning" -> "orphan", "stopped" -> "stop".
+      if (/([bdfglmnprt])\1$/.test(base)) base = base.slice(0, -1);
+      return base;
+    }
+  }
+  // A bare trailing `e`, so "delete" reaches the same stem as "deletion" did above.
+  // Over-stems harmlessly ("table" -> "tabl") because both sides of a comparison are
+  // stemmed identically -- a consistent wrong stem still matches itself.
+  if (w.length > 4 && w.endsWith('e')) return w.slice(0, -1);
+  return w;
+}
+
 export function objectionKey(s) {
   return String(s || '')
     .toLowerCase()
     .replace(/[^a-z0-9 ]+/g, ' ')
-    .replace(/\b(the|a|an|is|are|was|were|be|been|to|of|in|on|at|it|its|this|that|these|those|and|but|so|or|if|as|has|have|had|will|does|do|did|should|would|could|must|still|also|now|again|yet|just|very|really)\b/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(STOPWORDS, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(stem)
+    .join(' ')
     .trim();
 }
 
@@ -274,6 +362,23 @@ export function verdict({
     }
   }
 
+  // 4b. Evidence, not assertion. A SUCCESS whose `testing` reads "passed" has told you
+  //     an opinion; the protocol asks for output and nothing checked that it got any.
+  for (const h of handoffs) {
+    if (h.status !== 'SUCCESS') continue;
+    const t = (h.fields.testing || '').trim();
+    if (!t) continue; // absent `testing` is already caught as a missing field
+    if (/^(none|not run|n\/a|nothing)$/i.test(t)) {
+      blocking.push({ kind: 'no-testing', agent: h.agent, detail: `SUCCESS with testing: ${t}` });
+    } else if (!hasEvidence(t)) {
+      blocking.push({
+        kind: 'assertion-not-evidence',
+        agent: h.agent,
+        detail: `testing says "${t.slice(0, 70)}" — that is a claim, not output. The protocol asks for the real result.`,
+      });
+    }
+  }
+
   // 5. Reviewer verdicts. A reviewer that returned neither accept nor revise has not
   //    reviewed, which is a missing review and not a tacit accept.
   const reviewers = handoffs.filter((h) => h.fields.verdict !== undefined);
@@ -351,6 +456,61 @@ export function verdict({
     reason,
     history: [...history, ...objections.map((o) => o.key)].filter(Boolean),
   };
+}
+
+/**
+ * Write one ledger row per handoff the driver just judged.
+ *
+ * WHY THE DRIVER IS THE RIGHT PLACE FOR THIS
+ *
+ * The ledger's stated limitation was that it had never seen a single row, so `learn` and
+ * every agent-health metric were computed over an empty set. The reason is that the only
+ * writer was a `SubagentStop` hook, which fires when a sub-agent is dispatched THROUGH
+ * the hook path — and the coordinator often reads a handoff without one having fired.
+ *
+ * The driver, by contrast, sees every handoff by construction: it cannot answer "is this
+ * done?" without them. So judging and recording are the same moment, and the ledger fills
+ * as a side effect of using the loop rather than needing separate discipline.
+ *
+ * Format matches voice/jarvis.sh `ledger_append` EXACTLY — same keys, same shapes, same
+ * monthly file. Two writers of one format is fine; two formats is a corpus `learn`
+ * cannot read. `verdict` and `evidence` are additive: absent in the shell rows, and
+ * `summarise()` ignores unknown keys.
+ *
+ * Append-only, one row per line, single write per call. A crash loses the last write and
+ * not the file.
+ */
+export function recordLedger(v, handoffs, { dir, session = 'loop', now = null } = {}) {
+  if (!dir || !handoffs || !handoffs.length) return { written: 0 };
+  const stamp = now || new Date().toISOString().replace(/\.\d+Z$/, '');
+  const month = stamp.slice(0, 7);
+  const rows = handoffs.map((h) => {
+    const unver = (h.fields.unverified || '').trim().toLowerCase();
+    return JSON.stringify({
+      t: stamp,
+      session,
+      agent: h.agent || 'unknown',
+      status: (h.status || 'unreported').toLowerCase() === '' ? 'unreported' : h.status || 'unreported',
+      confidence: h.confidence || 'unreported',
+      next: (h.fields.recommended_next_agent || 'none').trim() || 'none',
+      unverified: unver && unver !== 'none' && unver !== 'nothing' ? 1 : 0,
+      // Additive beyond the shell writer: what the DRIVER concluded, which is the part
+      // no hook can know.
+      verdict: h.verdict || '',
+      evidence: hasEvidence(h.fields.testing) ? 1 : 0,
+      round: v.round,
+      loop: v.done ? 'done' : v.halt && v.halt.length ? 'halted' : 'owed',
+    });
+  });
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, `${month}.jsonl`), rows.join('\n') + '\n');
+    return { written: rows.length, file: path.join(dir, `${month}.jsonl`) };
+  } catch (e) {
+    // A ledger that cannot be written must never fail the verdict. The verdict is the
+    // product; the ledger is a record of it.
+    return { written: 0, error: e.message };
+  }
 }
 
 export function render(v) {

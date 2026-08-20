@@ -132,6 +132,40 @@ function agentMarkdown(a, protocol, gates, resources) {
   // agent, because only `required` was rendered -- so `risks`, `findings` and `testing`
   // existed as documentation of a protocol nobody was told to follow. A field an agent
   // is never shown is not a protocol, it is a comment.
+  // Mode-scoped review-loop guidance (§6/§14).
+  //
+  // Both halves used to go to every agent: a build agent read how to vote on a review it
+  // will never sit on, and a reviewer read what to do with an objection against work it
+  // never wrote. The protocol itself says "Build agents omit this field" about `verdict`,
+  // so the prompt was already telling most agents to ignore part of itself.
+  //
+  // Built as strings OUT HERE rather than edited inside the template literal, which is the
+  // specific thing that produced invalid JS on two previous attempts at this. The literal
+  // now carries one interpolation and nothing else inside it moved. The presence
+  // assertions in tests/agents.test.mjs were written BEFORE this change and must still
+  // pass -- an accidentally emptied half fails there instead of shipping behind a doctor
+  // that still says Healthy, which is how a backtick once emptied this very section from
+  // all 45 agents with nothing failing.
+  const REVIEWER_HALF = `**If you are reviewing** — return \`verdict: accept\` or \`verdict: revise\`.
+
+- Judge against the **acceptance criteria**, not against how you would have done it.
+  "I would have structured this differently" is not a defect.
+- A \`revise\` MUST name what would satisfy you. An objection nobody can act on is not a
+  review, it is an opinion, and it costs a whole round to discover that.
+- One clear objection beats five speculative ones. The author gets your words verbatim.
+- If it is genuinely fine, say \`accept\`. A reviewer who never accepts is a reviewer
+  nobody can ship past.`;
+  const AUTHOR_HALF = `**If your work is being revised** — you wrote it, so you fix it.
+
+- You will receive the objection verbatim. Fix **that**, not your reading of the brief.
+- If the objection is wrong, say so in \`handoff\` with the evidence. Do not silently
+  ignore it and do not silently rewrite something else.
+- If two rounds have not satisfied it, stop. Put the disagreement in \`handoff\` and let
+  a human settle it. Grinding is worse than stopping.`;
+  // A reviewer gets BOTH: it reviews, and its own findings can be objected to.
+  const loopHalves =
+    a.mode === 'validation' ? `${REVIEWER_HALF}\n\n${AUTHOR_HALF}` : AUTHOR_HALF;
+
   const applicable = (protocol.when_applicable || []).filter((f) => !a.handoff.includes(f));
   const applicableDoc = applicable.length
     ? `\n## Also address these — write "none" rather than omitting one\n\n${applicable
@@ -216,23 +250,7 @@ just read the code and the router has not, so say what you think, and name one o
 Work here goes round until it is good, not until it is finished. You are on one side of
 that loop or the other.
 
-**If you are reviewing** — return \`verdict: accept\` or \`verdict: revise\`.
-
-- Judge against the **acceptance criteria**, not against how you would have done it.
-  "I would have structured this differently" is not a defect.
-- A \`revise\` MUST name what would satisfy you. An objection nobody can act on is not a
-  review, it is an opinion, and it costs a whole round to discover that.
-- One clear objection beats five speculative ones. The author gets your words verbatim.
-- If it is genuinely fine, say \`accept\`. A reviewer who never accepts is a reviewer
-  nobody can ship past.
-
-**If your work is being revised** — you wrote it, so you fix it.
-
-- You will receive the objection verbatim. Fix **that**, not your reading of the brief.
-- If the objection is wrong, say so in \`handoff\` with the evidence. Do not silently
-  ignore it and do not silently rewrite something else.
-- If two rounds have not satisfied it, stop. Put the disagreement in \`handoff\` and let
-  a human settle it. Grinding is worse than stopping.
+${loopHalves}
 
 The loop halts when every reviewer accepts, at the round cap, at any human gate, or
 when the same objection comes back twice — because that last one means it is not
