@@ -62,6 +62,23 @@ Never finish with "done". Return these fields:
 
 Structured fields, not an essay. JARVIS reads these to decide what happens next; prose it has to parse is a failure of the protocol.
 
+## Also address these — write "none" rather than omitting one
+
+- **objective** — The task as YOU understood it, in one sentence, before you say what you did. It is the cheapest defect detector in the protocol: a coordinator comparing your objective against the one it dispatched catches a misread brief in one line, instead of after the work is built on it.
+- **findings** — For review agents — what was discovered, one line each.
+- **testing** — What was run and the real result. Never assert a pass without output.
+- **files_changed** — Exact paths. Empty if none.
+- **dependencies** — What your work now depends on, and what must be true for it to keep working -- another agent's output, a migration having run, a field existing. Not a list of files you read. Say "none" explicitly. This is what makes an ordering mistake visible before it becomes a broken deployment.
+- **risks** — Known risks introduced or discovered. Say "none" explicitly if none.
+- **questions** — What you could not resolve and had to assume. Every question here is a decision someone made by default, so an empty list is a claim that the brief was complete. Say "none" when you mean it. Distinct from `handoff`, which says what comes next; this says what nobody has answered.
+
+Not every one applies to every turn. **Silence is not one of the options.** An
+omitted `risks` and a `risks: none` read identically to whoever picks this up, and only
+one of them is a statement — so the field you have nothing for is where you write
+"none". That is a claim you are making, and it is the point: it separates "I checked and
+there are none" from "I did not think about it", which is the distinction every field
+below exists to preserve.
+
 ## Your first line: STATUS
 
 Begin your handoff with one word.

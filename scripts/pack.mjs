@@ -131,8 +131,87 @@ const list = (label, arr, truncated) =>
     ? `- **${label}** (${arr.length}${truncated ? '+, scan truncated' : ''}): ${arr.slice(0, CAP).join(', ')}${arr.length > CAP ? ` … +${arr.length - CAP} more` : ''}`
     : `- **${label}**: ${truncated ? 'UNKNOWN — scan hit its limit before reaching them' : 'none found'}`;
 
-export function render(cwd = process.cwd()) {
+/**
+ * Which slice of the ground each role actually needs (§14).
+ *
+ * The pack is one artifact handed to every agent, which is the right call for the
+ * *expensive* part -- walking the tree once instead of forty-five times. It is the wrong
+ * call for delivery: a ui-designer reading the DocType inventory and the migration
+ * history is paying attention to ground it will never touch, and §14's complaint is
+ * exactly that ("agents should receive only the context necessary for their role.
+ * Avoid context pollution").
+ *
+ * Scoped by SECTION, not by trimming lists. A shorter list of the wrong things is not
+ * less pollution -- it is the same pollution, harder to notice. And a section an agent
+ * needs is never withheld: the default is the full pack, `--for` is opt-in, and an
+ * unknown role gets everything rather than a guess.
+ *
+ * The seven layers §14 names map onto this repo as:
+ *   GLOBAL KNOWLEDGE   the agent prompt (registry-generated) -- not here
+ *   PROJECT CONTEXT    root, bench, branch          always included, it is four lines
+ *   REPOSITORY CONTEXT the surface lists            SCOPED, this is the bulk
+ *   TASK CONTEXT       the request                  supplied by the dispatch
+ *   AGENT MEMORY       the ledger                   scripts/learn.mjs
+ *   EXECUTION STATE    in-flight swarm              jarvisctl report
+ *   LESSONS LEARNED    daily log, DECISION markers  ~/.claude/jarvis/daily
+ */
+export const ROLE_SCOPES = {
+  // Schema and data work needs the DocType inventory; UI work does not.
+  'data-model-architect': ['doctypes', 'apps'],
+  'schema-builder': ['doctypes', 'apps', 'recent'],
+  'migration-analyst': ['doctypes', 'apps', 'recent'],
+  'frappe-data': ['doctypes', 'apps', 'recent'],
+
+  // Surface work needs pages and the design system, not the report inventory.
+  'ui-designer': ['pages', 'apps'],
+  'frontend': ['pages', 'apps', 'recent'],
+  'frappe-frontend': ['pages', 'apps', 'recent'],
+  'interaction-designer': ['pages'],
+  'mobile-ux': ['pages'],
+  'accessibility': ['pages'],
+
+  'reporting-developer': ['reports', 'doctypes', 'apps'],
+  'data-analyst': ['reports', 'doctypes'],
+  'dataviz-specialist': ['reports'],
+
+  // Review and impact work needs the whole surface -- that is the job.
+  'impact-analyst': ['apps', 'doctypes', 'reports', 'pages', 'recent'],
+  'code-reviewer': ['recent', 'apps'],
+  'git-safety': ['recent'],
+  'deployment-safety': ['recent', 'apps'],
+  'test-engineer': ['apps', 'recent'],
+
+  // Documentation describes what exists; it needs the inventory and not the history.
+  'user-guide-writer': ['doctypes', 'pages', 'apps'],
+  'process-documenter': ['doctypes', 'apps'],
+  'uat-coordinator': ['doctypes', 'pages'],
+
+  // Planning agents work before the code exists.
+  'requirements-analyst': ['apps'],
+  'architect': ['apps', 'doctypes'],
+  'frappe-architect': ['apps', 'doctypes'],
+  'business-analyst': ['apps'],
+};
+
+/**
+ * Pre-rebrand agent names, kept so a dispatch written against the old roster still gets
+ * a correctly scoped pack instead of silently falling back to the full one.
+ *
+ * Declared explicitly rather than tolerated by a count, because "at most four unknown
+ * names" passes for a typo just as happily as for an alias — and a typo'd role reverts
+ * to the full pack, which looks exactly like scoping working.
+ */
+export const ROLE_ALIASES = new Set(['frappe-data', 'frappe-frontend', 'frappe-architect']);
+
+/** Sections a scoped pack can carry. Anything not listed is always included. */
+export const SCOPABLE = ['apps', 'doctypes', 'reports', 'pages', 'recent'];
+
+export function render(cwd = process.cwd(), { role = null } = {}) {
   const p = collect(cwd);
+  // An unknown role gets the full pack. Guessing a scope for an agent nobody mapped is
+  // how a specialist ends up blind to the one list it needed.
+  const scope = role && ROLE_SCOPES[role] ? new Set(ROLE_SCOPES[role]) : null;
+  const wants = (section) => !scope || scope.has(section);
   const out = [
     '# Context Pack',
     '',
@@ -159,9 +238,27 @@ export function render(cwd = process.cwd()) {
       `> narrower root (a single app rather than the bench) for a complete picture.`
     );
   }
-  out.push('', '## Frappe surface', list('Apps', p.apps, p.truncated), list('DocTypes', p.doctypes, p.truncated), list('Reports', p.reports, p.truncated), list('Pages', p.pages, p.truncated));
-  if (p.git && p.git.recent.length) {
+  const surface = [];
+  if (wants('apps')) surface.push(list('Apps', p.apps, p.truncated));
+  if (wants('doctypes')) surface.push(list('DocTypes', p.doctypes, p.truncated));
+  if (wants('reports')) surface.push(list('Reports', p.reports, p.truncated));
+  if (wants('pages')) surface.push(list('Pages', p.pages, p.truncated));
+  if (surface.length) out.push('', '## Frappe surface', ...surface);
+  if (wants('recent') && p.git && p.git.recent.length) {
     out.push('', '## Recently touched (last 8 commits)', ...p.git.recent.map((f) => `- ${f}`));
+  }
+  if (scope) {
+    // Say what was withheld and how to get it. A scoped pack that looks like a full one
+    // is worse than no scoping: the agent reads an absent list as an empty list, which
+    // is the same defect the truncation warning above exists to prevent.
+    const held = SCOPABLE.filter((x) => !scope.has(x));
+    if (held.length) {
+      out.push(
+        '',
+        `> **Scoped to \`${role}\`.** Withheld as not relevant to this role: ${held.join(', ')}.`,
+        `> An absent section is NOT an empty one. Run \`pack\` with no \`--for\` if you need the full ground.`
+      );
+    }
   }
   out.push(
     '',

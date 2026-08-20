@@ -286,3 +286,45 @@ missing a section, which no current test would catch.
 
 Scope this as its own phase, with a test asserting per-mode section presence *before*
 the refactor rather than after.
+
+---
+
+# Addendum 2 — the ten agent roles, evaluated
+
+§5 named twenty candidate roles and asked for the ten most valuable. Section 6 above
+answered with *actions* (add one, re-mode five) rather than by evaluating the candidates,
+which skipped a step: "we already have that" is a claim, and it is only checkable against
+a named incumbent. So here is each of the ten highest-value roles from that list, against
+the roster as it stands.
+
+The column that matters is the last one. Nine of ten are already owned, and naming the
+incumbent is what makes that verifiable rather than asserted.
+
+| # | Role §5 asks for | Verdict | Incumbent, or what it would add |
+|---|---|---|---|
+| 1 | **Research Agent** | present | `research-orchestrator` — parallel read-only investigation, synthesises one findings report. Fans out to sub-agents; writes no code. |
+| 2 | **Architecture Agent** | present | `architect` — module ownership and boundaries, design only. Paired with `data-model-architect` for the entity graph. |
+| 3 | **Planning Agent** | present, split | `requirements-analyst` (what done means) + `delivery-orchestrator` (cross-division sequencing) + `swarm-dispatcher` (cheapest correct order). Deliberately three: "what", "when" and "how cheaply" fail differently. |
+| 4 | **Context/Repository Analyst** | present | `context-broker` — one shared Context Pack per run. Now role-scoped (`pack --for`), which is what §14 asked of it. |
+| 5 | **Frappe/ERPNext Specialist** | present, deep | `schema-builder`, `backend`, `frontend`, `reporting-developer`, `console-deployer`, `migration-analyst`. §17 says a generic coding agent must not make these calls, and `conflicts_with` enforces it at routing time. |
+| 6 | **Security Agent** | **partial — the real gap** | No dedicated agent. `code-reviewer` carries safe_exec review, `deployment-safety` carries the pre-deploy check, and "security-sensitive changes" is gate 7. So the *gate* exists and the *reviewer* does not. See below. |
+| 7 | **Debugging Agent** | present | `qa-engineer` — exploratory testing, unhappy paths, permissions as another role. Finds what automated tests miss. |
+| 8 | **Regression Agent** | present, mechanised | `impact-analyst` for blast radius, plus `evaluate`'s flip-centered gating, which is the part a prompt cannot do: it blocks on P→F. |
+| 9 | **Learning/Evaluation Agent** | present | `evaluate` + `learn` + the ledger. Not an agent, by choice — an agent that judges its own swarm has the conflict of interest the flip gate exists to remove. |
+| 10 | **Agent Health Agent** | present | `agent-guardian` (roster), `skill-guardian` (skills), `routing-auditor` (decisions), `efficiency-auditor` (cost vs return). All four now routable, which they were not. |
+
+## The one real gap, and why it is not being filled today
+
+**A security reviewer.** Security is currently a *gate* (nothing crosses without a human)
+and a *checklist item inside another agent's review*. That is enough to stop a bad change
+shipping and not enough to find one: `code-reviewer` reads a diff for correctness and
+safe_exec, and nobody is dispatched to ask "what could an attacker do with this".
+
+It is not being added in this pass, for the reason §13 gives. There is no evidence yet
+about which security findings the current arrangement misses, because the ledger is
+empty — so an agent added now would be justified by intuition, and `doctor` would have
+nothing to check its value against. **The ledger has to fill first.** That is the honest
+answer, and it is also the first real test of whether the learning loop was worth
+building: if `learn` proposes a security reviewer from observed evidence, the loop works.
+
+Recorded here so it is not rediscovered.

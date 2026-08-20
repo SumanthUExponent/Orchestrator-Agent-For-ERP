@@ -438,8 +438,19 @@ try {
       break;
     }
     case 'pack': {
-      const { render } = await import('./pack.mjs');
-      process.exit(render(rest.find((a) => !a.startsWith('--')) || process.cwd()));
+      const { render, ROLE_SCOPES } = await import('./pack.mjs');
+      // `--for <agent>` narrows the pack to the sections that role needs (§14). The
+      // flag's VALUE is not a directory, so it must be excluded from the positional --
+      // the same defect that fed `--round 2` back in as a filename in `loop`.
+      const fi = rest.indexOf('--for');
+      const role = fi >= 0 ? rest[fi + 1] : null;
+      const consumed = new Set(fi >= 0 ? [fi, fi + 1] : []);
+      const dir = rest.find((a, i) => !a.startsWith('--') && !consumed.has(i)) || process.cwd();
+      if (role && !ROLE_SCOPES[role]) {
+        console.error(`pack: no scope mapped for "${role}" — emitting the FULL pack rather than guessing.`);
+        console.error(`  Mapped roles: ${Object.keys(ROLE_SCOPES).sort().join(', ')}`);
+      }
+      process.exit(render(dir, { role }));
       break;
     }
     case 'install': {
@@ -508,6 +519,70 @@ try {
       );
       break;
     }
+    case 'loop': {
+      // The driver for `review_loop`. Reads collected handoffs and answers the one
+      // question the loop existed to ask and nothing enforced: is this done?
+      //
+      // Exit code is the contract: 0 means done, 1 means another round is owed. That is
+      // what makes it usable from a script, and what stops "done" being a judgement
+      // call made by whoever is tired.
+      const loopModule = await import('./loop.mjs');
+      const { loadAgents } = await import('./swarm.mjs');
+      const { protocol, gates, reviewLoop } = loadAgents({ root: ROOT, readYaml });
+
+      // A flag's VALUE is not a handoff file. Filtering on the `--` prefix alone fed
+      // `--round 2 --history h.json` back in as three files named "2" and "h.json",
+      // and the run died on ENOENT reading "2" -- with the error swallowed if stderr
+      // was redirected, which is exactly how it was found.
+      const VALUED = new Set(['round', 'history']);
+      const consumed = new Set();
+      for (let i = 0; i < rest.length; i++) {
+        const m = rest[i].match(/^--(.+)$/);
+        if (m && VALUED.has(m[1])) { consumed.add(i); consumed.add(i + 1); }
+      }
+      const files = rest.filter((a, i) => !a.startsWith('--') && !consumed.has(i));
+      const flag = (name) => {
+        const i = rest.indexOf(`--${name}`);
+        return i >= 0 ? rest[i + 1] : undefined;
+      };
+
+      let texts = [];
+      if (files.length) {
+        texts = files.map((f) => ({ agent: path.basename(f).replace(/\.[^.]+$/, ''), text: fs.readFileSync(f, 'utf8') }));
+      } else {
+        // stdin, so the coordinator can pipe handoffs straight in without touching disk.
+        const chunks = [];
+        for await (const c of process.stdin) chunks.push(c);
+        const all = Buffer.concat(chunks).toString('utf8');
+        if (!all.trim()) {
+          console.error('loop: no handoffs. Pass files, or pipe them on stdin.');
+          console.error('  A round with no output is not a round that passed, so this is exit 1.');
+          process.exit(1);
+        }
+        // `---` between handoffs, since agents return markdown and that is the one
+        // separator markdown already reserves.
+        texts = all.split(/^---+$/m).filter((t) => t.trim()).map((t, i) => ({ agent: `agent-${i + 1}`, text: t }));
+      }
+
+      const handoffs = texts.map(({ agent, text }) => loopModule.parseHandoff(text, { agent }));
+      const historyFile = flag('history');
+      const history = historyFile && fs.existsSync(historyFile)
+        ? JSON.parse(fs.readFileSync(historyFile, 'utf8'))
+        : [];
+      const v = loopModule.verdict({
+        handoffs,
+        round: Number(flag('round')) || 1,
+        reviewLoop,
+        protocol,
+        gates,
+        history,
+      });
+      const code = loopModule.render(v);
+      // Carry the objection keys forward, or no-progress cannot be detected next round.
+      if (historyFile) fs.writeFileSync(historyFile, JSON.stringify(v.history, null, 2) + '\n');
+      process.exit(code);
+      break;
+    }
     case 'doctor': {
       const { doctor } = await import('./swarm.mjs');
       process.exit(doctor({ root: ROOT, readYaml, registry: build({ quiet: true }) }));
@@ -527,11 +602,14 @@ try {
           '  health                     validate the skill ecosystem (§17)',
           '  route "<request>"          explain a routing decision (which skills)',
           '  plan "<request>"           execution plan: agents, parallel batches, model tier',
-          '  pack [dir]                 deterministic Context Pack — zero tokens, share it',
+          '  pack [dir] [--for <agent>] deterministic Context Pack; --for narrows it by role (§14)',
           '  bench                      before/after efficiency benchmark over a fixed corpus',
           '  install [--apply] [--external] [--force]',
         '  voice [--apply] [--force]  install the JARVIS voice layer and its hooks',
           '  agents [--apply]           generate agents/*.md from registry/agents.yaml',
+          '  loop [handoff...]          is it done? drives review_loop; exit 0 done, 1 owed',
+          '  evaluate [--save]          flip-centered routing probes (§18)',
+          '  learn [--apply]            propose routing hints from the ledger (§11)',
           '  doctor                     audit the agent roster (§6)',
           '  show-agent <id>            print one resolved agent definition',
         ].join('\n')

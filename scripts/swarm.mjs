@@ -16,6 +16,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { HALT_CONDITIONS } from './loop.mjs';
+import os from 'node:os';
 
 const ACTIVE = 'active';
 const PASSIVE = 'passive';
@@ -56,6 +58,9 @@ export function loadAgents({ root, readYaml }) {
     frappe: a.frappe === undefined ? (d.frappe === undefined ? true : d.frappe !== false) : a.frappe !== false,
     runs: a.runs || null,
     handoff: a.handoff || (spec.protocol && spec.protocol.required) || ['summary', 'handoff'],
+    // The scope this agent may write to. Two agents sharing a scope may touch the same
+    // files, so `plan` refuses to put them in one parallel batch. A reader has none.
+    writes: a.writes || null,
   }));
   return {
     agents,
@@ -122,6 +127,16 @@ These forms are longer on purpose. Do not "simplify" them.
 function agentMarkdown(a, protocol, gates, resources) {
   const fields = protocol.fields || {};
   const handoffDoc = a.handoff.map((f) => `- **${f}** — ${fields[f] || 'see registry/agents.yaml'}`).join('\n');
+  // The second tier. These were declared in the registry from the start and reached no
+  // agent, because only `required` was rendered -- so `risks`, `findings` and `testing`
+  // existed as documentation of a protocol nobody was told to follow. A field an agent
+  // is never shown is not a protocol, it is a comment.
+  const applicable = (protocol.when_applicable || []).filter((f) => !a.handoff.includes(f));
+  const applicableDoc = applicable.length
+    ? `\n## Also address these — write "none" rather than omitting one\n\n${applicable
+        .map((f) => `- **${f}** — ${fields[f] || 'see registry/agents.yaml'}`)
+        .join('\n')}\n\nNot every one applies to every turn. **Silence is not one of the options.** An\nomitted \`risks\` and a \`risks: none\` read identically to whoever picks this up, and only\none of them is a statement — so the field you have nothing for is where you write\n"none". That is a claim you are making, and it is the point: it separates "I checked and\nthere are none" from "I did not think about it", which is the distinction every field\nbelow exists to preserve.\n`
+    : '';
 
   const frontmatter = [
     '---',
@@ -161,7 +176,7 @@ Never finish with "done". Return these fields:
 ${handoffDoc}
 
 Structured fields, not an essay. JARVIS reads these to decide what happens next; prose it has to parse is a failure of the protocol.
-
+${applicableDoc}
 ## Your first line: STATUS
 
 Begin your handoff with one word.
@@ -399,7 +414,7 @@ export function buildAgents({ root, readYaml, apply = false }) {
 
 /* ------------------------------------------------------------- doctor (§6) */
 export function doctor({ root, readYaml, registry }) {
-  const { agents, protocol, gates, reviewLoop, reconciliation } = loadAgents({ root, readYaml });
+  const { agents, protocol, gates, reviewLoop, reconciliation, resources } = loadAgents({ root, readYaml });
   const skillIds = new Set((registry.skills || []).map((s) => s.id));
   const agentIds = new Set(agents.map((a) => a.id));
   const fail = [];
@@ -464,12 +479,92 @@ export function doctor({ root, readYaml, registry }) {
     else seenOwns.set(k, a.id);
   }
 
+  // A writer with no declared scope cannot be checked for collisions, so `plan` has to
+  // assume it is safe to parallelise -- which is the assumption §9 was violated by. A
+  // warning rather than a failure: a new agent should not be blocked from existing, but
+  // it should not silently opt out of the collision check either.
+  for (const a of agents) {
+    const writer = a.tools.includes('Write') || a.tools.includes('Edit');
+    if (writer && !a.writes) {
+      warn.push(`write scope: "${a.id}" can write but declares no \`writes\` scope — plan cannot detect a collision for it (§9)`);
+    }
+    if (!writer && a.writes) {
+      warn.push(`write scope: "${a.id}" declares writes: ${a.writes} but holds no write tool`);
+    }
+  }
+
   // Reachability — only meaningful for agents routed BY SKILL. Coordinators and
   // generalists are dispatched explicitly and declare selected_by: jarvis.
   for (const a of agents) {
     if (a.mode === ACTIVE && a.selected_by === 'skill' && !a.skills.length) {
       warn.push(`unreachable: "${a.id}" is skill-routed but declares no skills`);
     }
+  }
+
+  // Protocol completeness — a declared field that reaches no agent is not a protocol.
+  //
+  // This check exists because that is exactly what had happened: `findings`, `risks`,
+  // `testing` and `files_changed` were declared in the registry and rendered nowhere,
+  // because only `protocol.required` was written into the agent. Seven of the twelve
+  // fields the protocol claimed to have were documentation of a rule nobody was told.
+  // Nothing failed, because a field nobody emits is indistinguishable from a field
+  // nobody needed.
+  //
+  // So the invariant is: every field named in `required` or `when_applicable` must have
+  // a description AND must be rendered. Declaring a field is now a commitment to
+  // conveying it.
+  const declared = [...(protocol.required || []), ...(protocol.when_applicable || [])];
+  for (const f of declared) {
+    if (!protocol.fields || !protocol.fields[f]) {
+      fail.push(`protocol: field "${f}" is required of agents but has no description (§7)`);
+    }
+  }
+  if (agents.length) {
+    const sample = agentMarkdown(agents[0], protocol, gates, resources);
+    for (const f of declared) {
+      // Either tier renders the field name; the decision markers render uppercase.
+      if (!sample.includes(`**${f}**`) && !sample.includes(f.toUpperCase())) {
+        fail.push(`protocol: field "${f}" is declared but reaches no agent — declared, not conveyed (§7)`);
+      }
+    }
+  }
+
+  // Every declared halt condition must have code behind it.
+  //
+  // `review_loop` was declared and unenforced for its whole life -- three rounds, four
+  // halt conditions, printed by `plan`, told to all 45 agents, and honoured only as well
+  // as the coordinator's attention. scripts/loop.mjs now implements it. This check is
+  // what stops that regressing: a fifth condition added to the registry without code
+  // fails the audit, rather than quietly becoming prose again.
+  if (reviewLoop && reviewLoop.halt_on) {
+    for (const cond of reviewLoop.halt_on) {
+      if (!HALT_CONDITIONS.some((h) => h.matches.test(cond))) {
+        fail.push(`review loop: halt condition "${cond}" is declared but scripts/loop.mjs implements no check for it (§6)`);
+      }
+    }
+  }
+
+  // Has the learning loop ever seen anything?
+  //
+  // `learn` says "no ledger yet" if you run it, and nothing else does -- so the swarm can
+  // report Healthy for months while the self-improvement loop has observed zero runs and
+  // every agent-health metric is computed over an empty set. That is not a broken
+  // installation, so it is a warning and not a failure; but it must be VISIBLE, because
+  // "the loop is built" and "the loop is working" are different claims and only one of
+  // them was ever checkable.
+  try {
+    const ledgerDir = path.join(process.env.JARVIS_DIR || path.join(os.homedir(), '.claude', 'jarvis'), 'ledger');
+    let rows = 0;
+    if (fs.existsSync(ledgerDir)) {
+      for (const f of fs.readdirSync(ledgerDir).filter((x) => x.endsWith('.jsonl'))) {
+        rows += fs.readFileSync(path.join(ledgerDir, f), 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#')).length;
+      }
+    }
+    if (!rows) {
+      warn.push('learning loop: the outcome ledger is empty — agent-health metrics and `learn` are computed over zero runs (§11/§12). Built and tested, but unexercised: it fills as sub-agents report.');
+    }
+  } catch {
+    // A ledger we cannot read is not a roster problem; doctor is not the place to fail on it.
   }
 
   // governance completeness
