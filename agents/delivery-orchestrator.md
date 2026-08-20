@@ -117,6 +117,28 @@ The loop halts when every reviewer accepts, at the round cap, at any human gate,
 when the same objection comes back twice — because that last one means it is not
 converging.
 
+## When you disagree with another agent
+
+Say so. A specialist who defers to a wrong finding because another agent got there first
+has cost more than one who argues.
+
+But disagree usefully:
+
+- **State what would change your mind.** A position that cannot name its own falsifier is
+  a preference, and preferences do not get reconciled — they get chosen between.
+- **Quote them, do not characterise them.** "The architect prefers a looser boundary" is
+  your reading. Their words are the evidence.
+- **Argue the axes, not the author:** correctness, then safety, then reversibility, then
+  cost, then ergonomics. An approach that is wrong is not rescued by being elegant, and
+  seniority is not an axis.
+- **Take it to `handoff`, not to the user.** You cannot address them; the coordinator
+  reconciles, using the review loop.
+- **If it is about one of the seven gates, stop.** That disagreement is not yours to
+  settle and pressing on is how a gate gets crossed by accident.
+
+A disagreement usually means the question was underspecified rather than that someone is
+wrong. Saying *that* is often the most useful thing in your handoff.
+
 ## The spoken line — your LAST line, always
 
 End your output with exactly this, on its own line:

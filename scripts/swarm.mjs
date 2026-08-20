@@ -64,6 +64,7 @@ export function loadAgents({ root, readYaml }) {
     resources: spec.resources || {},
     version: spec.version ?? 1,
     reviewLoop: spec.review_loop || {},
+    reconciliation: spec.conflict_reconciliation || {},
   };
 }
 
@@ -221,6 +222,28 @@ The loop halts when every reviewer accepts, at the round cap, at any human gate,
 when the same objection comes back twice — because that last one means it is not
 converging.
 
+## When you disagree with another agent
+
+Say so. A specialist who defers to a wrong finding because another agent got there first
+has cost more than one who argues.
+
+But disagree usefully:
+
+- **State what would change your mind.** A position that cannot name its own falsifier is
+  a preference, and preferences do not get reconciled — they get chosen between.
+- **Quote them, do not characterise them.** "The architect prefers a looser boundary" is
+  your reading. Their words are the evidence.
+- **Argue the axes, not the author:** correctness, then safety, then reversibility, then
+  cost, then ergonomics. An approach that is wrong is not rescued by being elegant, and
+  seniority is not an axis.
+- **Take it to \`handoff\`, not to the user.** You cannot address them; the coordinator
+  reconciles, using the review loop.
+- **If it is about one of the seven gates, stop.** That disagreement is not yours to
+  settle and pressing on is how a gate gets crossed by accident.
+
+A disagreement usually means the question was underspecified rather than that someone is
+wrong. Saying *that* is often the most useful thing in your handoff.
+
 ## The spoken line — your LAST line, always
 
 End your output with exactly this, on its own line:
@@ -376,7 +399,7 @@ export function buildAgents({ root, readYaml, apply = false }) {
 
 /* ------------------------------------------------------------- doctor (§6) */
 export function doctor({ root, readYaml, registry }) {
-  const { agents, protocol, gates, reviewLoop } = loadAgents({ root, readYaml });
+  const { agents, protocol, gates, reviewLoop, reconciliation } = loadAgents({ root, readYaml });
   const skillIds = new Set((registry.skills || []).map((s) => s.id));
   const agentIds = new Set(agents.map((a) => a.id));
   const fail = [];
@@ -466,6 +489,15 @@ export function doctor({ root, readYaml, registry }) {
     else if (!ids.has(who)) fail.push(`review loop: ${key} names "${who}", which is not an agent`);
   }
   if (!(loop.halt_on || []).length) fail.push('review loop: no halt condition declared — it would never stop');
+
+  // Conflict reconciliation. A tiebreak list naming an agent that does not exist is a
+  // procedure with a hole in exactly the place it is needed.
+  const cr = reconciliation || {};
+  if (!(cr.procedure || []).length) fail.push('conflict reconciliation: no procedure declared');
+  if (!(cr.halt_to_human || []).length) fail.push('conflict reconciliation: nothing escalates to a human');
+  for (const who of cr.tiebreak_precedence || []) {
+    if (!ids.has(who)) fail.push(`conflict reconciliation: tiebreak names "${who}", which is not an agent`);
+  }
   const passive = agents.filter((a) => a.mode === PASSIVE);
   if (!passive.length) warn.push('no passive governance agents — the swarm cannot audit itself (§6)');
 
@@ -490,6 +522,11 @@ export function doctor({ root, readYaml, registry }) {
   console.log(mark(
     !fail.some((f) => f.startsWith('review loop')),
     `Review loop: ${rl.rounds || 0} rounds, panel by ${rl.panel_selected_by || '?'}, ${(rl.halt_on || []).length} halt conditions`
+  ));
+  const rc = reconciliation || {};
+  console.log(mark(
+    !fail.some((f) => f.startsWith('conflict reconciliation')),
+    `Conflict reconciliation: ${(rc.procedure || []).length} steps, ${(rc.tiebreak_precedence || []).length} tiebreak, ${(rc.halt_to_human || []).length} escalations`
   ));
 
   if (fail.length) {

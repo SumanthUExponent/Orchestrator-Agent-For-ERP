@@ -242,3 +242,36 @@ describe('the handoff carries decisions, not just description', () => {
     assert.ok(req[1].includes('status'), `status is not required: ${req[1]}`);
   });
 });
+
+describe('agents are allowed to disagree, and told how', () => {
+  // conflicts_with stops two agents being ROUTED for the same job. It says nothing
+  // about two agents who both did work and disagree about the finding -- which,
+  // unhandled, resolves by whichever handoff was read last. That is the worst possible
+  // resolution rule because it is invisible.
+  const RULES = [
+    'State what would change your mind',
+    'Quote them, do not characterise them',
+    'Argue the axes, not the author',
+    'If it is about one of the seven gates, stop',
+  ];
+
+  test('every agent is told how to disagree usefully', () => {
+    const missing = [];
+    for (const f of FILES) {
+      const b = read(f);
+      for (const r of RULES) if (!b.includes(r)) missing.push(`${f}: ${r}`);
+    }
+    assert.deepEqual(missing, [], 'agents that cannot disagree usefully');
+  });
+
+  test('the reconciliation procedure and its escapes are declared', () => {
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    assert.match(y, /^conflict_reconciliation:/m, 'no reconciliation block');
+    assert.match(y, /halt_to_human:/, 'nothing escalates to a human');
+    // Safety outranks architecture: a wrong security call is not reversible by a later
+    // refactor, and a wrong architecture call usually is.
+    const tb = y.match(/tiebreak_precedence: \[(.*?)\]/)[1].split(',').map((x) => x.trim());
+    assert.ok(tb.indexOf('deployment-safety') < tb.indexOf('architect'),
+      'safety must outrank architecture in the tiebreak');
+  });
+});
