@@ -576,7 +576,6 @@ case "${1:-status}" in
     . "$J/speaker.sh"
     TEXT=0; [ "${2:-}" = "--text" ] && TEXT=1
     WHO="$(spoken "wt_svc")"
-    EL="4 minutes"
 
     # NOTE: these lines MIRROR the templates in speaker.sh render() -- they are not
     # produced by it. That has drifted three times (the error variants, $SIR on two
@@ -617,15 +616,15 @@ case "${1:-status}" in
     done
     echo
     echo "COMPLETION, with something to report  (the most-heard announcement)"
-    say_one "done+summary a" "$WHO: $SUM_OK$SIR. $EL."
-    say_one "done+summary b" "$WHO, $SUM_OK$SIR. $EL."
-    say_one "done+summary c" "$WHO reports $SUM_OK$SIR. $EL."
-    say_one "done+summary d" "From $WHO, $SUM_OK$SIR. $EL."
+    say_one "done+summary a" "$WHO: $SUM_OK$SIR."
+    say_one "done+summary b" "$WHO, $SUM_OK$SIR."
+    say_one "done+summary c" "$WHO reports $SUM_OK$SIR."
+    say_one "done+summary d" "From $WHO, $SUM_OK$SIR."
     echo
     echo "COMPLETION, nothing to report"
-    say_one "done a" "$WHO done$SIR. 3 specialists, $EL."
-    say_one "done b" "$WHO finished$SIR. 3 specialists, $EL."
-    say_one "done c" "$WHO, all done$SIR. 3 specialists, $EL."
+    say_one "done a" "$WHO done$SIR. 3 specialists."
+    say_one "done b" "$WHO finished$SIR. 3 specialists."
+    say_one "done c" "$WHO, all done$SIR. 3 specialists."
     echo
     echo "BLOCKED ON APPROVAL  (the expensive failure)"
     say_one "approve a" "$WHO needs your approval$SIR."
@@ -634,7 +633,7 @@ case "${1:-status}" in
     say_one "nag a"     "$WHO is still waiting$SIR."
     say_one "nag b"     "Still blocked on $WHO$SIR."
     say_one "nag c"     "$WHO has not moved$SIR."
-    say_one "escalate"  "$WHO has been waiting 5 minutes$SIR. It is going nowhere without you."
+    say_one "escalate"  "$WHO is still blocked$SIR. Nothing is moving without you."
     echo
     echo "A HUMAN GATE  (the loudest thing this layer says, and it names which gate)"
     say_one "gate: production" "Approval needed on $WHO$SIR. $(cap "production deployment")."
@@ -660,7 +659,59 @@ case "${1:-status}" in
     echo "Anything marked OVER CEILING is too long to be heard out."
     ;;
 
+  ledger)
+    # Read the outcome ledger. This exists so the ledger cannot become a write-only
+    # log: if nobody can see it, nobody trusts it, and an untrusted record is worse
+    # than none because it invites decisions made on a feeling instead.
+    #
+    # Reports OBSERVATIONS, never a score. "schema-builder: 12 success, 1 partial" is a
+    # fact. "schema-builder is good" is a judgement, and judging is the evaluator's job
+    # behind a human gate.
+    LEDGER_DIR="$J/ledger"
+    if [ ! -d "$LEDGER_DIR" ] || [ -z "$(ls -A "$LEDGER_DIR" 2>/dev/null)" ]; then
+      echo "No ledger yet. It fills as sub-agents report, one line each."
+      echo "Set JARVIS_LEDGER=0 in config.sh to keep it that way."
+      exit 0
+    fi
+    WHICH="${2:-}"
+    case "$WHICH" in
+      --raw) cat "$LEDGER_DIR"/*.jsonl; exit 0 ;;
+    esac
+    cat "$LEDGER_DIR"/*.jsonl 2>/dev/null | awk -F'"' '
+      /"agent"/ {
+        a=""; st=""; cf=""; uv=""
+        for (i = 1; i <= NF; i++) {
+          if ($i == "agent")       a  = $(i+2)
+          if ($i == "status")      st = $(i+2)
+          if ($i == "confidence")  cf = $(i+2)
+        }
+        if ($0 ~ /"unverified":1/) uv = 1
+        n[a]++; s[a "|" st]++; total[st]++
+        if (cf == "LOW") low[a]++
+        if (uv == 1) unv[a]++
+        if (st == "unreported") silent[a]++
+        seen[a] = 1
+      }
+      END {
+        printf "AGENT OUTCOMES  (observations, not a score)\n\n"
+        printf "  %-22s %5s  %8s %8s %8s %8s   %s\n", "agent", "runs", "success", "partial", "blocked", "failed", "flags"
+        for (a in seen) {
+          f = ""
+          if (silent[a]) f = f sprintf("%d silent ", silent[a])
+          if (unv[a])    f = f sprintf("%d unverified ", unv[a])
+          if (low[a])    f = f sprintf("%d low-confidence", low[a])
+          printf "  %-22s %5d  %8d %8d %8d %8d   %s\n", a, n[a], \
+            s[a "|SUCCESS"], s[a "|PARTIAL"], s[a "|BLOCKED"], s[a "|FAILED"], f
+        }
+        printf "\n  totals: %d success · %d partial · %d blocked · %d failed · %d unreported\n", \
+          total["SUCCESS"], total["PARTIAL"], total["BLOCKED"], total["FAILED"], total["unreported"]
+        if (total["unreported"] > 0)
+          printf "  unreported means the agent did not emit STATUS. That is a protocol\n  failure in practice, whatever the registry says.\n"
+      }'
+    ;;
+
   *) echo "usage: jarvisctl [status|doctor|report|brief [name]|context [project] [--speak|--reindex]|
                  daily [date]|yesterday [--speak]|test|chimes|demo|audition [--text]|log [n]|
+                 ledger [--raw]|
                  mute <min>|unmute|reset|voices]"; exit 2 ;;
 esac

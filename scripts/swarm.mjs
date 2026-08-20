@@ -63,6 +63,8 @@ export function loadAgents({ root, readYaml }) {
     gates: spec.human_approval_required || [],
     resources: spec.resources || {},
     version: spec.version ?? 1,
+    reviewLoop: spec.review_loop || {},
+    reconciliation: spec.conflict_reconciliation || {},
   };
 }
 
@@ -160,6 +162,88 @@ ${handoffDoc}
 
 Structured fields, not an essay. JARVIS reads these to decide what happens next; prose it has to parse is a failure of the protocol.
 
+## Your first line: STATUS
+
+Begin your handoff with one word.
+
+\`\`\`
+STATUS: SUCCESS | PARTIAL | BLOCKED | FAILED
+\`\`\`
+
+It describes the WORK, not your effort. JARVIS reads it to decide whether anything else
+needs to happen, so a wrong one sends the next agent to the wrong place:
+
+- **SUCCESS** — the objective is met and \`testing\` holds the evidence.
+- **PARTIAL** — some of it is done. Say which part is not, in \`remaining\`.
+- **BLOCKED** — you stopped on something outside your control. Name it in \`handoff\`.
+- **FAILED** — you tried and it did not work. Say what you observed, not what you expected.
+
+**SUCCESS on unverified work is the single most expensive thing you can write.** It ends
+the loop, so nothing downstream looks again. If you did not check it, the status is
+PARTIAL and the thing you did not check goes in \`unverified\`.
+
+Three companions, and they are read by the router rather than by a person:
+
+\`\`\`
+CONFIDENCE: HIGH | MEDIUM | LOW
+RECOMMENDED_NEXT_AGENT: test-engineer
+UNVERIFIED: the migration path on an existing install
+\`\`\`
+
+\`CONFIDENCE\` is about the work, not about you — LOW is useful information, not an
+admission. \`RECOMMENDED_NEXT_AGENT\` is a recommendation and not a dispatch: you have
+just read the code and the router has not, so say what you think, and name one or say
+"none". \`UNVERIFIED\` is the field a reviewer reads first; leaving it empty is a claim.
+
+## The review loop
+
+Work here goes round until it is good, not until it is finished. You are on one side of
+that loop or the other.
+
+**If you are reviewing** — return \`verdict: accept\` or \`verdict: revise\`.
+
+- Judge against the **acceptance criteria**, not against how you would have done it.
+  "I would have structured this differently" is not a defect.
+- A \`revise\` MUST name what would satisfy you. An objection nobody can act on is not a
+  review, it is an opinion, and it costs a whole round to discover that.
+- One clear objection beats five speculative ones. The author gets your words verbatim.
+- If it is genuinely fine, say \`accept\`. A reviewer who never accepts is a reviewer
+  nobody can ship past.
+
+**If your work is being revised** — you wrote it, so you fix it.
+
+- You will receive the objection verbatim. Fix **that**, not your reading of the brief.
+- If the objection is wrong, say so in \`handoff\` with the evidence. Do not silently
+  ignore it and do not silently rewrite something else.
+- If two rounds have not satisfied it, stop. Put the disagreement in \`handoff\` and let
+  a human settle it. Grinding is worse than stopping.
+
+The loop halts when every reviewer accepts, at the round cap, at any human gate, or
+when the same objection comes back twice — because that last one means it is not
+converging.
+
+## When you disagree with another agent
+
+Say so. A specialist who defers to a wrong finding because another agent got there first
+has cost more than one who argues.
+
+But disagree usefully:
+
+- **State what would change your mind.** A position that cannot name its own falsifier is
+  a preference, and preferences do not get reconciled — they get chosen between.
+- **Quote them, do not characterise them.** "The architect prefers a looser boundary" is
+  your reading. Their words are the evidence.
+- **Argue the axes, not the author:** correctness, then safety, then reversibility, then
+  cost, then ergonomics. An approach that is wrong is not rescued by being elegant, and
+  seniority is not an axis.
+- **Take it to \`handoff\`, not to the user.** You cannot address them; the coordinator
+  reconciles, using the review loop.
+- **If it is about one of the seven gates, stop.** That disagreement is not yours to
+  settle and pressing on is how a gate gets crossed by accident.
+
+A disagreement usually means the question was underspecified rather than that someone is
+wrong. Saying *that* is often the most useful thing in your handoff.
+
 ## The spoken line — your LAST line, always
 
 End your output with exactly this, on its own line:
@@ -179,11 +263,9 @@ Six rules. The first is what most agents get wrong:
 - **A real verb and a named subject.** Something must DO something. "Vendor Audit schema
   is in" has both; "schema done, 3 tables" has neither, and it is the single most common
   failure.
-- **Length follows importance.** About six words for a routine outcome. A problem, or
-  something blocked and waiting on a human, earns up to about twelve — that is the
-  announcement worth listening to. This is measured, not taste: a word costs roughly
-  0.38 seconds, and naming the session and the elapsed time spends about two seconds
-  before your clause starts. Past five seconds total, nobody is still listening.
+- **Length follows importance.** About six words for a routine outcome, up to twelve for
+  a problem or something blocked on a human. Measured, not taste — the budget, the
+  per-syllable costs and the reasoning are in the JARVIS skill, not repeated here.
 - **No file paths, ever.** Name the thing, not its location. A path read aloud is one
   long nonsense word.
 - **No identifiers.** No snake_case, no camelCase, no CONSTANT_CASE. "safe_exec" is heard
@@ -317,7 +399,7 @@ export function buildAgents({ root, readYaml, apply = false }) {
 
 /* ------------------------------------------------------------- doctor (§6) */
 export function doctor({ root, readYaml, registry }) {
-  const { agents, protocol, gates } = loadAgents({ root, readYaml });
+  const { agents, protocol, gates, reviewLoop, reconciliation } = loadAgents({ root, readYaml });
   const skillIds = new Set((registry.skills || []).map((s) => s.id));
   const agentIds = new Set(agents.map((a) => a.id));
   const fail = [];
@@ -393,6 +475,29 @@ export function doctor({ root, readYaml, registry }) {
   // governance completeness
   if (!gates.length) fail.push('governance: no human_approval_required gates declared (§24)');
   if (!protocol.required || !protocol.required.length) fail.push('protocol: no required fields declared (§7)');
+
+  // The review loop is only real if its parts exist. A cap of 0 is an infinite loop
+  // spelled optimistically, and a panel selector or criteria source naming an agent
+  // that is not on the roster means the loop has nowhere to get "done" from.
+  const loop = reviewLoop || {};
+  const ids = new Set(agents.map((a) => a.id));
+  if (!loop.rounds || Number(loop.rounds) < 2) {
+    fail.push('review loop: rounds must be at least 2 — one build and one review');
+  }
+  for (const [key, who] of [['panel_selected_by', loop.panel_selected_by], ['criteria_from', loop.criteria_from]]) {
+    if (!who) fail.push(`review loop: ${key} is not declared`);
+    else if (!ids.has(who)) fail.push(`review loop: ${key} names "${who}", which is not an agent`);
+  }
+  if (!(loop.halt_on || []).length) fail.push('review loop: no halt condition declared — it would never stop');
+
+  // Conflict reconciliation. A tiebreak list naming an agent that does not exist is a
+  // procedure with a hole in exactly the place it is needed.
+  const cr = reconciliation || {};
+  if (!(cr.procedure || []).length) fail.push('conflict reconciliation: no procedure declared');
+  if (!(cr.halt_to_human || []).length) fail.push('conflict reconciliation: nothing escalates to a human');
+  for (const who of cr.tiebreak_precedence || []) {
+    if (!ids.has(who)) fail.push(`conflict reconciliation: tiebreak names "${who}", which is not an agent`);
+  }
   const passive = agents.filter((a) => a.mode === PASSIVE);
   if (!passive.length) warn.push('no passive governance agents — the swarm cannot audit itself (§6)');
 
@@ -413,6 +518,16 @@ export function doctor({ root, readYaml, registry }) {
   console.log(mark(!fail.some((f) => f.startsWith('protocol')), `Protocol compliance: ${agents.filter((a) => a.handoff.includes('handoff')).length}/${agents.length}`));
   console.log(mark(!!gates.length, `Human-approval gates declared: ${gates.length}`));
   console.log(mark(!!passive.length, `Passive governance agents: ${passive.length}`));
+  const rl = reviewLoop || {};
+  console.log(mark(
+    !fail.some((f) => f.startsWith('review loop')),
+    `Review loop: ${rl.rounds || 0} rounds, panel by ${rl.panel_selected_by || '?'}, ${(rl.halt_on || []).length} halt conditions`
+  ));
+  const rc = reconciliation || {};
+  console.log(mark(
+    !fail.some((f) => f.startsWith('conflict reconciliation')),
+    `Conflict reconciliation: ${(rc.procedure || []).length} steps, ${(rc.tiebreak_precedence || []).length} tiebreak, ${(rc.halt_to_human || []).length} escalations`
+  ));
 
   if (fail.length) {
     console.log('\nFAILURES');

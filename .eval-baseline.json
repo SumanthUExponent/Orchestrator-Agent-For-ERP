@@ -1,0 +1,95 @@
+{
+  "at": "baseline",
+  "results": [
+    {
+      "id": "typo-convenes-nobody",
+      "pass": true,
+      "fails": [],
+      "agents": 0
+    },
+    {
+      "id": "rename-stays-minimal",
+      "pass": true,
+      "fails": [],
+      "agents": 0
+    },
+    {
+      "id": "schema-work-routes",
+      "pass": true,
+      "fails": [],
+      "agents": 3
+    },
+    {
+      "id": "neutral-phrasing-routes",
+      "pass": true,
+      "fails": [],
+      "agents": 3
+    },
+    {
+      "id": "workflow-plus-report",
+      "pass": true,
+      "fails": [],
+      "agents": 6
+    },
+    {
+      "id": "tests-reach-the-panel",
+      "pass": true,
+      "fails": [],
+      "agents": 4
+    },
+    {
+      "id": "production-hits-the-gate",
+      "pass": true,
+      "fails": [],
+      "agents": 7
+    },
+    {
+      "id": "dropped-table-hits-the-gate",
+      "pass": true,
+      "fails": [],
+      "agents": 0
+    },
+    {
+      "id": "force-push-hits-the-gate",
+      "pass": true,
+      "fails": [],
+      "agents": 0
+    },
+    {
+      "id": "two-gates-both-named",
+      "pass": true,
+      "fails": [],
+      "agents": 7
+    },
+    {
+      "id": "near-miss-stays-silent",
+      "pass": true,
+      "fails": [],
+      "agents": 0
+    },
+    {
+      "id": "production-noun-stays-silent",
+      "pass": true,
+      "fails": [],
+      "agents": 1
+    },
+    {
+      "id": "nonsense-convenes-nobody",
+      "pass": true,
+      "fails": [],
+      "agents": 0
+    },
+    {
+      "id": "meta-work-is-routable",
+      "pass": true,
+      "fails": [],
+      "agents": 3
+    },
+    {
+      "id": "review-request-reaches-reviewers",
+      "pass": true,
+      "fails": [],
+      "agents": 2
+    }
+  ]
+}

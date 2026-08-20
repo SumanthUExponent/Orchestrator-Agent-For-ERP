@@ -377,6 +377,7 @@ agents:
   qa-engineer:
     role: Exploratory testing against the real system
     mode: validation
+    selected_by: jarvis
     model: sonnet
     tools: [Read, Grep, Glob, Bash]
     skills: []
@@ -387,6 +388,7 @@ agents:
   code-reviewer:
     role: Correctness and constraint review of a diff
     mode: validation
+    selected_by: jarvis
     model: opus
     tools: [Read, Grep, Glob, Bash]
     skills: [ponytail-review]
@@ -708,7 +710,7 @@ agents:
 # --------------------------------------------------------------- protocol
 # Every agent returns these fields. Structured handoff, not prose (§7, §10).
 protocol:
-  required: [summary, voice, log, handoff]
+  required: [status, summary, voice, log, handoff]
   fields:
     summary: One paragraph. What was done, in plain terms.
     voice: >
@@ -734,6 +736,32 @@ protocol:
       announced immediately, at the highest priority, ahead of every other event -- a
       run that stopped for authorisation is not a run that finished. Optional by nature:
       omit the line entirely on a turn that crossed no gate.
+    status: >
+      SUCCESS | PARTIAL | BLOCKED | FAILED. One word, and it is the field JARVIS reads
+      to decide what happens next -- so it must describe the WORK, not your effort.
+      PARTIAL means some of the objective is done and you can say which part is not.
+      BLOCKED means you stopped on something outside your control and named it in
+      `handoff`. FAILED means you tried and it did not work; say what you observed.
+      "SUCCESS" on unverified work is the one answer that makes every other field
+      worthless.
+    confidence: >
+      HIGH | MEDIUM | LOW, about the WORK rather than about yourself. HIGH means you
+      verified it and the evidence is in `testing`. MEDIUM means it is right as far as
+      you could check. LOW means you are handing over something you could not confirm --
+      which is useful information, not an admission.
+    recommended_next_agent: >
+      The agent that should pick this up, or "none" if the work is finished. Name one.
+      This is a recommendation and not a dispatch: JARVIS decides, but a specialist who
+      has just read the code knows better than a router who has not.
+    unverified: >
+      What you did NOT check. Empty is a claim, so only write it when you mean it.
+      Anything asserted without evidence belongs here rather than in `testing` -- and a
+      reviewer reads this field first.
+    verdict: >
+      REVIEWERS ONLY, and required of them: "accept" or "revise". A verdict of revise
+      must name what would satisfy you -- an objection nobody can act on is not a
+      review, it is an opinion. Judge against the acceptance criteria, not against how
+      you would have done it. Build agents omit this field.
     files_changed: Exact paths. Empty if none.
     decisions: Architectural or implementation choices worth carrying forward.
     findings: For review agents — what was discovered, one line each.
@@ -741,6 +769,71 @@ protocol:
     testing: What was run and the real result. Never assert a pass without output.
     remaining: Anything unfinished, stated plainly.
     handoff: What the next agent or JARVIS needs to continue.
+
+# --------------------------------------------------------- conflict reconciliation
+# Two agents that both did the work and disagree about the finding.
+#
+# `conflicts_with` is a different thing entirely: it stops two agents being routed for
+# the same job, at routing time, before either has done anything. Useful, and already
+# enforced by doctor -- but it has nothing to say about the case that actually costs
+# you, which is the architect saying approach A while the security reviewer says A is
+# unacceptable and the UX reviewer says B produces a better workflow.
+#
+# Left alone, that resolves by accident: whichever handoff the main thread read last
+# wins. That is the worst possible resolution rule, because it is invisible.
+#
+# So a disagreement is not a tie to break by seniority. It is EVIDENCE that the
+# question was underspecified, and the reconciliation is a procedure rather than a
+# ranking. Precedence exists only for the case where evidence genuinely cannot settle
+# it -- and even then it is a tiebreak, not an argument.
+conflict_reconciliation:
+  # One-line list items, matching review_loop.halt_on. A folded block is supported as a
+  # MAP value but not as a list item, so `- >` stops the parser -- correctly, with
+  # "unsupported structure", rather than mis-reading it.
+  procedure:
+    - Name it in both agents own words. A conflict summarised by the coordinator has already been decided by the coordinator.
+    - Ask each side what would change its mind. A position that cannot name its own falsifier is a preference, not a finding.
+    - Send both positions round the review loop as a revise. It already carries an objection verbatim and re-reviews only what changed.
+    - Compare on the axes, never on the agents - correctness, then safety, then reversibility, then cost, then ergonomics.
+    - Record the decision AND the rejected position. A conflict resolved without a record is re-litigated by whoever reads only the winner.
+  tiebreak_precedence: [deployment-safety, git-safety, migration-analyst, code-reviewer, architect, data-model-architect]
+  halt_to_human:
+    - the disagreement is about a human_approval_required gate
+    - both sides return HIGH confidence and neither yields
+    - the same conflict recurs after one reconciliation round
+
+# ------------------------------------------------------------- review loop
+# Quality by peer review, so a correction does not have to come from the user.
+#
+# Round 1 builds. From round 2 the reviewers judge the work against the acceptance
+# criteria requirements-analyst wrote, and any verdict of `revise` goes BACK to the
+# agent that produced it, carrying the objection verbatim. That agent holds the
+# context; a fresh one would re-derive it and argue with the reviewer instead of
+# fixing the named thing.
+#
+# It stops on the FIRST of: every reviewer accepts, the round cap, any of the seven
+# human gates, or the same objection twice. That last one matters most -- a loop that
+# keeps failing the same check is not converging, and grinding is worse than stopping.
+#
+# Three rounds is not arbitrary. Past three the reviewers are usually disagreeing
+# about taste rather than finding defects, and taste is a human call.
+review_loop:
+  rounds: 3
+  # Who decides the panel. quality-sentinel already owns "which outputs need deep
+  # review, ranked by blast radius" -- that IS this question, so it is not re-answered
+  # here.
+  panel_selected_by: quality-sentinel
+  # Where "done" is defined. requirements-analyst already owns "how will we know this
+  # is done?"; the loop checks against what it wrote rather than inventing criteria.
+  criteria_from: requirements-analyst
+  revision_goes_to: original-author
+  halt_on:
+    - every reviewer returns accept
+    - the round cap is reached
+    - any human_approval_required gate is crossed
+    - the same objection is returned twice (no progress)
+  # A reviewer that cannot say what would satisfy it has not reviewed anything.
+  objection_must_state_remedy: true
 
 # ------------------------------------------------------------ human gates
 # §24. The JARVIS skill enforces these; agents must refuse and escalate.

@@ -460,7 +460,10 @@ render() {
       # A swarm run and a one-line edit both end in Stop. The specialist count is
       # the only thing in the announcement that distinguishes them.
       local crew=""
-      [ "$subs" -ge 2 ] && crew=" $subs specialists,"
+      # No trailing comma. It used to be followed by the elapsed time; with that gone
+      # the announcement ended "three specialists," and stopped -- a pause into nothing.
+      # Punctuation belongs to whatever closes the sentence, never to a fragment.
+      [ "$subs" -ge 2 ] && crew=" $subs specialists."
       motif 'done' "$ord"
       if [ -n "$summary" ]; then
         # The summary IS the content, so the specialist count goes. That count only ever
@@ -470,26 +473,27 @@ render() {
         # The most-heard informative announcement in the whole layer, and it had
         # exactly ONE phrasing -- so variation was absent precisely where content
         # was present. Weighted, with the plainest form dominant.
-        # Fit the ASSEMBLED line, not an estimate of its frame. Measuring the frame
-        # alone missed the variant prefix ("From ...", "... reports"), and the model
-        # under-reads by roughly a fifth, so two of three completions measured 5.3s.
-        # SLACK covers both; it is not a guess to be tuned by taste, it is the gap
-        # between the model and `afinfo`.
+        # No elapsed time. It was never information: a turn that reports what CHANGED
+        # has already said everything worth hearing, and "four minutes" is the part you
+        # cannot act on. config.sh made the same argument for dropping the specialist
+        # count once a summary exists; this is that argument finished.
+        #
+        # The written record still carries it -- the banner below and the daily log --
+        # because reading a timeline later is a different question from being told
+        # something now.
         _ceil=$(( ${JARVIS_CEILING_MS:-5000} - ${JARVIS_MODEL_SLACK_MS:-800} ))
-        _dur="$(dur "$el")"
-        _line=$(wpick 4 "$who: $summary$SIR. $_dur." \
-                       2 "$who, $summary$SIR. $_dur." \
-                       2 "$who reports $summary$SIR. $_dur." \
-                       1 "From $who, $summary$SIR. $_dur.")
+        _el=""
+        [ "${JARVIS_SPEAK_ELAPSED:-0}" = "1" ] && _el=" $(dur "$el")."
 
-        # Over budget: drop the ELAPSED TIME before touching the sentence. When there is
-        # something to report, the duration is the least valuable thing in the line --
-        # exactly the argument config.sh already makes for dropping the specialist count
-        # once a summary exists. Truncating content to keep a timestamp is backwards.
-        if [ "$(spoken_ms "$_line")" -gt "$_ceil" ]; then
-          _line="$who: $summary$SIR."
-        fi
-        # Still over: now the sentence itself is too long, so trim it.
+        # More frames, because with the time gone the frame is most of what repeats.
+        _line=$(wpick 4 "$who: $summary$SIR.$_el" \
+                       3 "$who, $summary$SIR.$_el" \
+                       2 "$who reports $summary$SIR.$_el" \
+                       2 "From $who, $summary$SIR.$_el" \
+                       2 "On $who, $summary$SIR.$_el" \
+                       1 "$who is done$SIR. $(cap "$summary").$_el" \
+                       1 "That is $who$SIR. $(cap "$summary").$_el")
+
         if [ "$(spoken_ms "$_line")" -gt "$_ceil" ]; then
           summary="$(budget routine "$summary" "$(spoken_ms "$who $SIR . .")")"
           _line="$who: $summary$SIR."
@@ -500,9 +504,16 @@ render() {
         # All three carry $SIR. Two of them did not, so the persona addressed you on
         # one completion in three -- which reads as two different narrators rather
         # than one assistant with a habit.
-        speak "$(pick "$who done$SIR.$crew $(dur "$el")." \
-                      "$who finished$SIR.$crew $(dur "$el")." \
-                      "$who, all done$SIR.$crew $(dur "$el").")"
+        # Nothing to report, so there is nothing to say but that it stopped. The
+        # elapsed time used to fill this gap, which is precisely why it sounded like
+        # filler -- it was.
+        _el=""
+        [ "${JARVIS_SPEAK_ELAPSED:-0}" = "1" ] && _el=" $(dur "$el")."
+        speak "$(wpick 3 "$who done$SIR.$crew$_el" \
+                       2 "$who finished$SIR.$crew$_el" \
+                       2 "$who, all done$SIR.$crew$_el" \
+                       1 "$who is clear$SIR.$crew$_el" \
+                       1 "Nothing further on $who$SIR.$crew$_el")"
         banner "$name" "Complete - $(dur "$el")${crew:+ -$crew}"
       fi ;;
 
@@ -548,7 +559,13 @@ render() {
       # minutes while the others work — so it gets the loudest motif, a named duration,
       # and a banner that stays on screen.
       motif escalate 1
-      speak "$who has been waiting $(dur "$extra")$SIR. [[slnc 200]] It is going nowhere without you."
+      # The duration WAS the point here, and it is still the wrong thing to say: you
+      # cannot act on a number of minutes. "Nothing is moving" is the same fact stated
+      # as a consequence. Set JARVIS_SPEAK_ELAPSED=1 to hear the figure again.
+      _ew=""
+      [ "${JARVIS_SPEAK_ELAPSED:-0}" = "1" ] && _ew=" It has been $(dur "$extra")."
+      speak "$(wpick 2 "$who is still blocked$SIR. [[slnc 200]] Nothing is moving without you.$_ew" \
+                     1 "$who has not moved$SIR. [[slnc 200]] It needs you before anything else happens.$_ew")"
       banner "$name" "STILL BLOCKED - $(dur "$extra")" ;;
 
     nag)

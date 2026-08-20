@@ -75,3 +75,50 @@ describe('dry run tells the truth about agents', () => {
     assert.ok(agents(real, 'skipped') > 0);
   });
 });
+
+describe('the installer can tell stale from identical', () => {
+  // "already installed" is true and useless -- it reads as up to date when the installed
+  // copy is six commits behind. The machine then runs old agents while `doctor` reports
+  // Healthy, because it reads the INSTALLED registry and a stale file is a valid file.
+  // Hit for real: 45 agents skipped as "already installed" after a registry change, and
+  // nothing in any output said so.
+
+  test('a freshly installed agent is reported identical, not merely present', () => {
+    run({ apply: true, force: true });
+    const again = run({ apply: false });
+    const skips = again.skipped.filter((s) => s.source === 'agent');
+    assert.ok(skips.length > 0, 'nothing skipped after a full install');
+    assert.ok(skips.every((s) => s.stale === false), 'a just-written file reported as stale');
+    assert.ok(skips.every((s) => /identical/.test(s.reason)), skips[0]?.reason);
+  });
+
+  test('a modified installed agent is reported OUTDATED with the fix in the reason', () => {
+    run({ apply: true, force: true });
+    const target = path.join(process.env.JARVIS_AGENTS_DIR, 'architect.md');
+    fs.appendFileSync(target, '\ndrift introduced by the test\n');
+    const r = run({ apply: false });
+    const hit = r.skipped.find((s) => s.name === 'architect.md');
+    assert.ok(hit, 'the modified agent was not even skipped');
+    assert.equal(hit.stale, true, 'a differing file was not flagged stale');
+    assert.match(hit.reason, /OUTDATED/);
+    assert.match(hit.reason, /--force/, 'flagged the drift without naming the fix');
+  });
+
+  test('a truncated installed agent counts as drift', () => {
+    run({ apply: true, force: true });
+    const target = path.join(process.env.JARVIS_AGENTS_DIR, 'code-reviewer.md');
+    fs.writeFileSync(target, '');
+    const hit = run({ apply: false }).skipped.find((s) => s.name === 'code-reviewer.md');
+    assert.equal(hit.stale, true, 'an emptied agent read as identical');
+  });
+
+  test('--force still replaces rather than reporting drift', () => {
+    run({ apply: true, force: true });
+    const SENTINEL = 'ZZ-DRIFT-SENTINEL-ZZ';
+    fs.appendFileSync(path.join(process.env.JARVIS_AGENTS_DIR, 'architect.md'), `\n${SENTINEL}\n`);
+    const forced = run({ apply: true, force: true });
+    assert.equal(forced.skipped.filter((s) => s.stale).length, 0, '--force left drift in place');
+    const body = fs.readFileSync(path.join(process.env.JARVIS_AGENTS_DIR, 'architect.md'), 'utf8');
+    assert.ok(!body.includes(SENTINEL), '--force did not overwrite the drifted file');
+  });
+});

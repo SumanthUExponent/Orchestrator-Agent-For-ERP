@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#05070a">
+<meta name="description" content="J.A.R.V.I.S. — an engineering control system for Claude Code. 45 specialists, seven gates, a voice that speaks only when it matters, and a ledger that knows whether any of it worked.">
+<meta property="og:title" content="J.A.R.V.I.S. — For ERP">
+<meta property="og:description" content="Forty-five specialists. One butler. Nothing dispatched without your say-so.">
+<title>J.A.R.V.I.S. — For ERP</title>
+<style>
+:root{
+  --bg:#05070a; --panel:#090d12; --panel2:#0c1219; --line:#152530;
+  --cyan:#35e7ff; --cyan2:#7df3ff; --text:#e8f4f7; --muted:#7b939e;
+  --amber:#ffc857; --red:#ff5364; --green:#5ff0a8;
+  --shadow:0 0 35px rgba(53,231,255,.07);
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:
+    radial-gradient(900px 500px at 50% -8%,rgba(53,231,255,.14),transparent 60%),
+    radial-gradient(700px 400px at 100% 12%,rgba(0,135,180,.07),transparent 60%),
+    var(--bg);
+  color:var(--text);
+  font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;opacity:.045;z-index:0;
+  background-image:linear-gradient(rgba(255,255,255,.5) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.5) 1px,transparent 1px);
+  background-size:52px 52px;
+  -webkit-mask-image:linear-gradient(to bottom,black,transparent 80%);
+          mask-image:linear-gradient(to bottom,black,transparent 80%);
+}
+main,header,footer{position:relative;z-index:1}
+a{color:var(--cyan);text-decoration:none}
+a:hover{text-shadow:0 0 12px rgba(53,231,255,.6)}
+.wrap{width:min(1180px,92vw);margin:auto}
+
+/* ---------------------------------------------------------------- chrome -- */
+.topbar{position:sticky;top:0;z-index:20;backdrop-filter:blur(14px);
+  background:rgba(5,7,10,.8);border-bottom:1px solid var(--line)}
+.topbar .wrap{height:58px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.brand{font:800 12px/1 var(--mono);letter-spacing:.18em;white-space:nowrap}
+.brand span{color:var(--cyan)}
+.nav{display:flex;gap:20px;font:11px/1 var(--mono);text-transform:uppercase;letter-spacing:.12em;color:#93abb5}
+.nav a{color:inherit}.nav a:hover{color:var(--cyan)}
+
+/* ------------------------------------------------------------------ hero -- */
+.hero{min-height:86vh;display:grid;place-items:center;text-align:center}
+.hero-inner{padding:80px 0 60px}
+.eyebrow{color:var(--cyan);font:700 11px/1 var(--mono);letter-spacing:.32em;text-transform:uppercase}
+.logo{margin:22px auto 14px;font:900 clamp(40px,9vw,108px)/.9 var(--mono);letter-spacing:.05em;
+  color:#f3fbff;text-shadow:0 0 8px rgba(125,243,255,.5),0 0 46px rgba(53,231,255,.22)}
+.subtitle{font-size:clamp(16px,2.1vw,23px);color:#bcd3da;max-width:760px;margin:0 auto}
+.subtitle strong{color:#fff}
+.hero-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:32px 0 4px}
+.btn{display:inline-flex;align-items:center;gap:9px;padding:11px 18px;border:1px solid #24515e;
+  background:rgba(53,231,255,.06);border-radius:6px;font:700 12px var(--mono);
+  letter-spacing:.08em;text-transform:uppercase;transition:.18s}
+.btn:hover{border-color:var(--cyan);background:rgba(53,231,255,.12)}
+.btn.primary{background:var(--cyan);color:#031015;border-color:var(--cyan);box-shadow:0 0 25px rgba(53,231,255,.22)}
+.btn.primary:hover{background:var(--cyan2)}
+.status{display:inline-flex;align-items:center;gap:9px;border:1px solid #20453a;background:#07120f;
+  padding:8px 13px;border-radius:99px;font:11px var(--mono);color:#9ff4c8}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green);
+  animation:blink 2.6s ease-in-out infinite}
+@keyframes blink{50%{opacity:.35}}
+
+/* --------------------------------------------------------------- reactor -- */
+.reactor{width:min(460px,74vw);aspect-ratio:1;border:1px solid rgba(53,231,255,.26);border-radius:50%;
+  margin:46px auto 6px;display:grid;place-items:center;position:relative;
+  box-shadow:inset 0 0 60px rgba(53,231,255,.04),0 0 70px rgba(53,231,255,.06);
+  animation:pulse 4s ease-in-out infinite}
+.reactor::before,.reactor::after{content:"";position:absolute;border-radius:50%;border:1px solid rgba(53,231,255,.15)}
+.reactor::before{inset:12%;border-style:dashed;animation:spin 22s linear infinite}
+.reactor::after{inset:26%;border-color:rgba(125,243,255,.28);box-shadow:0 0 50px rgba(53,231,255,.15)}
+.core{width:27%;aspect-ratio:1;border-radius:50%;
+  background:radial-gradient(circle,#fff 0,#7df3ff 18%,#35e7ff 42%,rgba(53,231,255,.04) 72%);
+  box-shadow:0 0 45px #35e7ff,0 0 120px rgba(53,231,255,.32);animation:breathe 3.4s ease-in-out infinite}
+.scan{position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(from 0deg,transparent 0 84%,rgba(53,231,255,.5),transparent 91%);
+  animation:spin 5.5s linear infinite}
+.ring-label{position:absolute;font:9px var(--mono);letter-spacing:.24em;color:#3f6b78;text-transform:uppercase}
+.ring-label.t{top:-9px;background:var(--bg);padding:0 10px}
+.ring-label.b{bottom:-9px;background:var(--bg);padding:0 10px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{50%{box-shadow:inset 0 0 80px rgba(53,231,255,.06),0 0 100px rgba(53,231,255,.1)}}
+@keyframes breathe{50%{transform:scale(1.045)}}
+@media(prefers-reduced-motion:reduce){
+  .scan,.reactor,.reactor::before,.core,.dot{animation:none}
+}
+
+/* -------------------------------------------------------------- sections -- */
+section{padding:92px 0}
+.kicker{font:700 10px var(--mono);color:var(--cyan);letter-spacing:.3em;text-transform:uppercase}
+h2{font:800 clamp(28px,4.6vw,50px)/1.06 var(--mono);margin:12px 0 18px;letter-spacing:-.01em}
+h3{font:800 15px var(--mono);margin:0 0 10px;letter-spacing:.04em}
+.lead{color:#a8c0c8;max-width:760px;font-size:17px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.grid.two{grid-template-columns:repeat(2,1fr)}
+.card{background:linear-gradient(150deg,rgba(12,18,25,.95),rgba(7,10,14,.95));
+  border:1px solid var(--line);border-radius:10px;padding:24px;box-shadow:var(--shadow);transition:.2s}
+.card:hover{border-color:#2d6d7b;transform:translateY(-2px)}
+.icon{font-size:22px;margin-bottom:14px;display:block}
+.muted{color:var(--muted)}
+.card code{color:#7fa3ad;font:11px var(--mono);display:block;margin-top:12px}
+.gate{border-color:#5a3037;background:linear-gradient(150deg,#150c0f,#090b0e)}
+.gate .icon{color:var(--red)}
+.win{border-color:#2b5a44;background:linear-gradient(150deg,#0a1512,#080b0e)}
+.win .icon{color:var(--green)}
+
+/* -------------------------------------------------------------- terminal -- */
+.terminal{border:1px solid #1c2d36;border-radius:10px;overflow:hidden;background:#030506;
+  box-shadow:0 22px 60px rgba(0,0,0,.42)}
+.term-head{height:38px;border-bottom:1px solid #14222a;display:flex;align-items:center;gap:7px;padding:0 13px}
+.term-dot{width:9px;height:9px;border-radius:50%;background:#24343b}
+.term-dot:nth-child(1){background:#3b2a2e}.term-dot:nth-child(2){background:#3a3527}.term-dot:nth-child(3){background:#24343b}
+.term-title{margin-left:8px;color:#526b75;font:10px var(--mono);letter-spacing:.11em}
+pre{margin:0;padding:22px;overflow-x:auto;color:#b8d2d9;font:12.5px/1.68 var(--mono)}
+.c{color:#55747e}.g{color:var(--green)}.b{color:var(--cyan)}.y{color:var(--amber)}.r{color:var(--red)}.w{color:#fff}
+
+/* ------------------------------------------------------------------ flow -- */
+.flow{display:flex;align-items:center;gap:10px;margin-top:32px;flex-wrap:wrap;justify-content:center}
+.node{flex:1 1 120px;padding:14px 10px;text-align:center;border:1px solid #23434d;border-radius:8px;
+  background:#071016;font:700 10px var(--mono);letter-spacing:.09em}
+.node small{display:block;color:#5c7a84;font-weight:400;margin-top:4px;letter-spacing:.04em}
+.node.gateway{border-color:#5a3037;background:#150c0f}
+.node.loop{border-color:#5c4a24;background:#151107}
+.arrow{color:var(--cyan);font:14px var(--mono);flex:0 0 auto}
+
+/* --------------------------------------------------------------- metrics -- */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.metric{background:#080c10;padding:24px}
+.metric strong{display:block;font:800 29px var(--mono);color:var(--cyan);line-height:1}
+.metric span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.13em;
+  display:block;margin-top:8px}
+
+/* ------------------------------------------------------------- divisions -- */
+.divisions{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.division{padding:18px 20px;border-left:2px solid #225260;background:rgba(10,17,22,.7);border-radius:0 8px 8px 0}
+.division b{display:block;color:#dffaff;margin-bottom:7px;font:700 11px var(--mono);letter-spacing:.14em}
+.division code{color:#78939d;font:11.5px/1.6 var(--mono)}
+
+.quote{border-left:2px solid var(--cyan);padding:18px 22px;color:#c8dce1;
+  background:rgba(53,231,255,.035);margin:26px 0;border-radius:0 8px 8px 0}
+details{border:1px solid var(--line);background:#080c10;border-radius:8px;margin:10px 0}
+summary{cursor:pointer;padding:16px 20px;font:700 11.5px var(--mono);letter-spacing:.08em;color:#d8edf2}
+summary:hover{color:var(--cyan)}
+details>div{padding:0 20px 20px;color:#93abb3}
+details code{color:#8fb3bd;font:12px var(--mono)}
+table{width:100%;border-collapse:collapse;margin-top:22px;font-size:14px}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line)}
+th{font:700 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:#6e8b95}
+td code{font:12px var(--mono);color:#8fb3bd}
+footer{border-top:1px solid var(--line);padding:52px 0 70px;color:#617a83;text-align:center;font:11px var(--mono)}
+
+@media(max-width:860px){
+  .nav{display:none}
+  .grid,.grid.two,.divisions{grid-template-columns:1fr}
+  .metrics{grid-template-columns:repeat(2,1fr)}
+  .arrow{transform:rotate(90deg);width:100%}
+  .node{flex:1 1 100%}
+  section{padding:64px 0}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand">J.A.R.V.I.S. <span>// FOR ERP</span></div>
+    <nav class="nav">
+      <a href="#mission">Mission</a><a href="#architecture">Core</a><a href="#swarm">Swarm</a>
+      <a href="#loop">Loop</a><a href="#voice">Voice</a><a href="#ledger">Ledger</a><a href="#install">Install</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<!-- ============================================================== HERO -->
+<section class="hero">
+<div class="wrap hero-inner">
+  <div class="eyebrow">Engineering Control System // Claude Code</div>
+  <div class="logo">J.A.R.V.I.S.</div>
+  <p class="subtitle"><strong>Just A Rather Very Intelligent System.</strong><br>
+  Forty-five specialists. One butler. <strong>Nothing dispatched without your say-so.</strong></p>
+
+  <div class="hero-actions">
+    <a class="btn primary" href="#install">▶ Initialise</a>
+    <a class="btn" href="#architecture">⌘ Inspect the core</a>
+    <span class="status"><span class="dot"></span> SYSTEM OPERATIONAL</span>
+  </div>
+
+  <div class="reactor" role="img" aria-label="JARVIS core">
+    <span class="ring-label t">CONTROL CORE</span>
+    <div class="scan"></div><div class="core"></div>
+    <span class="ring-label b">VOICE · MEMORY · GOVERNANCE</span>
+  </div>
+</div>
+</section>
+
+<!-- =========================================================== MISSION -->
+<section id="mission">
+<div class="wrap">
+  <div class="kicker">01 // Mission</div>
+  <h2>Not a swarm.<br>A control system.</h2>
+  <p class="lead">A growing pile of skills and agents creates a <em>new</em> engineering problem: deciding
+  what <em>not</em> to load, who should act, what can run together, and where a human must stay in command.
+  Most agent frameworks solve the first half. This one is built around the second.</p>
+
+  <div class="grid" style="margin-top:34px">
+    <article class="card"><span class="icon">🧠</span><h3>THE BRAIN</h3>
+      <p class="muted">Reads the request, selects the skills, orders the specialists, batches what can run
+      at once, and <strong>prices the run before it starts</strong>.</p></article>
+    <article class="card"><span class="icon">🔊</span><h3>THE VOICE</h3>
+      <p class="muted">One queue. One drainer. One sentence at a time. Four parallel sessions
+      <strong>physically cannot</strong> talk over each other.</p></article>
+    <article class="card gate"><span class="icon">🚪</span><h3>THE GATES</h3>
+      <p class="muted">Seven things it will not do without you. Production. Dropped tables. Force pushes.
+      It <strong>stops and names which</strong>.</p></article>
+  </div>
+
+  <div class="quote"><strong>The doctrine:</strong> you give intent; JARVIS coordinates; specialists execute;
+  verification brings evidence back. The human stays the authority — and <em>nothing here is designed to make
+  the automation feel autonomous.</em> It is designed to keep it observable, bounded and accountable.</div>
+</div>
+</section>
+
+<!-- ====================================================== ARCHITECTURE -->
+<section id="architecture">
+<div class="wrap">
+  <div class="kicker">02 // Core Architecture</div>
+  <h2>The control room.</h2>
+  <p class="lead">Every request walks an inspectable pipeline. Trivial work bypasses the swarm entirely —
+  that is the feature, not a shortfall. Complex work <em>earns</em> a swarm.</p>
+
+  <div class="flow">
+    <div class="node">YOU<small>intent</small></div><span class="arrow">→</span>
+    <div class="node">ROUTE<small>which skills</small></div><span class="arrow">→</span>
+    <div class="node">PLAN<small>agents · order · tier · cost</small></div><span class="arrow">→</span>
+    <div class="node gateway">GATE?<small>seven of them</small></div><span class="arrow">→</span>
+    <div class="node">BATCHES<small>parallel</small></div>
+  </div>
+  <div class="flow" style="margin-top:12px">
+    <div class="node loop">REVIEW LOOP<small>up to 3 rounds</small></div><span class="arrow">→</span>
+    <div class="node">VERIFY<small>evidence, not assertion</small></div><span class="arrow">→</span>
+    <div class="node">LEDGER<small>what actually happened</small></div><span class="arrow">→</span>
+    <div class="node">🔊 VOICE<small>only if it matters</small></div>
+  </div>
+
+  <div class="terminal" style="margin-top:34px">
+    <div class="term-head"><span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+      <span class="term-title">jarvis plan // real output</span></div>
+<pre><span class="c">$</span> node scripts/jarvis.mjs plan <span class="y">"System Console installer for an Invoice DocType with approval workflow"</span>
+
+<span class="g">Effort:</span> standard  ·  <span class="g">Gates:</span> verify
+<span class="b">Skills routed:</span> console-automation-engine, frappe-doctype, frappe-workflow
+
+<span class="b">Execution plan</span>
+  Batch 1  (phase 2)
+       - requirements-analyst   <span class="c">sonnet</span>  required by architect
+  Batch 2  (phase 2)
+       - architect              <span class="y">opus</span>    required by data-model-architect
+  Batch 3  (phase 2)
+       - data-model-architect   <span class="y">opus</span>    via frappe-doctype
+  Batch 4  (phase 2)
+       - schema-builder         <span class="c">sonnet</span>  required by backend
+  Batch 5  (phase 2)
+       - backend                <span class="c">sonnet</span>  via frappe-workflow
+  Batch 6  (phase 4)
+       - console-deployer       <span class="y">opus</span>    via console-automation-engine
+
+<span class="b">Dropped</span>
+  - demo-builder (contested): console-deployer matched more closely (2 vs 0)
+
+<span class="b">Review loop</span>  (up to 3 rounds)
+  Panel:     test-engineer
+  Halts on:  every reviewer accepts · the cap · a human gate · <span class="w">the same objection twice</span>
+
+<span class="b">Cost</span>
+  Relative cost index: <span class="g">54</span> vs 90 all-opus baseline (<span class="g">40% lower</span>)</pre>
+  </div>
+
+  <p class="lead" style="margin-top:22px"><code style="color:var(--cyan)">route</code> answers <em>which skills</em>.
+  <code style="color:var(--cyan)">plan</code> answers <em>which agents, in what batches, at which tier</em> — and what it costs.
+  <strong>Neither dispatches anything.</strong> They print; you decide. That property is what makes the gates mean something.</p>
+
+  <div class="metrics" style="margin-top:26px">
+    <div class="metric"><strong>45</strong><span>Specialist agents</span></div>
+    <div class="metric"><strong>7</strong><span>Human gates</span></div>
+    <div class="metric"><strong>323</strong><span>Tests, 3 platforms</span></div>
+    <div class="metric"><strong>0</strong><span>Runtime dependencies</span></div>
+  </div>
+</div>
+</section>
+
+<!-- =============================================== REFUSES TO CONVENE -->
+<section>
+<div class="wrap">
+  <div class="kicker">03 // Restraint</div>
+  <h2>It refuses to<br>convene for a typo.</h2>
+  <p class="lead">Every extra dispatch is a round trip. A control plane that assembles nine agents for a
+  one-line change is not intelligent, it is expensive. So the first question is always <em>how little
+  swarm does this deserve?</em></p>
+
+  <div class="terminal" style="margin-top:30px">
+    <div class="term-head"><span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+      <span class="term-title">the smallest effective swarm</span></div>
+<pre><span class="c">$</span> jarvis plan <span class="y">"fix a typo in the readme"</span>
+<span class="g">Effort:</span> minimal
+  (none) — no agent claims the routed skills.
+  <span class="w">Answer this directly. Dispatching would cost more than the task.</span>
+
+<span class="c">$</span> jarvis plan <span class="y">"drop the audit table and rebuild it"</span>
+<span class="r">Human approval required before this runs</span>
+  <span class="r">!</span> destructive database changes
+  Nothing here dispatches on its own. <span class="w">This is the line a human signs.</span></pre>
+  </div>
+
+  <div class="grid" style="margin-top:22px">
+    <div class="card win"><span class="icon">✓</span><h3>MINIMAL</h3><p class="muted">Typo, label, one field. ≤2 skills, no gates. Often zero agents.</p></div>
+    <div class="card"><span class="icon">◈</span><h3>STANDARD</h3><p class="muted">Normal development. ≤4 skills, verify gate.</p></div>
+    <div class="card gate"><span class="icon">⚠</span><h3>FULL</h3><p class="muted">New modules, migrations, platform work. ≤8 skills, sign-off <em>then</em> verify.</p></div>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================= SWARM -->
+<section id="swarm">
+<div class="wrap">
+  <div class="kicker">04 // The Roster</div>
+  <h2>Forty-five specialists.<br>Zero duplicates.</h2>
+  <p class="lead">Divided by responsibility, and audited by its own governance: the build fails on a duplicate
+  responsibility, a broken dependency, an unreachable agent, or an agent whose job cannot be measured.</p>
+
+  <div class="divisions" style="margin-top:32px">
+    <div class="division"><b>◈ ORCHESTRATION</b><code>jarvis-deep · delivery-orchestrator · research-orchestrator</code></div>
+    <div class="division"><b>◈ PLANNING</b><code>requirements-analyst · business-analyst · architect · data-model-architect · impact-analyst</code></div>
+    <div class="division"><b>◈ DEVELOPMENT</b><code>schema-builder · backend · frontend · integration-developer · console-deployer · reporting-developer</code></div>
+    <div class="division"><b>◈ UI / UX</b><code>ux-researcher · ui-designer · interaction-designer · mobile-ux · accessibility</code></div>
+    <div class="division"><b>◈ DATA</b><code>data-analyst · data-scientist · dataviz-specialist</code></div>
+    <div class="division"><b>◈ QUALITY</b><code>test-engineer · uat-coordinator · qa-engineer · code-reviewer · performance-analyst</code></div>
+    <div class="division"><b>◈ DEMO &amp; DOCS</b><code>demo-builder · user-guide-writer · process-documenter · knowledge-curator</code></div>
+    <div class="division"><b>◈ SAFETY</b><code>git-safety · deployment-safety · migration-analyst</code></div>
+    <div class="division"><b>◈ CONTROL PLANE</b><code>fast-path-triage · context-broker · swarm-dispatcher · result-synthesizer · quality-sentinel</code></div>
+  </div>
+
+  <details style="margin-top:24px"><summary>WHY A CONTROL PLANE AT ALL?</summary><div>
+    Because every extra dispatch is a round trip. <code>fast-path-triage</code> decides how much swarm the
+    request deserves; <code>context-broker</code> maps the repository <em>once</em> instead of once per agent;
+    <code>swarm-dispatcher</code> batches the run; <code>result-synthesizer</code> collapses the results;
+    <code>quality-sentinel</code> decides what actually needs deep review. Their entire job is to convene less.
+  </div></details>
+
+  <details><summary>WHO AUDITS THE AUTHOR?</summary><div>
+    Six passive governance agents whose subject is JARVIS itself — <code>skill-guardian</code>,
+    <code>agent-guardian</code>, <code>routing-auditor</code>, <code>knowledge-guardian</code>,
+    <code>swarm-evolution</code>, <code>efficiency-auditor</code>. They watch for orphan skills, overlapping
+    ownership, wasteful routing and agents that were never selected.
+  </div></details>
+
+  <details><summary>THE HANDOFF PROTOCOL — “done” is a protocol failure</summary><div>
+    Every agent returns structured fields, not prose: <code>status</code>, <code>summary</code>,
+    <code>confidence</code>, <code>recommended_next_agent</code>, <code>unverified</code>,
+    <code>files_changed</code>, <code>decisions</code>, <code>findings</code>, <code>risks</code>,
+    <code>testing</code>, <code>remaining</code>, <code>verdict</code>, <code>handoff</code>.
+    <code>status</code> is required and is the field the router reads to decide what happens next —
+    which is why the contract names the expensive mistake outright: <strong>a false SUCCESS ends the loop,
+    so nothing downstream ever looks again.</strong>
+  </div></details>
+</div>
+</section>
+
+<!-- ======================================================= REVIEW LOOP -->
+<section id="loop">
+<div class="wrap">
+  <div class="kicker">05 // Peer Review</div>
+  <h2>The correction should not<br>have to come from you.</h2>
+  <p class="lead">A single pass ships whatever the first attempt produced. Work here goes <em>round</em>:
+  reviewers judge it against the acceptance criteria, and anything they reject goes back to
+  <strong>the agent that wrote it</strong>, carrying the objection verbatim.</p>
+
+  <div class="terminal" style="margin-top:30px">
+    <div class="term-head"><span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+      <span class="term-title">review loop // 3 rounds</span></div>
+<pre><span class="b">round 1</span>   build
+<span class="b">round 2</span>   panel judges against the acceptance criteria
+          <span class="y">revise</span> → back to the original author, objection verbatim
+          re-review <span class="w">only what changed</span>
+<span class="b">round 3</span>   last pass
+
+<span class="g">halts on</span>  every reviewer accepts
+          the round cap
+          <span class="r">any of the seven human gates</span>
+          <span class="w">the same objection twice</span>  ← not converging; a human should look</pre>
+  </div>
+
+  <div class="grid" style="margin-top:22px">
+    <div class="card"><h3>JUDGED, NOT BIKESHEDDED</h3><p class="muted">Reviewers judge against the criteria
+      <code style="display:inline">requirements-analyst</code> wrote. “I would have structured this differently”
+      is explicitly <em>not</em> a defect.</p></div>
+    <div class="card"><h3>AN OBJECTION MUST HAVE A REMEDY</h3><p class="muted">A <code style="display:inline">revise</code>
+      must name what would satisfy it. An objection nobody can act on is an opinion, and it costs a whole round
+      to find that out.</p></div>
+    <div class="card"><h3>THREE ROUNDS, NOT MORE</h3><p class="muted">Past three, reviewers are usually
+      disagreeing about taste rather than finding defects — and taste is a human call.</p></div>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================= VOICE -->
+<section id="voice">
+<div class="wrap">
+  <div class="kicker">06 // Voice Core</div>
+  <h2>It speaks.<br>Only when it matters.</h2>
+  <p class="lead">You are running four sessions. Three are working. One has been sitting on a permission
+  prompt for six minutes and you have no idea which. <strong>JARVIS knows, and says so — by name.</strong></p>
+
+  <div class="terminal" style="margin-top:30px">
+    <div class="term-head"><span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+      <span class="term-title">voice channel // live</span></div>
+<pre><span class="b">JARVIS</span> <span class="r">🔊</span> <span class="g">"Approval needed on billing, sir. Production deployment."</span>
+
+<span class="b">JARVIS</span> <span class="g">🔊</span> <span class="g">"The checkout schema is in, with three line-item tables."</span>
+
+<span class="b">JARVIS</span> <span class="y">🔊</span> <span class="g">"Trouble in wt-svc, sir. Four tests are failing on the refund path."</span>
+
+<span class="c">No screen. No notification you will swipe away.</span>
+<span class="c">One sentence, in your ear, naming the one project that needs you.</span></pre>
+  </div>
+
+  <div class="grid" style="margin-top:22px">
+    <article class="card"><span class="icon">◉</span><h3>ONE DRAINER</h3><p class="muted">Hooks enqueue and exit.
+      A single lock-holding daemon owns speech — because two <code style="display:inline">say</code> calls do not
+      queue, they play at once.</p></article>
+    <article class="card"><span class="icon">◌</span><h3>PRIORITY QUEUE</h3><p class="muted">Blocked approvals jump
+      ahead. Stale news is <em>dropped, not queued</em>. Bursts collapse to one line.</p></article>
+    <article class="card"><span class="icon">♪</span><h3>MEASURED, NOT CHOSEN</h3><p class="muted">Chimes are
+      synthesised and loudness-normalised. Speech is budgeted in <strong>measured milliseconds</strong> —
+      ≈70 ms per letter of prose, ≈224 ms per spelled letter.</p></article>
+  </div>
+
+  <details style="margin-top:22px"><summary>WHY NOT JUST READ THE SUMMARY OUT?</summary><div>
+    Because identifiers do not survive being spoken. <code>apps/shared_lib/hooks.py</code> read aloud is one
+    unbroken nonsense word. A pronunciation layer splits identifiers, speaks filenames as names, spells the
+    acronyms that need spelling, and turns <code>4m12s</code> into “four minutes twelve” — all from a data table
+    you can extend without touching a line of shell.
+  </div></details>
+  <details><summary>WHAT IT WILL NEVER SAY</summary><div>
+    The elapsed time. It was the one part of an announcement you cannot act on. A turn that reports what
+    <em>changed</em> has already said everything worth hearing. The written record keeps the duration; your ear
+    does not have to.
+  </div></details>
+</div>
+</section>
+
+<!-- ============================================================ LEDGER -->
+<section id="ledger">
+<div class="wrap">
+  <div class="kicker">07 // Evidence</div>
+  <h2>It knows whether<br>any of it worked.</h2>
+  <p class="lead">Most agent systems cannot answer “is this actually helping?” — their health checks validate
+  the config against itself and have never watched a task run. JARVIS keeps a ledger of what each agent
+  actually produced.</p>
+
+  <div class="terminal" style="margin-top:30px">
+    <div class="term-head"><span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+      <span class="term-title">jarvisctl ledger // observations, not a score</span></div>
+<pre>  <span class="c">agent                   runs   success  partial  blocked   failed   flags</span>
+  schema-builder             4         <span class="g">3</span>        1        0        0   1 unverified 1 low-confidence
+  test-engineer              2         0        0        0        <span class="r">2</span>
+  ui-designer                1         0        0        0        0   <span class="y">1 silent</span>
+
+  totals: <span class="g">3 success</span> · 1 partial · 0 blocked · <span class="r">2 failed</span> · <span class="y">1 unreported</span>
+  <span class="c">unreported means the agent did not emit STATUS. That is a protocol
+  failure in practice, whatever the registry says.</span></pre>
+  </div>
+
+  <div class="quote">It <strong>records</strong>; it does not judge. Judging is a separate job, and a
+  <strong>human gates whatever the judgement would change</strong> — “generating a new agent” and “changing
+  the swarm architecture” are two of the seven gates precisely so the system cannot quietly rewrite itself.</div>
+</div>
+</section>
+
+<!-- =========================================================== INSTALL -->
+<section id="install">
+<div class="wrap">
+  <div class="kicker">08 // Initialise</div>
+  <h2>Bring it online.</h2>
+  <div class="terminal">
+    <div class="term-head"><span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+      <span class="term-title">installation</span></div>
+<pre><span class="b">$</span> git clone https://github.com/SumanthUExponent/JARVIS-For-ERP.git
+<span class="b">$</span> cd JARVIS-For-ERP
+
+<span class="b">$</span> node scripts/jarvis.mjs install
+<span class="c"># dry run — prints the plan, writes nothing</span>
+
+<span class="b">$</span> node scripts/jarvis.mjs install --apply     <span class="c"># skills + agents</span>
+<span class="b">$</span> node scripts/jarvis.mjs voice --apply       <span class="c"># the half that talks</span>
+<span class="b">$</span> node scripts/jarvis.mjs doctor              <span class="c"># audit the roster</span>
+
+<span class="g">JARVIS</span> 🔊 <span class="g">"Good evening, sir. Systems online."</span></pre>
+  </div>
+  <p class="muted" style="margin-top:16px">Node 18+ and git. Claude Code assumed. macOS, Linux, and Windows via
+  Git Bash or WSL — every OS call goes through one platform layer, and a test fails the build if any other file
+  names an OS tool.</p>
+
+  <table>
+    <tr><th>Command</th><th>Does</th></tr>
+    <tr><td><code>route "&lt;request&gt;"</code></td><td>Explain which skills matched, and why</td></tr>
+    <tr><td><code>plan "&lt;request&gt;"</code></td><td>Agents, batches, tiers, gates, review loop, cost</td></tr>
+    <tr><td><code>doctor</code></td><td>Audit the roster: duplicates, cycles, unreachable agents, gates</td></tr>
+    <tr><td><code>health</code></td><td>Validate the skill ecosystem</td></tr>
+    <tr><td><code>pack [dir]</code></td><td>Deterministic repo context — no model, zero tokens</td></tr>
+    <tr><td><code>jarvisctl audition</code></td><td>Speak every variant of every announcement, to judge by ear</td></tr>
+    <tr><td><code>jarvisctl ledger</code></td><td>What each agent actually produced</td></tr>
+    <tr><td><code>jarvisctl demo</code></td><td>A narrated four-session simulation</td></tr>
+    <tr><td><code>npm run test:all</code></td><td>Everything. Run it alone — the daemon suite is timing-sensitive</td></tr>
+  </table>
+</div>
+</section>
+
+<!-- ========================================================== DOCTRINE -->
+<section>
+<div class="wrap">
+  <div class="kicker">09 // Doctrine</div>
+  <h2>The rules that keep<br>it useful.</h2>
+  <div class="grid">
+    <div class="card"><h3>ZERO DEPENDENCIES</h3><p class="muted">A tool that verifies an ecosystem should not
+      require an install before it can run a security check. No network in the speech path, ever.</p></div>
+    <div class="card"><h3>DRY RUN FIRST</h3><p class="muted">Installers print their plan before touching the
+      machine, back up <code style="display:inline">settings.json</code>, write atomically, and re-read to
+      prove it parses.</p></div>
+    <div class="card"><h3>VERIFICATION IS NOT OPTIONAL</h3><p class="muted">Effort caps may drop optional work.
+      They may not drop validation. A failure is reported as a failure, with the output.</p></div>
+    <div class="card"><h3>MEASURE, DO NOT GUESS</h3><p class="muted">The audio design was settled with
+      <code style="display:inline">afinfo</code> and numpy, not taste. Chime pitch was moved because at rate 1.0
+      it masked the first spoken word.</p></div>
+    <div class="card"><h3>COMMENTS EXPLAIN WHY</h3><p class="muted">Much of this codebase is a record of defects
+      already paid for. Do not simplify a comment away without understanding what it guards.</p></div>
+    <div class="card gate"><h3>THE HUMAN IS THE AUTHORITY</h3><p class="muted">Seven gates, declared in one
+      place, printed by the planner, and announced by the loudest motif in the set.</p></div>
+  </div>
+</div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div style="color:#d9f8ff;font-size:15px;letter-spacing:.3em;margin-bottom:10px">J.A.R.V.I.S.</div>
+    <div>JUST A RATHER VERY INTELLIGENT SYSTEM</div>
+    <div style="margin-top:14px">MIT · BUILT FOR CLAUDE CODE · RUNS ENTIRELY ON YOUR MACHINE</div>
+    <div style="margin-top:24px;color:#29434d">“The system is ready when you are.”</div>
+  </div>
+</footer>
+
+<script>
+(() => {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const core = document.querySelector('.core');
+  if (!core) return;
+  let n = 0;
+  setInterval(() => { n++; core.style.filter = `brightness(${1 + Math.sin(n / 9) * 0.12})`; }, 140);
+})();
+</script>
+</body>
+</html>

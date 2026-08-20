@@ -251,6 +251,11 @@ export function plan(reg, request, opts = {}) {
     }));
 
   return {
+    // Agents a matched rule named DIRECTLY. The decision table exists for cases with
+    // one obvious answer, and "audit the swarm roster" is one -- but the governance
+    // agents carry no skill, so a skills-only table could never reach them. Six agents
+    // whose whole subject is JARVIS itself were unroutable for exactly this reason.
+    directAgents: [...new Set(matched.flatMap((r) => r.agents || []))],
     request,
     effort,
     method,

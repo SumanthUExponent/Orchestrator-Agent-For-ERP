@@ -65,7 +65,20 @@ END {
     if (line ~ /^ *(```|~~~)/) { fence = 1 - fence; continue }
     if (fence) continue
     if (line ~ /^ *\|/) continue
-    gsub(/`[^`]*`/, " ", line)
+    # UNWRAP inline code, do not delete it. Deleting was the single worst defect in
+    # the whole layer: inline code carries the SUBJECT of the sentence, so real
+    # announcements came out as
+    #     "Fixed at , pushed."          from  Fixed at `abb3d0d`, pushed.
+    #     "Done and pushed on ."        from  Done and pushed on `develop`.
+    #     "the server side: and ."      from  ... `gate_note` and `log_note`.
+    # Long spans are still dropped -- those are commands and paths, not subjects --
+    # but anything short enough to be an identifier stays and pronounce.sh speaks it.
+    while (match(line, /`[^`]*`/)) {
+      inner = substr(line, RSTART + 1, RLENGTH - 2)
+      line = substr(line, 1, RSTART - 1) \
+             (length(inner) <= 24 ? inner : " ") \
+             substr(line, RSTART + RLENGTH)
+    }
     if (line ~ /^[ \t]*#+[ \t]/) continue
     sub(/^[ \t]*[>*+-][ \t]+/, "", line)
     sub(/^[ \t]*[0-9]+\.[ \t]+/, "", line)
@@ -137,6 +150,12 @@ END {
     # "Let me walk through what I found." outscored the sentence that reported the
     # actual outcome, purely because it came first.
     if (s ~ /^(Let me|Let us|Lets|Here is|Heres|Here are|First|Next|Then|Also|So|Now let)( |,)/) score -= 5
+    # An ANSWER is not an outcome. "Yes both, one commit, one branch, pushed." was a
+    # real announcement: it answers a question nobody listening heard being asked.
+    if (s ~ /^(Yes|No|Correct|Indeed|Right|Sure|Exactly|Both|Neither|Almost|Nearly|Probably|Possibly)( |,|\.)/) score -= 5
+    # Action first. A sentence that OPENS on what was done is the one worth hearing,
+    # which is the whole point of an announcement rather than a status field.
+    if (s ~ /^(Added|Fixed|Wrote|Built|Updated|Removed|Renamed|Migrated|Installed|Verified|Ran|Created|Deleted|Merged|Committed|Landed|Shipped|Replaced|Corrected|Patched|Wired|Synced|Restored|Generated|Registered|Enabled|Disabled|Documented|Refactored|Tagged|Pushed|Rebuilt|Cleared|Resolved|Moved|Switched|Dropped|Split|Renamed)( |,)/) score += 4
     # "now" marks a state that changed, which is exactly what an announcement is for.
     if (tolower(s) ~ / now /) score += 2
     if (s ~ /\?$/) score -= 3

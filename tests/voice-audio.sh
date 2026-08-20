@@ -422,5 +422,29 @@ else
 fi
 
 echo
+echo "R4  no announcement reads out a duration"
+# Elapsed time is the one part of an announcement you cannot act on. It is off by
+# default (JARVIS_SPEAK_ELAPSED), and this is what stops it creeping back in via a
+# new template -- which is exactly how "three specialists," came to end a sentence
+# with a comma and nothing after it, the duration having been removed from in front
+# of it.
+aud=$("$J/jarvisctl" audition --text 2>/dev/null)
+variants=$(printf '%s\n' "$aud" | grep -E '^  [a-z]')
+
+R4FAIL=""
+bad=$(printf '%s\n' "$variants" | grep -nE '[0-9]+ (second|minute|hour)s?')
+[ -z "$bad" ] || R4FAIL="$R4FAIL\n    speaks a duration:\n$bad"
+
+# And nothing may end on a comma, colon or semicolon -- a pause into nothing.
+bad=$(printf '%s\n' "$variants" | grep -E '[,;:]\s*$')
+[ -z "$bad" ] || R4FAIL="$R4FAIL\n    ends on a dangling separator:\n$bad"
+
+if [ -z "$R4FAIL" ]; then
+  ok "$(printf '%s\n' "$variants" | grep -c .) variants, no durations, nothing left dangling"
+else
+  bad "an announcement reads out time, or trails off" "$(printf '%b' "$R4FAIL")"
+fi
+
+echo
 printf 'RESULT: %s passed, %s failed, %s skipped\n' "$PASS" "$FAIL" "$SKIP"
 [ "$FAIL" = 0 ] || exit 1

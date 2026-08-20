@@ -117,7 +117,17 @@ export function install({ root, readYaml, apply = false, external = false, force
           continue;
         }
         const dest = path.join(target, name);
-        if (fs.existsSync(dest) && !force) skipped.push({ name, source: id, reason: 'existing skill wins' });
+        if (fs.existsSync(dest) && !force) {
+          const stale = contentDiffers(path.join(provides, name), dest);
+          skipped.push({
+            name,
+            source: id,
+            stale,
+            reason: stale
+              ? 'existing skill wins, but it DIFFERS from this version — --force to replace'
+              : 'existing skill wins (identical)',
+          });
+        }
         else planned.push({ name, from: path.join(provides, name), to: dest, source: id });
       }
     }
@@ -153,7 +163,56 @@ export function install({ root, readYaml, apply = false, external = false, force
     }
   }
 
-  // 4. agents — inert until they reach the agents dir, which is separate from skills
+  /**
+ * Is what is installed the same as what we would install?
+ *
+ * WHY THIS EXISTS, AND WHY IT IS NOT COSMETIC
+ *
+ * The skip used to be decided by existence alone, and reported as "already installed".
+ * That sentence is true and useless: it reads as "up to date" when the thing installed is
+ * six commits behind. The machine then runs old agents while `doctor` -- which reads the
+ * INSTALLED registry -- reports Healthy, because a stale file is a perfectly valid file.
+ *
+ * Verified by walking into it: a run that added a conflict_reconciliation block to the
+ * registry and a new section to all 45 agents was followed by an install that skipped all
+ * 45 as "already installed", and the installed copy's doctor printed Healthy with the
+ * whole block missing. There was nothing in either output to notice.
+ *
+ * So the three cases get three different words. Identical is silence. OUTDATED is a
+ * warning with the fix in it. Absent is a write.
+ */
+function contentDiffers(src, dest) {
+  const sStat = fs.statSync(src);
+  if (sStat.isDirectory()) {
+    // A skill is a tree. Compare the file SET first -- a missing file is drift that a
+    // per-file loop over the source would never see.
+    const list = (d, base = '') => {
+      const out = [];
+      for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+        const rel = base ? `${base}/${e.name}` : e.name;
+        if (e.isDirectory()) out.push(...list(path.join(d, e.name), rel));
+        else out.push(rel);
+      }
+      return out;
+    };
+    let a, b;
+    try { a = list(src); b = list(dest); } catch { return true; }
+    if (a.join('\n') !== b.join('\n')) return true;
+    for (const rel of a) {
+      try {
+        if (!fs.readFileSync(path.join(src, rel)).equals(fs.readFileSync(path.join(dest, rel)))) return true;
+      } catch { return true; }
+    }
+    return false;
+  }
+  try {
+    return !fs.readFileSync(src).equals(fs.readFileSync(dest));
+  } catch {
+    return true; // unreadable is not "identical"
+  }
+}
+
+// 4. agents — inert until they reach the agents dir, which is separate from skills
   const agentsSrc = path.join(root, 'agents');
   const agentsTo = agentsDir();
   let agentsWritten = 0;
@@ -169,7 +228,15 @@ export function install({ root, readYaml, apply = false, external = false, force
       assertSafeName(f.replace(/\.md$/, ''));
       const dest = path.join(agentsTo, f);
       if (fs.existsSync(dest) && !force) {
-        skipped.push({ name: f, source: 'agent', reason: 'agent already installed (use --force to replace)' });
+        const stale = contentDiffers(path.join(agentsSrc, f), dest);
+        skipped.push({
+          name: f,
+          source: 'agent',
+          stale,
+          reason: stale
+            ? 'OUTDATED — installed copy differs from this version. Re-run with --force --apply.'
+            : 'identical — nothing to do',
+        });
         continue;
       }
       // `planned` is the record of what this run acts on, in BOTH modes — it is what
@@ -199,6 +266,15 @@ export function render(result) {
   if (result.skipped.length) {
     console.log(`\nSkipped (${result.skipped.length})`);
     for (const s of result.skipped) console.log(`  - ${s.name.padEnd(28)} ${s.reason}`);
+  }
+  // A drift warning that scrolls past with 45 other lines has not warned anyone, so it
+  // goes last, after the lists, where the next command is read.
+  const stale = result.skipped.filter((s) => s.stale);
+  if (stale.length) {
+    console.log(`\nDRIFT: ${stale.length} installed file${stale.length === 1 ? '' : 's'} differ${stale.length === 1 ? 's' : ''} from this version.`);
+    console.log('  You are running an older copy. `doctor` will still say Healthy — a stale');
+    console.log('  file is a valid file, so nothing else will tell you.');
+    console.log('  Fix: node scripts/jarvis.mjs install --force --apply');
   }
   console.log('\nNext: node scripts/jarvis.mjs health');
   return 0;

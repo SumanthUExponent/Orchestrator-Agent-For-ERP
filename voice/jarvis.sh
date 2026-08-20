@@ -22,6 +22,7 @@ J="${JARVIS_DIR:-${CLAUDE_JARVIS_DIR:-$HOME/.claude/jarvis}}"
 
 Q="$J/queue"; S="$J/state"
 mkdir -p "$Q" "$S/active" "$S/start" "$S/pending" "$S/subs" "$S/notes" "$S/inflight" "$S/swarm" \
+         "$J/ledger" \
          "$S/done" "$S/todo" "$S/heads" "$S/cwd" "$S/ctxj" "$S/ctx" \
          "$J/briefings" "$J/daily" "$J/run" 2>/dev/null
 
@@ -174,7 +175,7 @@ marker_note() {
             # the hook exits 0 and the announcement falls back to the terse form. Every
             # existing test happened to put the message last, so nothing caught it.
             while (i > 0 && (line[i] ~ /^["}\]]+,?$/ || line[i] ~ /^",/)) i--
-            while (i > 0 && line[i] ~ /^(VOICE|PENDING|HEADS-UP|DECISION|GOTCHA|LOG|GATE):/) {
+            while (i > 0 && line[i] ~ /^(VOICE|PENDING|HEADS-UP|DECISION|GOTCHA|LOG|GATE|STATUS|CONFIDENCE|RECOMMENDED_NEXT_AGENT|UNVERIFIED):/) {
               if (out == "" && line[i] ~ "^" M ":") out = line[i]
               i--
             }
@@ -259,6 +260,41 @@ log_note() { marker_note LOG log; }
 # test asserts they are all present. What arrives is allowlist-filtered and budgeted
 # like any other clause.
 gate_note() { marker_note GATE; }
+
+# ---------------------------------------------------------------- the ledger --
+#
+# What actually happened, per agent, so the system can eventually tell whether it is
+# any good. `doctor` and `health` are STATIC -- they validate the registry against
+# itself and have never observed a task. Nothing recorded which agent produced work
+# that was accepted, which was revised, or which dispatch was wasted, so §12 agent
+# health was unbuildable rather than unbuilt.
+#
+# One line per agent completion, appended through the same single-printf routine as
+# everything else, so concurrent sessions cannot interleave. JSON-shaped for the
+# evaluator to read, but written by shell: no dependency, no parser, no network.
+#
+# Deliberately NOT a score. It records observations; judging them is the evaluator's
+# job and a human gates what the judgement changes.
+ledger_append() {
+  local agent="$1" st="$2" conf="$3" nxt="$4" unver="$5"
+  [ -n "$agent" ] || agent=unknown
+  local f
+  f="$J/ledger/$(date +%Y-%m).jsonl"
+  file_append "$f" "" "$(printf '{"t":"%s","session":"%s","agent":"%s","status":"%s","confidence":"%s","next":"%s","unverified":%s}' \
+    "$(date +%Y-%m-%dT%H:%M:%S)" "$NAME" "$agent" "${st:-unreported}" "${conf:-unreported}" "${nxt:-none}" \
+    "$([ -n "$unver" ] && echo 1 || echo 0)")"
+  return 0
+}
+
+# The agent that just finished, from the hook payload. SubagentStop carries it; without
+# it the ledger would record 45 agents as one.
+agent_type_of() {
+  case "$IN" in
+    *'"agent_type"'*) v=${IN#*\"agent_type\":\"}; v=${v%%\"*}
+                      printf '%s' "$(printf '%s' "$v" | tr -cd 'A-Za-z0-9-')" ;;
+    *) printf '' ;;
+  esac
+}
 
 # The permanent record of the day, as distinct from what gets announced.
 #
@@ -891,6 +927,15 @@ case "$MODE" in
     enqueue 6 idle "" ;;
 
   subagent|sub)                     # SubagentStop
+    # Record the outcome BEFORE anything else in this branch: the announcement is
+    # optional and coalesced, but the measurement must not be.
+    if [ "${JARVIS_LEDGER:-1}" = "1" ]; then
+      ledger_append "$(agent_type_of)" \
+        "$(marker_note STATUS 2>/dev/null)" \
+        "$(marker_note CONFIDENCE 2>/dev/null)" \
+        "$(marker_note RECOMMENDED_NEXT_AGENT 2>/dev/null)" \
+        "$(marker_note UNVERIFIED 2>/dev/null)"
+    fi
     # Decrement the in-flight count first, and never below zero: SubagentStop can fire
     # for a specialist whose start was missed (an older install, or a session that
     # began before SubagentStart was registered), and a negative count would render as

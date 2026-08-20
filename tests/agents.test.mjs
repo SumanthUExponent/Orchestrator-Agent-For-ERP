@@ -164,3 +164,114 @@ describe('the README describes the real roster', () => {
     assert.deepEqual([...new Set(broken)], [], 'broken in-page links');
   });
 });
+
+describe('the review loop is on every agent, on both sides of it', () => {
+  // The loop only works if reviewers know to vote and authors know to expect an
+  // objection. A backtick in this section once terminated the JS template literal it
+  // is embedded in, and the whole block vanished from all 45 agents at once while
+  // doctor still reported Healthy -- because nothing was checking for it.
+  const REVIEWER = [
+    'verdict: accept',
+    'MUST name what would satisfy you',
+    'not against how you would have done it',
+  ];
+  const AUTHOR = [
+    'you wrote it, so you fix it',
+    'the objection verbatim',
+    'Grinding is worse than stopping',
+  ];
+
+  test('reviewers are told how to vote, and what a vote costs', () => {
+    const missing = [];
+    for (const f of FILES) {
+      const b = read(f);
+      for (const r of REVIEWER) if (!b.includes(r)) missing.push(`${f}: ${r}`);
+    }
+    assert.deepEqual(missing, [], 'agents that cannot review');
+  });
+
+  test('authors are told to fix the named thing and when to stop', () => {
+    const missing = [];
+    for (const f of FILES) {
+      const b = read(f);
+      for (const r of AUTHOR) if (!b.includes(r)) missing.push(`${f}: ${r}`);
+    }
+    assert.deepEqual(missing, [], 'agents that cannot be revised');
+  });
+
+  test('the halt conditions are stated, not implied', () => {
+    const missing = FILES.filter((f) => !read(f).includes('the same objection comes back twice'));
+    assert.deepEqual(missing, [], 'agents not told when the loop stops');
+  });
+});
+
+describe('the handoff carries decisions, not just description', () => {
+  // Twelve fields existed and all of them were DESCRIPTIVE, so the router could not
+  // answer the questions it is supposed to answer automatically: is this done, is
+  // another agent needed, was verification enough. Those were read out of prose by a
+  // human. These four fields are what make them mechanical.
+  const DECISION = [
+    'STATUS: SUCCESS | PARTIAL | BLOCKED | FAILED',
+    'CONFIDENCE: HIGH | MEDIUM | LOW',
+    'RECOMMENDED_NEXT_AGENT:',
+    'UNVERIFIED:',
+  ];
+
+  test('every agent is told to open with a status', () => {
+    const missing = [];
+    for (const f of FILES) {
+      const b = read(f);
+      for (const d of DECISION) if (!b.includes(d)) missing.push(`${f}: ${d}`);
+    }
+    assert.deepEqual(missing, [], 'agents that cannot report a decision');
+  });
+
+  test('and told what the expensive mistake is', () => {
+    // A wrong SUCCESS ends the loop, so nothing downstream looks again. That is the
+    // one failure mode worth naming explicitly in every prompt.
+    const missing = FILES.filter(
+      (f) => !read(f).includes('SUCCESS on unverified work is the single most expensive')
+    );
+    assert.deepEqual(missing, [], 'agents not warned about a false SUCCESS');
+  });
+
+  test('status is required by the protocol, not optional', () => {
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const req = y.match(/^  required: \[(.*?)\]/m);
+    assert.ok(req, 'no required list in the protocol');
+    assert.ok(req[1].includes('status'), `status is not required: ${req[1]}`);
+  });
+});
+
+describe('agents are allowed to disagree, and told how', () => {
+  // conflicts_with stops two agents being ROUTED for the same job. It says nothing
+  // about two agents who both did work and disagree about the finding -- which,
+  // unhandled, resolves by whichever handoff was read last. That is the worst possible
+  // resolution rule because it is invisible.
+  const RULES = [
+    'State what would change your mind',
+    'Quote them, do not characterise them',
+    'Argue the axes, not the author',
+    'If it is about one of the seven gates, stop',
+  ];
+
+  test('every agent is told how to disagree usefully', () => {
+    const missing = [];
+    for (const f of FILES) {
+      const b = read(f);
+      for (const r of RULES) if (!b.includes(r)) missing.push(`${f}: ${r}`);
+    }
+    assert.deepEqual(missing, [], 'agents that cannot disagree usefully');
+  });
+
+  test('the reconciliation procedure and its escapes are declared', () => {
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    assert.match(y, /^conflict_reconciliation:/m, 'no reconciliation block');
+    assert.match(y, /halt_to_human:/, 'nothing escalates to a human');
+    // Safety outranks architecture: a wrong security call is not reversible by a later
+    // refactor, and a wrong architecture call usually is.
+    const tb = y.match(/tiebreak_precedence: \[(.*?)\]/)[1].split(',').map((x) => x.trim());
+    assert.ok(tb.indexOf('deployment-safety') < tb.indexOf('architect'),
+      'safety must outrank architecture in the tiebreak');
+  });
+});

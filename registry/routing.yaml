@@ -97,6 +97,41 @@ repo_context:
 # ------------------------------------------------------- decision table (§7)
 # when_all: every phrase must appear. when_any: at least one. unless: none may.
 rules:
+  # ------------------------------------------------------- meta: JARVIS itself
+  # The system could not route work about itself. Six governance agents exist whose
+  # entire subject is the swarm -- and every one was unreachable, because they carry no
+  # skill and the table only spoke in skills. A request to audit the roster returned
+  # "answer this directly", which is exactly wrong: that is the one request the
+  # governance agents are for.
+  #
+  # Deliberately narrow. `unless` keeps ordinary work out: "review the swarm of
+  # customers" is not a meta request, and flooding every request with five auditors
+  # would undo the control plane it is meant to serve.
+  - id: meta-self-audit
+    when_any: [audit the swarm, swarm roster, agent roster, routing decision, routing quality, unused agents, orphan skill, skill health, agent health, improve the swarm, evolve the swarm, swarm architecture, wasted dispatch, token waste]
+    unless: [customer, invoice, order, ticket, employee]
+    agents: [agent-guardian, skill-guardian, routing-auditor]
+    # efficiency-auditor is NOT here: it conflicts_with routing-auditor, so naming both
+    # guarantees a reported drop on every single meta plan. The conflict machinery works
+    # -- it caught this and said so -- but a rule that always produces noise is a badly
+    # written rule, not a demonstration.
+
+    note: >
+      Governance agents, named directly because they hold no skill. swarm-evolution is
+      NOT here on purpose -- it proposes new agents, which is gate 6, so it is convened
+      deliberately rather than by a keyword.
+
+  # ------------------------------------------------------------ meta: review
+  # Asking for a review reached nobody: code-reviewer's only skill is external and
+  # qa-engineer has none, so the review panel could not be assembled by the thing whose
+  # job is assembling it.
+  - id: review-request
+    when_any: [review this, review the change, review my, code review, peer review, check this over, sanity check this]
+    agents: [code-reviewer, quality-sentinel]
+    note: >
+      quality-sentinel rides along because it owns which outputs deserve deep review --
+      the panel question is its job, not the requester's.
+
   - id: console-script-report
     when_all: [console]
     when_any: [report, script report, query report]
