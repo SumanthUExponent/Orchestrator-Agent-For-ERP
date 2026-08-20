@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { render, ROLE_SCOPES, ROLE_ALIASES, SCOPABLE, collect } from '../scripts/pack.mjs';
+import { ROOT } from '../scripts/jarvis.mjs';
 
 let tmp;
 let logged;
@@ -118,7 +119,9 @@ describe('the mapping cannot rot silently', () => {
   test('every mapped role is a real agent', () => {
     // A typo'd role never matches, so the agent silently receives the full pack and the
     // scoping looks like it is working. This is the only thing that catches that.
-    const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+    // NOT `new URL(import.meta.url).pathname` — on Windows that is "/D:/a/..." and
+    // path.resolve prepends the drive again, giving "D:\\D:\\a\\...". The repo already
+    // exports a correctly-resolved ROOT; reuse it rather than re-deriving it wrongly.
     const ids = new Set(
       fs.readdirSync(path.join(ROOT, 'agents')).filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, ''))
     );
