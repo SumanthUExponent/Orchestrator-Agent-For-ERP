@@ -63,6 +63,7 @@ export function loadAgents({ root, readYaml }) {
     gates: spec.human_approval_required || [],
     resources: spec.resources || {},
     version: spec.version ?? 1,
+    reviewLoop: spec.review_loop || {},
   };
 }
 
@@ -159,6 +160,33 @@ Never finish with "done". Return these fields:
 ${handoffDoc}
 
 Structured fields, not an essay. JARVIS reads these to decide what happens next; prose it has to parse is a failure of the protocol.
+
+## The review loop
+
+Work here goes round until it is good, not until it is finished. You are on one side of
+that loop or the other.
+
+**If you are reviewing** — return \`verdict: accept\` or \`verdict: revise\`.
+
+- Judge against the **acceptance criteria**, not against how you would have done it.
+  "I would have structured this differently" is not a defect.
+- A \`revise\` MUST name what would satisfy you. An objection nobody can act on is not a
+  review, it is an opinion, and it costs a whole round to discover that.
+- One clear objection beats five speculative ones. The author gets your words verbatim.
+- If it is genuinely fine, say \`accept\`. A reviewer who never accepts is a reviewer
+  nobody can ship past.
+
+**If your work is being revised** — you wrote it, so you fix it.
+
+- You will receive the objection verbatim. Fix **that**, not your reading of the brief.
+- If the objection is wrong, say so in \`handoff\` with the evidence. Do not silently
+  ignore it and do not silently rewrite something else.
+- If two rounds have not satisfied it, stop. Put the disagreement in \`handoff\` and let
+  a human settle it. Grinding is worse than stopping.
+
+The loop halts when every reviewer accepts, at the round cap, at any human gate, or
+when the same objection comes back twice — because that last one means it is not
+converging.
 
 ## The spoken line — your LAST line, always
 
@@ -317,7 +345,7 @@ export function buildAgents({ root, readYaml, apply = false }) {
 
 /* ------------------------------------------------------------- doctor (§6) */
 export function doctor({ root, readYaml, registry }) {
-  const { agents, protocol, gates } = loadAgents({ root, readYaml });
+  const { agents, protocol, gates, reviewLoop } = loadAgents({ root, readYaml });
   const skillIds = new Set((registry.skills || []).map((s) => s.id));
   const agentIds = new Set(agents.map((a) => a.id));
   const fail = [];
@@ -393,6 +421,20 @@ export function doctor({ root, readYaml, registry }) {
   // governance completeness
   if (!gates.length) fail.push('governance: no human_approval_required gates declared (§24)');
   if (!protocol.required || !protocol.required.length) fail.push('protocol: no required fields declared (§7)');
+
+  // The review loop is only real if its parts exist. A cap of 0 is an infinite loop
+  // spelled optimistically, and a panel selector or criteria source naming an agent
+  // that is not on the roster means the loop has nowhere to get "done" from.
+  const loop = reviewLoop || {};
+  const ids = new Set(agents.map((a) => a.id));
+  if (!loop.rounds || Number(loop.rounds) < 2) {
+    fail.push('review loop: rounds must be at least 2 — one build and one review');
+  }
+  for (const [key, who] of [['panel_selected_by', loop.panel_selected_by], ['criteria_from', loop.criteria_from]]) {
+    if (!who) fail.push(`review loop: ${key} is not declared`);
+    else if (!ids.has(who)) fail.push(`review loop: ${key} names "${who}", which is not an agent`);
+  }
+  if (!(loop.halt_on || []).length) fail.push('review loop: no halt condition declared — it would never stop');
   const passive = agents.filter((a) => a.mode === PASSIVE);
   if (!passive.length) warn.push('no passive governance agents — the swarm cannot audit itself (§6)');
 
@@ -413,6 +455,11 @@ export function doctor({ root, readYaml, registry }) {
   console.log(mark(!fail.some((f) => f.startsWith('protocol')), `Protocol compliance: ${agents.filter((a) => a.handoff.includes('handoff')).length}/${agents.length}`));
   console.log(mark(!!gates.length, `Human-approval gates declared: ${gates.length}`));
   console.log(mark(!!passive.length, `Passive governance agents: ${passive.length}`));
+  const rl = reviewLoop || {};
+  console.log(mark(
+    !fail.some((f) => f.startsWith('review loop')),
+    `Review loop: ${rl.rounds || 0} rounds, panel by ${rl.panel_selected_by || '?'}, ${(rl.halt_on || []).length} halt conditions`
+  ));
 
   if (fail.length) {
     console.log('\nFAILURES');

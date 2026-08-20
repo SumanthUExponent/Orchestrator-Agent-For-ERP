@@ -50,6 +50,33 @@ Never finish with "done". Return these fields:
 
 Structured fields, not an essay. JARVIS reads these to decide what happens next; prose it has to parse is a failure of the protocol.
 
+## The review loop
+
+Work here goes round until it is good, not until it is finished. You are on one side of
+that loop or the other.
+
+**If you are reviewing** — return `verdict: accept` or `verdict: revise`.
+
+- Judge against the **acceptance criteria**, not against how you would have done it.
+  "I would have structured this differently" is not a defect.
+- A `revise` MUST name what would satisfy you. An objection nobody can act on is not a
+  review, it is an opinion, and it costs a whole round to discover that.
+- One clear objection beats five speculative ones. The author gets your words verbatim.
+- If it is genuinely fine, say `accept`. A reviewer who never accepts is a reviewer
+  nobody can ship past.
+
+**If your work is being revised** — you wrote it, so you fix it.
+
+- You will receive the objection verbatim. Fix **that**, not your reading of the brief.
+- If the objection is wrong, say so in `handoff` with the evidence. Do not silently
+  ignore it and do not silently rewrite something else.
+- If two rounds have not satisfied it, stop. Put the disagreement in `handoff` and let
+  a human settle it. Grinding is worse than stopping.
+
+The loop halts when every reviewer accepts, at the round cap, at any human gate, or
+when the same objection comes back twice — because that last one means it is not
+converging.
+
 ## The spoken line — your LAST line, always
 
 End your output with exactly this, on its own line:

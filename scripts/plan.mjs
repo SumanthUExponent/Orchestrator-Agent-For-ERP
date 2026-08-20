@@ -154,6 +154,11 @@ export function executionPlan(reg, request, opts = {}) {
       ...contested.filter((c) => !picked.has(c.id)).map((c) => ({ ...c, layer: 'contested' })),
     ],
     unmapped,
+    // The review panel: the validation-mode agents this plan already selected. The loop
+    // does not recruit anyone new -- it re-runs the reviewers that were coming anyway,
+    // which is why it costs rounds rather than headcount.
+    panel: rows.filter((r) => r.agent && r.agent.mode === 'validation').map((r) => r.id),
+    builders: rows.filter((r) => r.agent && r.agent.mode === 'active').map((r) => r.id),
     agentCount: rows.length,
     serialSteps: rows.length,
     batchedSteps: batches.length,
@@ -197,6 +202,22 @@ export function render(reg, request, opts = {}) {
   if (p.unmapped.length) {
     console.log(`\nSkills with no owning agent: ${p.unmapped.join(', ')}`);
     console.log('  Load these in the main thread — no agent carries them.');
+  }
+
+  // The review loop, if there is anything to review and anyone to review it. Printed
+  // as part of the plan because the loop is the thing being signed off -- a plan that
+  // hides its own iteration is a plan you cannot judge the cost of.
+  const loop = opts.reviewLoop || {};
+  if (loop.rounds && p.panel && p.panel.length && p.builders && p.builders.length) {
+    console.log(`\nReview loop  (up to ${loop.rounds} rounds)`);
+    console.log(`  Panel:     ${p.panel.join(', ')}`);
+    console.log(`  Criteria:  ${loop.criteria_from || 'unset'} writes them; reviewers judge against those, not taste`);
+    console.log(`  Revision:  back to the original author, with the objection verbatim`);
+    console.log('  Halts on:  every reviewer accepts · the cap · a human gate · the same objection twice');
+  } else if (loop.rounds && p.builders && p.builders.length && (!p.panel || !p.panel.length)) {
+    console.log('\nReview loop  (none)');
+    console.log('  No validation agent was routed, so nothing would review the work.');
+    console.log('  Add a review skill to the request, or accept this as unreviewed.');
   }
 
   const pct = p.baseline ? Math.round((1 - p.cost / p.baseline) * 100) : 0;

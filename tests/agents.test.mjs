@@ -164,3 +164,43 @@ describe('the README describes the real roster', () => {
     assert.deepEqual([...new Set(broken)], [], 'broken in-page links');
   });
 });
+
+describe('the review loop is on every agent, on both sides of it', () => {
+  // The loop only works if reviewers know to vote and authors know to expect an
+  // objection. A backtick in this section once terminated the JS template literal it
+  // is embedded in, and the whole block vanished from all 45 agents at once while
+  // doctor still reported Healthy -- because nothing was checking for it.
+  const REVIEWER = [
+    'verdict: accept',
+    'MUST name what would satisfy you',
+    'not against how you would have done it',
+  ];
+  const AUTHOR = [
+    'you wrote it, so you fix it',
+    'the objection verbatim',
+    'Grinding is worse than stopping',
+  ];
+
+  test('reviewers are told how to vote, and what a vote costs', () => {
+    const missing = [];
+    for (const f of FILES) {
+      const b = read(f);
+      for (const r of REVIEWER) if (!b.includes(r)) missing.push(`${f}: ${r}`);
+    }
+    assert.deepEqual(missing, [], 'agents that cannot review');
+  });
+
+  test('authors are told to fix the named thing and when to stop', () => {
+    const missing = [];
+    for (const f of FILES) {
+      const b = read(f);
+      for (const r of AUTHOR) if (!b.includes(r)) missing.push(`${f}: ${r}`);
+    }
+    assert.deepEqual(missing, [], 'agents that cannot be revised');
+  });
+
+  test('the halt conditions are stated, not implied', () => {
+    const missing = FILES.filter((f) => !read(f).includes('the same objection comes back twice'));
+    assert.deepEqual(missing, [], 'agents not told when the loop stops');
+  });
+});

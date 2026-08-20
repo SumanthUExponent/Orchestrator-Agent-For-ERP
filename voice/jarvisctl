@@ -576,7 +576,6 @@ case "${1:-status}" in
     . "$J/speaker.sh"
     TEXT=0; [ "${2:-}" = "--text" ] && TEXT=1
     WHO="$(spoken "wt_svc")"
-    EL=""
 
     # NOTE: these lines MIRROR the templates in speaker.sh render() -- they are not
     # produced by it. That has drifted three times (the error variants, $SIR on two

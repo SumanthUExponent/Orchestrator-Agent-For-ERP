@@ -377,6 +377,7 @@ agents:
   qa-engineer:
     role: Exploratory testing against the real system
     mode: validation
+    selected_by: jarvis
     model: sonnet
     tools: [Read, Grep, Glob, Bash]
     skills: []
@@ -387,6 +388,7 @@ agents:
   code-reviewer:
     role: Correctness and constraint review of a diff
     mode: validation
+    selected_by: jarvis
     model: opus
     tools: [Read, Grep, Glob, Bash]
     skills: [ponytail-review]
@@ -734,6 +736,11 @@ protocol:
       announced immediately, at the highest priority, ahead of every other event -- a
       run that stopped for authorisation is not a run that finished. Optional by nature:
       omit the line entirely on a turn that crossed no gate.
+    verdict: >
+      REVIEWERS ONLY, and required of them: "accept" or "revise". A verdict of revise
+      must name what would satisfy you -- an objection nobody can act on is not a
+      review, it is an opinion. Judge against the acceptance criteria, not against how
+      you would have done it. Build agents omit this field.
     files_changed: Exact paths. Empty if none.
     decisions: Architectural or implementation choices worth carrying forward.
     findings: For review agents — what was discovered, one line each.
@@ -741,6 +748,39 @@ protocol:
     testing: What was run and the real result. Never assert a pass without output.
     remaining: Anything unfinished, stated plainly.
     handoff: What the next agent or JARVIS needs to continue.
+
+# ------------------------------------------------------------- review loop
+# Quality by peer review, so a correction does not have to come from the user.
+#
+# Round 1 builds. From round 2 the reviewers judge the work against the acceptance
+# criteria requirements-analyst wrote, and any verdict of `revise` goes BACK to the
+# agent that produced it, carrying the objection verbatim. That agent holds the
+# context; a fresh one would re-derive it and argue with the reviewer instead of
+# fixing the named thing.
+#
+# It stops on the FIRST of: every reviewer accepts, the round cap, any of the seven
+# human gates, or the same objection twice. That last one matters most -- a loop that
+# keeps failing the same check is not converging, and grinding is worse than stopping.
+#
+# Three rounds is not arbitrary. Past three the reviewers are usually disagreeing
+# about taste rather than finding defects, and taste is a human call.
+review_loop:
+  rounds: 3
+  # Who decides the panel. quality-sentinel already owns "which outputs need deep
+  # review, ranked by blast radius" -- that IS this question, so it is not re-answered
+  # here.
+  panel_selected_by: quality-sentinel
+  # Where "done" is defined. requirements-analyst already owns "how will we know this
+  # is done?"; the loop checks against what it wrote rather than inventing criteria.
+  criteria_from: requirements-analyst
+  revision_goes_to: original-author
+  halt_on:
+    - every reviewer returns accept
+    - the round cap is reached
+    - any human_approval_required gate is crossed
+    - the same objection is returned twice (no progress)
+  # A reviewer that cannot say what would satisfy it has not reviewed anything.
+  objection_must_state_remedy: true
 
 # ------------------------------------------------------------ human gates
 # §24. The JARVIS skill enforces these; agents must refuse and escalate.

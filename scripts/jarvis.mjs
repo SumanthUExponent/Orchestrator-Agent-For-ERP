@@ -372,6 +372,7 @@ try {
         root: ROOT,
         routeModule,
         swarmModule,
+        reviewLoop: swarmModule.loadAgents({ root: ROOT, readYaml }).reviewLoop,
         effort: effortFlag ? effortFlag.split('=')[1] : undefined,
       };
       const rc = render(reg, request, planOpts);

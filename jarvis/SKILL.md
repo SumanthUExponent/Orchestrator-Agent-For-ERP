@@ -98,3 +98,25 @@ Explicit instruction beats automatic routing, except where a safety constraint a
 - "Use only X and Y" · "Do not use Z" · "Skip verification" · "Minimal mode" · "Full orchestration"
 
 If an override would skip a gate on schema-touching or deployed work, comply but say plainly what protection was dropped.
+
+## The review loop
+
+`plan` prints the loop; **you run it**. Nothing here dispatches on its own.
+
+1. **Round 1 — build.** Dispatch the batches as printed.
+2. **Collect the acceptance criteria** from `requirements-analyst`. If none were
+   produced, there is nothing to review against — say so rather than inventing them.
+3. **Round 2 — review.** Dispatch the panel. Each returns `verdict: accept | revise`.
+4. **Any `revise`** → send the objection **verbatim** to the agent that wrote the work.
+   Not a paraphrase, and not to a fresh agent: the author holds the context.
+5. **Re-review only what changed.** A reviewer that already accepted is not asked again.
+6. **Stop at the first of:** every reviewer accepts · the round cap in
+   `registry/agents.yaml` `review_loop.rounds` · any of the seven human gates · the
+   same objection returned twice.
+
+That last condition is the one that matters. Two identical objections means the loop is
+not converging, and continuing to spend rounds on it is worse than handing it back with
+the disagreement stated.
+
+**Announce the loop sparingly.** The second round, once, and the final verdict. Not
+every round — a loop that narrates itself is the noise this layer exists to avoid.
