@@ -576,7 +576,7 @@ case "${1:-status}" in
     . "$J/speaker.sh"
     TEXT=0; [ "${2:-}" = "--text" ] && TEXT=1
     WHO="$(spoken "wt_svc")"
-    EL="4 minutes"
+    EL=""
 
     # NOTE: these lines MIRROR the templates in speaker.sh render() -- they are not
     # produced by it. That has drifted three times (the error variants, $SIR on two
@@ -617,15 +617,15 @@ case "${1:-status}" in
     done
     echo
     echo "COMPLETION, with something to report  (the most-heard announcement)"
-    say_one "done+summary a" "$WHO: $SUM_OK$SIR. $EL."
-    say_one "done+summary b" "$WHO, $SUM_OK$SIR. $EL."
-    say_one "done+summary c" "$WHO reports $SUM_OK$SIR. $EL."
-    say_one "done+summary d" "From $WHO, $SUM_OK$SIR. $EL."
+    say_one "done+summary a" "$WHO: $SUM_OK$SIR."
+    say_one "done+summary b" "$WHO, $SUM_OK$SIR."
+    say_one "done+summary c" "$WHO reports $SUM_OK$SIR."
+    say_one "done+summary d" "From $WHO, $SUM_OK$SIR."
     echo
     echo "COMPLETION, nothing to report"
-    say_one "done a" "$WHO done$SIR. 3 specialists, $EL."
-    say_one "done b" "$WHO finished$SIR. 3 specialists, $EL."
-    say_one "done c" "$WHO, all done$SIR. 3 specialists, $EL."
+    say_one "done a" "$WHO done$SIR. 3 specialists."
+    say_one "done b" "$WHO finished$SIR. 3 specialists."
+    say_one "done c" "$WHO, all done$SIR. 3 specialists."
     echo
     echo "BLOCKED ON APPROVAL  (the expensive failure)"
     say_one "approve a" "$WHO needs your approval$SIR."
@@ -634,7 +634,7 @@ case "${1:-status}" in
     say_one "nag a"     "$WHO is still waiting$SIR."
     say_one "nag b"     "Still blocked on $WHO$SIR."
     say_one "nag c"     "$WHO has not moved$SIR."
-    say_one "escalate"  "$WHO has been waiting 5 minutes$SIR. It is going nowhere without you."
+    say_one "escalate"  "$WHO is still blocked$SIR. Nothing is moving without you."
     echo
     echo "A HUMAN GATE  (the loudest thing this layer says, and it names which gate)"
     say_one "gate: production" "Approval needed on $WHO$SIR. $(cap "production deployment")."

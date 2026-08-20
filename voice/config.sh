@@ -305,3 +305,13 @@ JARVIS_FRAME_MS="${JARVIS_FRAME_MS:-2200}"
 # than pretend the model is exact, the fitting check aims this far below the ceiling.
 # Measured, not tuned: two of three completions came out at 5.3s against a 5.0s ceiling.
 JARVIS_MODEL_SLACK_MS="${JARVIS_MODEL_SLACK_MS:-800}"
+
+# Speak the elapsed time.
+#
+# OFF. It was never information. A turn that reports what CHANGED has already said
+# everything worth hearing, and "four minutes" is the one part you cannot act on --
+# the same argument this file already makes for dropping the specialist count once a
+# summary exists. The written record keeps it: the desktop banner and the daily log
+# both still carry the duration, because reading a timeline afterwards is a different
+# question from being told something now. Set to 1 to hear it again.
+JARVIS_SPEAK_ELAPSED="${JARVIS_SPEAK_ELAPSED:-0}"
