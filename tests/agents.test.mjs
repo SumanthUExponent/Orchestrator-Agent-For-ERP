@@ -181,13 +181,44 @@ describe('the review loop is on every agent, on both sides of it', () => {
     'Grinding is worse than stopping',
   ];
 
-  test('reviewers are told how to vote, and what a vote costs', () => {
+  // Modes come from the registry, not from guessing at prose. The reviewer half is now
+  // scoped to validation agents (§14): a build agent was reading how to vote on a review
+  // it will never sit on, and the protocol already told it to omit `verdict`.
+  const MODES = (() => {
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const m = new Map();
+    for (const hit of y.matchAll(/^  ([a-z][a-z0-9-]+):\n(?:    .*\n)*?    mode: (\w+)/gm)) {
+      m.set(hit[1], hit[2]);
+    }
+    return m;
+  })();
+
+  test('the registry mode map is populated — an empty one would vacuously pass', () => {
+    assert.ok(MODES.size >= 40, `only ${MODES.size} modes parsed; the assertions below would be vacuous`);
+    assert.ok([...MODES.values()].includes('validation'), 'no validation agents found');
+  });
+
+  test('every REVIEWER is told how to vote, and what a vote costs', () => {
     const missing = [];
     for (const f of FILES) {
+      const id = f.replace(/\.md$/, '');
+      if (MODES.get(id) !== 'validation') continue;
       const b = read(f);
       for (const r of REVIEWER) if (!b.includes(r)) missing.push(`${f}: ${r}`);
     }
-    assert.deepEqual(missing, [], 'agents that cannot review');
+    assert.deepEqual(missing, [], 'validation agents that cannot review');
+  });
+
+  test('and a NON-reviewer is not handed voting instructions it cannot use', () => {
+    // The other direction, which the unscoped version could not check: scoping is only
+    // working if the half actually stops reaching the modes that do not need it.
+    const overshared = [];
+    for (const f of FILES) {
+      const id = f.replace(/\.md$/, '');
+      if (MODES.get(id) === 'validation' || !MODES.has(id)) continue;
+      if (read(f).includes('verdict: accept')) overshared.push(f);
+    }
+    assert.deepEqual(overshared, [], 'build agents still carry reviewer-only guidance');
   });
 
   test('authors are told to fix the named thing and when to stop', () => {
@@ -273,5 +304,82 @@ describe('agents are allowed to disagree, and told how', () => {
     const tb = y.match(/tiebreak_precedence: \[(.*?)\]/)[1].split(',').map((x) => x.trim());
     assert.ok(tb.indexOf('deployment-safety') < tb.indexOf('architect'),
       'safety must outrank architecture in the tiebreak');
+  });
+});
+
+describe('per-mode presence — written BEFORE any scoping exists', () => {
+  // This block is the precondition for mode-scoping, not a description of it.
+  //
+  // The refactor was attempted twice, produced invalid JS twice, and was reverted twice.
+  // Both times the danger was the same: the agent prompt is one large template literal,
+  // an editing mistake silently EMPTIES a section, and `doctor` keeps reporting Healthy
+  // because a shorter valid agent is still a valid agent. That is exactly how a backtick
+  // once emptied the review-loop contract from every agent with nothing failing.
+  //
+  // So the assertions come first. They pass now, when every agent is shown everything.
+  // They must still pass after scoping, which is what makes the scoping safe: if a
+  // section is accidentally dropped from a mode that needs it, this fails instead of
+  // shipping.
+  const modeOf = (body) => (body.match(/^mode:\s*(\w+)/m) || [])[1] || null;
+
+  const byMode = () => {
+    const out = { active: [], validation: [], passive: [], control: [], unknown: [] };
+    for (const f of FILES) {
+      const body = read(f);
+      // The generated frontmatter carries name/description/tools/model, not mode, so
+      // read mode from the registry-derived agent list instead of guessing from prose.
+      out.unknown.push({ f, body });
+    }
+    return out;
+  };
+
+  // Sections EVERY agent needs regardless of mode. Scoping must never touch these.
+  const UNIVERSAL = [
+    ['role statement', /\*\*Role\.\*\*/],
+    ['ownership', /You own exactly this/],
+    ['the seven gates', /Stop and escalate/],
+    ['handoff fields', /Your handoff \(required\)/],
+    ['the twelve-field second tier', /Also address these/],
+    ['STATUS first line', /Your first line: STATUS/],
+    ['the voice clause', /VOICE:/],
+    ['the written log', /LOG:/],
+    ['how to disagree', /State what would change your mind/],
+    ['escalation target', /Escalate to/],
+  ];
+
+  test('every agent has every universal section', () => {
+    const missing = [];
+    for (const f of FILES) {
+      const body = read(f);
+      for (const [name, re] of UNIVERSAL) if (!re.test(body)) missing.push(`${f}: ${name}`);
+    }
+    assert.deepEqual(missing, [], 'a universal section is absent from some agent');
+  });
+
+  test('no agent is suspiciously short — an emptied section is the failure mode', () => {
+    // A silently-emptied template section produces a valid, shorter agent. Length is the
+    // cheapest detector of that, and it costs nothing to keep.
+    const sizes = FILES.map((f) => ({ f, n: read(f).length }));
+    const median = sizes.map((s) => s.n).sort((a, b) => a - b)[Math.floor(sizes.length / 2)];
+    const runts = sizes.filter((s) => s.n < median * 0.5);
+    assert.deepEqual(runts.map((r) => `${r.f} (${r.n} vs median ${median})`), [], 'an agent lost about half its content');
+  });
+
+  test('every agent still names its escalation target and its owner sentence', () => {
+    for (const f of FILES) {
+      const body = read(f);
+      assert.match(body, /\*\*You own exactly this\.\*\* \S/, `${f} has an empty ownership sentence`);
+      assert.match(body, /Escalate to: \*\*\S/, `${f} has an empty escalation target`);
+    }
+  });
+
+  test('reviewer-side and author-side loop guidance both exist somewhere', () => {
+    // Before scoping both halves are on every agent. After scoping each half must still
+    // reach the modes that need it — this asserts neither half is lost entirely, which is
+    // the accident a template edit produces.
+    const reviewer = FILES.filter((f) => /If you are reviewing/.test(read(f)));
+    const author = FILES.filter((f) => /If your work is being revised/.test(read(f)));
+    assert.ok(reviewer.length > 0, 'no agent is told how to review');
+    assert.ok(author.length > 0, 'no agent is told what to do with an objection');
   });
 });

@@ -6,7 +6,7 @@ Guidance for Claude Code working in this repository.
 
 Two things that ship together and are developed together:
 
-1. **JARVIS** — registry-driven routing for a 45-agent swarm tuned to
+1. **JARVIS** — registry-driven routing for a 46-agent swarm tuned to
    Frappe/ERPNext work. `registry/agents.yaml` is the single source of truth;
    `agents/*.md` are **generated** from it (`node scripts/jarvis.mjs agents --apply`).
    Never hand-edit `agents/*.md` — the next build overwrites it.

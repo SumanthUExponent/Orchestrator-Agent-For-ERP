@@ -17,7 +17,7 @@ import { build, readYaml, ROOT } from '../scripts/jarvis.mjs';
 import * as routeModule from '../scripts/route.mjs';
 import * as swarmModule from '../scripts/swarm.mjs';
 import * as planModule from '../scripts/plan.mjs';
-import { batchRows } from '../scripts/plan.mjs';
+import { batchRows, scopesOverlap } from '../scripts/plan.mjs';
 import { executionPlan } from '../scripts/plan.mjs';
 import { collect } from '../scripts/pack.mjs';
 import { bench } from '../scripts/bench.mjs';
@@ -271,5 +271,67 @@ describe('two agents that write the same scope never share a batch (§9)', () =>
     const scopes = [...y.matchAll(/^    writes: (.+)$/gm)].map((m) => m[1].trim());
     assert.ok(scopes.length >= 15, `only ${scopes.length} write scopes declared`);
     assert.ok(!scopes.includes(''), 'an empty write scope disables the check silently');
+  });
+});
+
+describe('write scopes are globs, not labels', () => {
+  // Scopes began as bare labels and equality was the whole test, which serialised three
+  // agents writing three different documents because all three said `docs`. Globs buy
+  // that throughput back -- but only if the matcher is right, and two bugs here were
+  // found by checking the REGISTRY rather than the fixtures.
+  const D = '*'.repeat(2);
+
+  test('distinct directories do not collide', () => {
+    assert.equal(scopesOverlap(`docs/guides/${D}`, `docs/sop/${D}`), false);
+    assert.equal(scopesOverlap(`docs/uat/${D}`, `docs/sop/${D}`), false);
+  });
+
+  test('a parent and a child directory DO collide', () => {
+    assert.equal(scopesOverlap(`docs/${D}`, `docs/sop/${D}`), true);
+    assert.equal(scopesOverlap('docs/api', 'docs/api/v1'), true, 'directory containment missed');
+  });
+
+  test('a double-star is matched, not merely detected', () => {
+    // The first version returned true on SIGHT of a double-star, so every scope starting
+    // with one overlapped every other. These two cannot match a common path.
+    assert.equal(scopesOverlap(`${D}/*.md`, `${D}/*.py`), false);
+    assert.equal(scopesOverlap(`apps/*/doctype/${D}`, `apps/*/report/${D}`), false);
+  });
+
+  test('a double-star really does match any depth', () => {
+    assert.equal(scopesOverlap(`apps/*/doctype/${D}`, 'apps/erpnext/doctype/widget'), true);
+    // A LEADING double-star means "anywhere", so it genuinely overlaps any directory.
+    // This is why the registry uses directory scopes and not `**/name*` catch-alls.
+    assert.equal(scopesOverlap(`${D}/user-guide*`, `docs/sop/${D}`), true);
+  });
+
+  test('labels and globs are separate vocabularies', () => {
+    assert.equal(scopesOverlap('docs', 'docs'), true);
+    assert.equal(scopesOverlap('docs', 'schema'), false);
+    assert.equal(scopesOverlap('docs', `docs/sop/${D}`), false, 'a label was compared to a path');
+  });
+
+  test('"any" overlaps everything', () => {
+    assert.equal(scopesOverlap('any', `docs/sop/${D}`), true);
+    assert.equal(scopesOverlap('schema', 'any'), true);
+  });
+
+  test('a missing scope never collides — readers must stay parallel', () => {
+    assert.equal(scopesOverlap('', 'schema'), false);
+    assert.equal(scopesOverlap(null, null), false);
+  });
+
+  test('the registry actually gained the throughput', () => {
+    // The regression this guards: someone re-coarsens a scope back to a shared label and
+    // the three doc writers silently serialise again.
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const scopeOf = (id) => (y.match(new RegExp(`^  ${id}:\\n(?:    .*\\n)*?    writes: (.+)$`, 'm')) || [])[1];
+    const guides = scopeOf('user-guide-writer');
+    const sop = scopeOf('process-documenter');
+    const uat = scopeOf('uat-coordinator');
+    assert.ok(guides && sop && uat, 'a doc writer lost its write scope');
+    assert.equal(scopesOverlap(guides, sop), false, `${guides} still collides with ${sop}`);
+    assert.equal(scopesOverlap(guides, uat), false, `${guides} still collides with ${uat}`);
+    assert.equal(scopesOverlap(sop, uat), false, `${sop} still collides with ${uat}`);
   });
 });

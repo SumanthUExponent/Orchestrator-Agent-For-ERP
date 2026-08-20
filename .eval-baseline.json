@@ -90,6 +90,30 @@
       "pass": true,
       "fails": [],
       "agents": 2
+    },
+    {
+      "id": "security-work-reaches-the-reviewer",
+      "pass": true,
+      "fails": [],
+      "agents": 8
+    },
+    {
+      "id": "undeclared-security-work-still-reaches-it",
+      "pass": true,
+      "fails": [],
+      "agents": 7
+    },
+    {
+      "id": "ordinary-work-does-not-convene-security",
+      "pass": true,
+      "fails": [],
+      "agents": 3
+    },
+    {
+      "id": "permission-matrix-is-not-a-security-review",
+      "pass": true,
+      "fails": [],
+      "agents": 1
     }
   ]
 }

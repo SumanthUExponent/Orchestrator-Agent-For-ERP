@@ -534,7 +534,7 @@ try {
       // `--round 2 --history h.json` back in as three files named "2" and "h.json",
       // and the run died on ENOENT reading "2" -- with the error swallowed if stderr
       // was redirected, which is exactly how it was found.
-      const VALUED = new Set(['round', 'history']);
+      const VALUED = new Set(['round', 'history', 'session']);
       const consumed = new Set();
       for (let i = 0; i < rest.length; i++) {
         const m = rest[i].match(/^--(.+)$/);
@@ -580,7 +580,133 @@ try {
       const code = loopModule.render(v);
       // Carry the objection keys forward, or no-progress cannot be detected next round.
       if (historyFile) fs.writeFileSync(historyFile, JSON.stringify(v.history, null, 2) + '\n');
+
+      // Record, unless told not to. ON by default: the ledger's whole problem was that
+      // nothing ever wrote to it, and an opt-in recorder would have reproduced that
+      // exactly. The driver already holds every handoff, so this costs one append.
+      if (!rest.includes('--no-record')) {
+        const voiceMod = await import('./voice.mjs');
+        const res = loopModule.recordLedger(v, handoffs, {
+          dir: path.join(voiceMod.jarvisDir(), 'ledger'),
+          session: flag('session') || 'loop',
+        });
+        if (res.written) {
+          console.log(`Ledger: +${res.written} row${res.written === 1 ? '' : 's'} -> ${res.file}`);
+          console.log('  `jarvis.mjs learn` reads these. It proposes nothing until 5+ runs per agent.');
+        } else if (res.error) {
+          console.log(`Ledger: not written (${res.error}). The verdict above stands regardless.`);
+        }
+      }
       process.exit(code);
+      break;
+    }
+    case 'graph': {
+      // Reads a Graphify graph.json if one exists. No import of Graphify, no subprocess,
+      // no network, no model -- this is a JSON reader, which is the only shape that fits
+      // the no-new-dependencies rule. Absent graph => a message and exit 2, never a throw.
+      const G = await import('./graph.mjs');
+      const sub = rest[0] || 'status';
+      const args = rest.slice(1).filter((a) => !a.startsWith('--'));
+      const dirFlag = rest.indexOf('--dir');
+      const where = dirFlag >= 0 ? rest[dirFlag + 1] : process.cwd();
+      const depthFlag = rest.indexOf('--depth');
+      const depth = depthFlag >= 0 ? Number(rest[depthFlag + 1]) || 2 : 2;
+      const structural = rest.includes('--structural');
+
+      const file = G.findGraph(where);
+      if (!file) {
+        console.log('No code graph found.');
+        console.log('');
+        console.log('JARVIS reads one if it is there and works fine without it. To create one:');
+        console.log('  uv tool install graphifyy   # once');
+        console.log('  graphify .                  # in the repo you want mapped');
+        console.log('');
+        console.log('It writes graphify-out/graph.json, which is all this reads. Until then,');
+        console.log('`pack` gives the file listing and agents fall back to grep.');
+        process.exit(2);
+      }
+      const g = G.load(file);
+      if (!g.ok) { console.error(g.error); process.exit(1); }
+
+      const pick = (q) => {
+        const hits = G.resolve(g, q);
+        if (!hits.length) {
+          console.error(`No node matches "${q}".`);
+          console.error('  Try `graph status` for the relation types, or a shorter substring.');
+          process.exit(1);
+        }
+        if (hits.length > 1) {
+          console.log(`"${q}" matched ${hits.length}; using the closest. Others:`);
+          for (const h of hits.slice(1, 5)) console.log(`  - ${h.label}  (${h.source_file || '?'})`);
+          console.log('');
+        }
+        return hits[0];
+      };
+
+      console.log(G.freshnessNote(g));
+      console.log('');
+
+      if (sub === 'status') {
+        console.log(`Graph: ${file}`);
+        console.log(`  ${g.counts.nodes} nodes, ${g.counts.links} edges, ${g.counts.inferred} INFERRED`);
+        console.log(`  relations: ${g.counts.relations.join(', ')}`);
+        console.log(`  built at: ${g.builtAt || 'unrecorded'}`);
+      } else if (sub === 'dependents' || sub === 'dependencies') {
+        const node = pick(args.join(' '));
+        const fn = sub === 'dependents' ? G.dependents : G.dependencies;
+        const rows = fn(g, node.id, { depth, structural });
+        console.log(`${sub === 'dependents' ? 'What depends on' : 'What this depends on'}: ${node.label}`);
+        console.log(`  ${node.source_file || '?'}  ${node.source_location || ''}`);
+        console.log('');
+        if (!rows.length) {
+          console.log('  Nothing, by dependency relations at this depth.');
+          console.log('  That is not proof of none: pass --structural for `contains`, or --depth 3.');
+        }
+        for (const r of rows) {
+          const inf = r.confidence === 'INFERRED' ? '  [INFERRED]' : '';
+          console.log(`  d${r.depth}  ${(r.node || {}).label || r.id}  --${r.via}-->${inf}`);
+          if (r.at) console.log(`        ${r.at}`);
+        }
+        console.log('');
+        console.log(`  ${rows.length} total. INFERRED edges were derived, not read from source.`);
+      } else if (sub === 'path') {
+        if (args.length < 2) { console.error('usage: graph path <from> <to>'); process.exit(1); }
+        const a = pick(args[0]);
+        const b = pick(args[1]);
+        const chain = G.shortestPath(g, a.id, b.id);
+        if (!chain) {
+          console.log(`No path between ${a.label} and ${b.label}.`);
+          console.log('  They are in different components of the graph — which is itself a finding.');
+          process.exit(0);
+        }
+        console.log(`${a.label}  ->  ${b.label}   (${chain.length - 1} hop${chain.length === 2 ? '' : 's'})`);
+        console.log('');
+        for (const step of chain) {
+          console.log(`  ${step.via ? `--${step.via}-->  ` : ''}${(step.node || {}).label || step.id}`);
+        }
+      } else if (sub === 'explain') {
+        const node = pick(args.join(' '));
+        const e = G.explain(g, node.id);
+        console.log(`${e.node.label}`);
+        console.log(`  ${e.node.source_file || '?'}  ${e.node.source_location || ''}   type: ${e.node.file_type}`);
+        if (e.incoming.length) {
+          console.log('', '\n  Depended on by:');
+          for (const i of e.incoming.slice(0, 20)) console.log(`    ${i.label || i.from}  --${i.via}-->`);
+        }
+        if (e.outgoing.length) {
+          console.log('\n  Depends on:');
+          for (const o of e.outgoing.slice(0, 20)) console.log(`    --${o.via}-->  ${o.label || o.to}`);
+        }
+        if (e.hyperedges.length) {
+          console.log('\n  Part of:');
+          for (const h of e.hyperedges) console.log(`    ${h.label} (${h.relation})`);
+        }
+      } else {
+        console.error(`graph: unknown subcommand "${sub}"`);
+        console.error('  status | dependents <name> | dependencies <name> | path <a> <b> | explain <name>');
+        process.exit(1);
+      }
+      process.exit(0);
       break;
     }
     case 'doctor': {
@@ -607,6 +733,8 @@ try {
           '  install [--apply] [--external] [--force]',
         '  voice [--apply] [--force]  install the JARVIS voice layer and its hooks',
           '  agents [--apply]           generate agents/*.md from registry/agents.yaml',
+          '  graph <sub> [--dir d]      query a Graphify code graph if one exists (optional)',
+          '                             status | dependents | dependencies | path | explain',
           '  loop [handoff...]          is it done? drives review_loop; exit 0 done, 1 owed',
           '  evaluate [--save]          flip-centered routing probes (§18)',
           '  learn [--apply]            propose routing hints from the ledger (§11)',

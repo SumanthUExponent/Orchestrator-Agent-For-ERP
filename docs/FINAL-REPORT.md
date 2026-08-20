@@ -66,7 +66,8 @@ Each was verified by planting a violation and watching `doctor` fail.
 
 §13 forbids adding agents without measurable value; there was no mechanism to measure
 value; so no new agent could be justified on evidence. The measurement got built instead.
-The roster stayed at 45 with 0 duplicates and 0 unreachable.
+The roster stayed at 45 with 0 duplicates and 0 unreachable. (It is 46 now: the
+security reviewer below was added afterwards, on instruction.)
 
 Four agents were **renamed** (domain-neutral), five **re-moded** `passive` → routable,
 and one genuine gap is recorded and left open: **a security reviewer**. Security is
@@ -120,7 +121,7 @@ and "the loop is working" are different claims and only one was ever checkable.
 
 ## Quality Improvements
 
-- **The protocol is twelve fields, and all twelve reach all 45 agents.** Seven were
+- **The protocol is twelve fields, and all twelve reach every agent.** Seven were
   declared in the registry and rendered nowhere.
 - **Silence is not an option.** An inapplicable field is written `none`. An omitted
   `risks` and a `risks: none` read identically to whoever picks the work up, and only one
@@ -162,7 +163,7 @@ ratio, not a stopwatch.
 | `tests/voice-audio.sh` | 39 pass, 0 fail |
 | `tests/voice-concurrency.sh` | 122 pass, 0 fail |
 | `jarvis.mjs evaluate` | 15/15 probes hold, no flips against baseline |
-| `jarvis.mjs doctor` | Healthy — 45 agents, 0 duplicates, 0 unreachable |
+| `jarvis.mjs doctor` | Healthy — 46 agents, 0 duplicates, 0 unreachable |
 | `jarvis.mjs health` | Healthy — 21 skills discovered, 0 missing, 0 orphaned |
 | `shellcheck` | clean |
 | CI | green on macOS, Ubuntu and Windows, node 18/20/22 |
@@ -174,27 +175,30 @@ intended.
 
 ## Known Limitations
 
-Stated plainly, because a report that lists only wins is the failure mode this system was
-built to detect.
+All seven limitations in the first version of this report were closed on instruction. What
+follows is what each turned out to require, and what is *still* not true afterwards —
+because a limitations section that empties itself is a marketing document.
 
-1. **The learning loop has never run on real data.** Zero ledger rows. It is tested;
-   it is not proven.
-2. **The loop driver does not dispatch.** It answers "is this done?" and names who is
-   next. The coordinator still dispatches — so the driver removes the ability to *skip*
-   the question, not the ability to ignore the answer.
-3. **The driver cannot judge quality.** It checks protocol compliance and declared gates.
-   Whether a reviewer was *right* is the panel's job.
-4. **No security reviewer.** A gate and a checklist, not an agent. See above.
-5. **Write scopes are coarse.** `docs`, `ui-code`, `schema` — not file globs. Two agents
-   writing different files in the same scope are serialised unnecessarily. Conservative in
-   the safe direction, but it is a real cost.
-6. **The mode-scoping refactor of the agent template is still not done.** Attempted twice,
-   produced invalid JS twice, restored from git twice rather than ship broken machinery
-   behind a passing `doctor`. It needs per-mode presence assertions written *first* — the
-   §14 work here scoped the *context pack* instead, which is where the bulk actually was.
-7. **`objectionKey` similarity is a heuristic.** Jaccard ≥ 0.7 over content words, tuned
-   against reworded pairs. It will occasionally miss a heavily-reworded repeat, or flag two
-   objections that share unusual vocabulary.
+| Was | Now |
+|---|---|
+| 1. The learning loop had never run on real data | **Closed by making the driver the writer.** The ledger's only writer was a `SubagentStop` hook, and the coordinator often reads a handoff without one firing. The loop driver sees every handoff by construction — it cannot answer "is this done?" without them — so judging and recording are the same moment. The ledger now fills as a side effect of use. Format matches `voice/jarvis.sh` `ledger_append` exactly; `learn` reads driver-written rows, verified. |
+| 2. The driver did not judge quality | **Partly closed, and honestly.** It still cannot tell whether a reviewer was *right*. It can now tell an assertion from evidence: `testing: passed` is an opinion, `testing: 4 passed, 0 failed` is output. The protocol always said "never assert a pass without output" and nothing checked it. |
+| 3. No security reviewer | **Closed, overriding this report's own recommendation.** The assessment argued for waiting until the ledger could justify it; the owner decided otherwise, which is a legitimate call — "no evidence yet" is an argument for caution, not a veto. Deliberately given no Write tool: a reviewer that can rewrite what it reviews will fix the finding instead of reporting it. Its routing rule fires on the obvious words *and* on the changes that need it without being described as security work. |
+| 4. Write scopes were coarse labels | **Closed with globs.** Three agents writing three different documents were serialised because all three said `docs`. They now run in **one batch instead of three**. |
+| 5. The mode-scoping refactor | **Closed, on the third attempt, by writing the assertions first.** The two failures were both edits *inside* the agent template literal; this time the halves are built as strings outside it and the literal carries one interpolation. Reviewer-side guidance now reaches the 11 validation agents instead of all 46 — about 20 KB across a full roster dispatch. |
+| 6. `objectionKey` was a bare heuristic | **Improved.** It handled inflection but not nominalisation, so "rows orphan on delete" and "orphaned rows on deletion" scored 0.5 and read as two different objections — which would have burned the loop's whole cap discovering it was stuck. Now stems nominalisations too. |
+| 7. Per-role context (§14) | **Closed, and then extended.** The pack is role-scoped, and a code graph was added on top — see below. |
+
+### What is still not true
+
+1. **The ledger is still thin.** It now fills from use rather than never, but `learn` proposes nothing below 5 runs per agent, so the first real proposal is still ahead. That bar is the point and is not being lowered.
+2. **The driver still does not dispatch.** It answers "is this done?" and names who is next; the coordinator dispatches. It removes the ability to *skip* the question, not the ability to ignore the answer.
+3. **The evidence check is a shape check.** It can tell `4 passed, 0 failed` from `passed`. It cannot tell a real test run from a plausible-looking fabrication of one.
+4. **`security-reviewer` has no observed value yet.** It was added on instruction, not on evidence, and this report records that so nobody later mistakes it for a measured decision. Its worth is now a question the ledger can eventually answer.
+5. **Write globs are declared, not verified.** `docs/guides/**` is what an agent is *told* it owns. Nothing checks that it wrote only there.
+6. **Stemming remains crude.** Suffix stripping, no dependency. It over-stems harmlessly (`table` → `tabl`) because both sides stem identically, but it will miss a heavily-reworded repeat.
+7. **The code graph is only as fresh as its last build.** Staleness is detected and announced loudly; it is not prevented. A graph 43 commits behind — the state the one on this machine was actually in — answers confidently about code that has moved.
+8. **Graph coverage depends on Graphify's extractors.** Relation vocabularies differ between languages, and an unclassified relation is excluded from traversal. Both observed vocabularies are handled and unknowns are reported as making every count a floor, but a new extractor can still narrow coverage silently until someone reads that warning.
 
 ## Future Evolution
 

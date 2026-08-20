@@ -41,6 +41,114 @@ function affinity(agent, q) {
 }
 
 /**
+ * Do two declared write scopes overlap?
+ *
+ * Scopes began as bare labels -- `docs`, `ui-code`, `schema` -- and equality was the whole
+ * test. That is conservative in the safe direction and it costs real throughput: three
+ * agents all writing `docs` were serialised even when one writes a user guide, one an SOP
+ * and one a UAT script, which are three different files that could not collide.
+ *
+ * A scope may now be a label, a glob, or several of either separated by spaces. Two scopes
+ * overlap when any of their parts do. Comparing globs without expanding them keeps this a
+ * pure function of the registry -- no filesystem, no dependency on what exists right now,
+ * and no way for the answer to change between plan and dispatch.
+ *
+ * The comparison is deliberately CONSERVATIVE about uncertainty. Two globs that cannot be
+ * proven disjoint are treated as overlapping, because a false collision costs one serial
+ * step and a false clearance costs one agent's work overwritten with no trace.
+ */
+export function scopesOverlap(a, b) {
+  const parts = (x) => String(x || '').trim().split(/\s+/).filter(Boolean);
+  const A = parts(a);
+  const B = parts(b);
+  if (!A.length || !B.length) return false;
+  if (A.includes('any') || B.includes('any')) return true;
+  for (const x of A) for (const y of B) if (partsOverlap(x, y)) return true;
+  return false;
+}
+
+function partsOverlap(x, y) {
+  if (x === y) return true;
+  // Directory containment, for wildcard-free paths only: `docs/api` and `docs/api/v1`
+  // are the same area. Handled here rather than inside the matcher, where a permissive
+  // prefix rule breaks double-star matching (see globsOverlap).
+  if (!x.includes('*') && !y.includes('*') && x.includes('/') === y.includes('/')) {
+    const A = x.split('/').filter(Boolean);
+    const B = y.split('/').filter(Boolean);
+    const n = Math.min(A.length, B.length);
+    if (n && A.slice(0, n).join('/') === B.slice(0, n).join('/')) return true;
+  }
+  const gx = x.includes('*') || x.includes('/');
+  const gy = y.includes('*') || y.includes('/');
+  // A bare label and a glob are different vocabularies and never compared -- a label is
+  // an abstract area, a glob is a path. Mixing them would produce confident nonsense.
+  if (gx !== gy) return false;
+  if (!gx) return false; // two different labels
+  return globsOverlap(x, y);
+}
+
+/**
+ * Can two globs match a common path?
+ *
+ * Not "does either contain a wildcard" -- the first version returned true the moment it
+ * saw a double-star in either pattern, which made every scope that STARTS with one
+ * overlap every other such scope. The doc-writer patterns (double-star then
+ * "user-guide*", vs double-star then "*runbook*") were reported as colliding when they
+ * cannot match a common path, so the glob work bought nothing for exactly the agents it
+ * was written for. Caught by checking the real registry rather than the unit fixtures,
+ * which had no leading-double-star case.
+ *
+ * A second lesson from the same edit: a glob written literally in a block comment can
+ * contain the sequence that ENDS the comment, which silently turned the rest of this file
+ * into code. Same family as a backtick inside a template literal. Globs are described in
+ * words here, not quoted.
+ *
+ * So it recurses. `**` matches zero or more segments, which is two branches: consume
+ * nothing, or absorb one segment from the other side. `*` matches exactly one segment.
+ * Literals must overlap segment-wise.
+ *
+ * When one pattern runs out while the other continues, the answer is TRUE: `docs/**` and
+ * `docs/sop/**` are the same area, and a prefix relation is the conservative reading. A
+ * false collision costs one serial step; a false clearance costs one agent's work
+ * overwritten with no trace.
+ */
+function globsOverlap(a, b) {
+  const A = a.split('/').filter(Boolean);
+  const B = b.split('/').filter(Boolean);
+  const memo = new Map();
+
+  const walk = (i, j) => {
+    const key = `${i}:${j}`;
+    if (memo.has(key)) return memo.get(key);
+    let r;
+    if (i >= A.length && j >= B.length) r = true;
+    // Exhaustion is STRICT. A permissive "one ran out, so true" short-circuits the
+    // double-star recursion: consuming a pattern entirely and declaring a match made
+    // "*.md" and "*.py" overlap, because the recursion reached an exhausted side and
+    // returned true before comparing the segments that differ. A remainder matches an
+    // exhausted pattern only if every remaining segment can match nothing, which is to
+    // say only if all of them are double-stars.
+    else if (i >= A.length) r = B.slice(j).every((seg) => seg === '**');
+    else if (j >= B.length) r = A.slice(i).every((seg) => seg === '**');
+    else if (A[i] === '**') r = walk(i + 1, j) || walk(i, j + 1);
+    else if (B[j] === '**') r = walk(i, j + 1) || walk(i + 1, j);
+    else if (A[i] === '*' || B[j] === '*') r = walk(i + 1, j + 1);
+    else r = segmentsOverlap(A[i], B[j]) ? walk(i + 1, j + 1) : false;
+    memo.set(key, r);
+    return r;
+  };
+  return walk(0, 0);
+}
+
+/** Within one segment, handle a trailing or leading `*` (e.g. `*.md`, `test_*`). */
+function segmentsOverlap(x, y) {
+  if (x === y) return true;
+  if (!x.includes('*') && !y.includes('*')) return false;
+  const re = (g) => new RegExp('^' + g.split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
+  return re(x).test(y) || re(y).test(x);
+}
+
+/**
  * Chunk sorted rows into parallel batches, refusing to co-batch two agents that write
  * the same scope.
  *
@@ -61,7 +169,7 @@ export function batchRows(rows, maxBatch = MAX_BATCH) {
     const A = a.agent && a.agent.writes;
     const B = b.agent && b.agent.writes;
     if (!A || !B) return false;
-    return A === B || A === 'any' || B === 'any';
+    return scopesOverlap(A, B);
   };
 
   const batches = [];

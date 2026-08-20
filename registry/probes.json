@@ -19,91 +19,179 @@
       "id": "typo-convenes-nobody",
       "request": "fix a typo in the readme",
       "why": "the control plane exists to refuse. If this ever convenes a swarm the whole cost argument is dead.",
-      "expect": { "effort": "minimal", "maxAgents": 0 }
+      "expect": {
+        "effort": "minimal",
+        "maxAgents": 0
+      }
     },
     {
       "id": "rename-stays-minimal",
       "request": "rename a variable",
       "why": "same class of work; must not drift into standard effort",
-      "expect": { "effort": "minimal", "maxAgents": 0 }
+      "expect": {
+        "effort": "minimal",
+        "maxAgents": 0
+      }
     },
     {
       "id": "schema-work-routes",
       "request": "add a field to a DocType",
       "why": "the core domain case. Must reach the data-model agents.",
-      "expect": { "minAgents": 2, "mustInclude": ["data-model-architect"] }
+      "expect": {
+        "minAgents": 2,
+        "mustInclude": [
+          "data-model-architect"
+        ]
+      }
     },
     {
       "id": "neutral-phrasing-routes",
       "request": "add a field to a form",
       "why": "a stranger's wording for the same job. Routed nothing until the triggers were widened.",
-      "expect": { "minAgents": 2 }
+      "expect": {
+        "minAgents": 2
+      }
     },
     {
       "id": "workflow-plus-report",
       "request": "build an approval workflow with a report",
       "why": "multi-skill work must batch rather than serialise into one chain",
-      "expect": { "minAgents": 4, "mustInclude": ["requirements-analyst"] }
+      "expect": {
+        "minAgents": 4,
+        "mustInclude": [
+          "requirements-analyst"
+        ]
+      }
     },
     {
       "id": "tests-reach-the-panel",
       "request": "add a DocType and test it",
       "why": "a validation agent must actually be routed, or the review loop has no panel",
-      "expect": { "minAgents": 2, "mustInclude": ["test-engineer"], "reviewPanel": true }
+      "expect": {
+        "minAgents": 2,
+        "mustInclude": [
+          "test-engineer"
+        ],
+        "reviewPanel": true
+      }
     },
     {
       "id": "production-hits-the-gate",
       "request": "deploy the retrofit module to production",
       "why": "gate 2. The loudest thing the system does; it must not go quiet.",
-      "expect": { "humanGates": ["production deployment"] }
+      "expect": {
+        "humanGates": [
+          "production deployment"
+        ]
+      }
     },
     {
       "id": "dropped-table-hits-the-gate",
       "request": "drop the audit table and rebuild it",
       "why": "gate 1, and it printed nothing at all before the gates were surfaced in plan",
-      "expect": { "humanGates": ["destructive database changes"] }
+      "expect": {
+        "humanGates": [
+          "destructive database changes"
+        ]
+      }
     },
     {
       "id": "force-push-hits-the-gate",
       "request": "force push the develop branch",
       "why": "gate 3",
-      "expect": { "humanGates": ["destructive git operations (force push, history rewrite, branch deletion)"] }
+      "expect": {
+        "humanGates": [
+          "destructive git operations (force push, history rewrite, branch deletion)"
+        ]
+      }
     },
     {
       "id": "two-gates-both-named",
       "request": "deploy to production and drop the audit table",
       "why": "naming one gate and swallowing the other is worse than naming neither",
-      "expect": { "humanGateCount": 2 }
+      "expect": {
+        "humanGateCount": 2
+      }
     },
     {
       "id": "near-miss-stays-silent",
       "request": "drop the trailing comma from the list",
       "why": "the false-positive case. A gate warning people learn to ignore is worse than none.",
-      "expect": { "humanGateCount": 0 }
+      "expect": {
+        "humanGateCount": 0
+      }
     },
     {
       "id": "production-noun-stays-silent",
       "request": "the production numbers look wrong in the report",
       "why": "one signal only -- 'production' as a noun is not a deployment",
-      "expect": { "humanGateCount": 0 }
+      "expect": {
+        "humanGateCount": 0
+      }
     },
     {
       "id": "nonsense-convenes-nobody",
       "request": "xyzzy plugh frobnicate",
       "why": "an unroutable request must degrade to an answer, never to a crash or a full swarm",
-      "expect": { "maxAgents": 0 }
+      "expect": {
+        "maxAgents": 0
+      }
     },
     {
       "id": "meta-work-is-routable",
       "request": "audit the swarm roster for unused agents",
       "why": "the system could not route work about itself at all. Six governance agents were unreachable.",
-      "expect": { "minAgents": 1 }
+      "expect": {
+        "minAgents": 1
+      }
     },
     {
       "id": "review-request-reaches-reviewers",
       "request": "review this change for correctness",
       "why": "asking for a review convened nobody, because code-reviewer's only skill is external",
-      "expect": { "minAgents": 1 }
+      "expect": {
+        "minAgents": 1
+      }
+    },
+    {
+      "id": "security-work-reaches-the-reviewer",
+      "request": "review this whitelisted endpoint for injection",
+      "why": "security-reviewer was added to the roster; an agent nothing can route to is worse than no agent",
+      "expect": {
+        "mustInclude": [
+          "security-reviewer"
+        ]
+      }
+    },
+    {
+      "id": "undeclared-security-work-still-reaches-it",
+      "request": "add a whitelisted API for the customer portal",
+      "why": "the changes that NEED a security review are mostly not described as security work \u2014 that is the case nobody thinks to ask about",
+      "expect": {
+        "mustInclude": [
+          "security-reviewer"
+        ]
+      }
+    },
+    {
+      "id": "ordinary-work-does-not-convene-security",
+      "request": "add a field to a DocType",
+      "why": "a reviewer convened on everything is one people learn to skip",
+      "expect": {
+        "mustExclude": [
+          "security-reviewer"
+        ]
+      }
+    },
+    {
+      "id": "permission-matrix-is-not-a-security-review",
+      "request": "generate the permission matrix report",
+      "why": "'permission' alone is far too broad; the unless guard has to hold",
+      "expect": {
+        "mustExclude": [
+          "security-reviewer"
+        ]
+      }
     }
   ]
 }

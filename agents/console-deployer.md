@@ -117,16 +117,6 @@ just read the code and the router has not, so say what you think, and name one o
 Work here goes round until it is good, not until it is finished. You are on one side of
 that loop or the other.
 
-**If you are reviewing** — return `verdict: accept` or `verdict: revise`.
-
-- Judge against the **acceptance criteria**, not against how you would have done it.
-  "I would have structured this differently" is not a defect.
-- A `revise` MUST name what would satisfy you. An objection nobody can act on is not a
-  review, it is an opinion, and it costs a whole round to discover that.
-- One clear objection beats five speculative ones. The author gets your words verbatim.
-- If it is genuinely fine, say `accept`. A reviewer who never accepts is a reviewer
-  nobody can ship past.
-
 **If your work is being revised** — you wrote it, so you fix it.
 
 - You will receive the objection verbatim. Fix **that**, not your reading of the brief.

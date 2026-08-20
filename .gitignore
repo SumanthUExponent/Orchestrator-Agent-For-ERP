@@ -2,3 +2,8 @@ node_modules/
 .cache/
 *.log
 .DS_Store
+
+# Graphify output. The graph is a DERIVED artifact keyed to a commit -- committing it
+# guarantees a stale one in every clone, which is the exact failure `freshnessNote`
+# exists to catch. Rebuild locally: `graphify update .`
+graphify-out/
