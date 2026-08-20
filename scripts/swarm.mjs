@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { HALT_CONDITIONS } from './loop.mjs';
 import os from 'node:os';
+import * as graphModule from './graph.mjs';
 
 const ACTIVE = 'active';
 const PASSIVE = 'passive';
@@ -565,6 +566,25 @@ export function doctor({ root, readYaml, registry }) {
     }
   } catch {
     // A ledger we cannot read is not a roster problem; doctor is not the place to fail on it.
+  }
+
+  // Code graph, if one exists. Never a failure -- it is optional by design, and a repo
+  // that has not run Graphify is the normal case. But a STALE graph is reported loudly,
+  // because that is the state where an agent gets a confident answer about code that has
+  // moved, and there is nothing in such an answer that looks wrong.
+  try {
+    const g = graphModule.open(root);
+    if (g) {
+      const unknown = graphModule.unclassifiedRelations(g);
+      if (g.freshness.state === 'stale') {
+        warn.push(`code graph: STALE — ${g.freshness.detail}${g.freshness.behind ? `, ${g.freshness.behind} commits behind` : ''}. Impact analysis from it describes code that has changed. Rebuild: \`graphify update .\``);
+      }
+      if (unknown.length) {
+        warn.push(`code graph: unclassified relations (${unknown.join(', ')}) are excluded from dependency traversal, so every blast radius is a floor rather than a total (scripts/graph.mjs)`);
+      }
+    }
+  } catch {
+    // An unreadable graph is not a roster problem.
   }
 
   // governance completeness

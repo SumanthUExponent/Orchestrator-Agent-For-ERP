@@ -17,6 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import * as graphModule from './graph.mjs';
 
 const CAP = 40; // never print an unbounded list — that is how a pack becomes noise
 const SKIP = new Set(['.git', 'node_modules', '.venv', 'env', '__pycache__', 'dist', 'build', '.mypy_cache']);
@@ -112,7 +113,22 @@ export function collect(cwd = process.cwd()) {
     // reported "no bench" on a machine that has one — a confident wrong answer in
     // a pack every agent reads.
     benchRoot: findBenchRoot(cwd),
+    // Optional. Absent is the normal case and must cost nothing -- no throw, no warning,
+    // no mention in the pack at all. A pack that says "no graph found" on every repo that
+    // has not run Graphify is an advert, not context.
+    ...graphOf(cwd),
   };
+}
+
+/** Load a code graph if one exists. Never throws; absent yields `{}`. */
+function graphOf(cwd) {
+  try {
+    const g = graphModule.open(cwd);
+    if (!g) return {};
+    return { graph: { nodes: g.counts.nodes, links: g.counts.links, freshness: g.freshness.state }, graphSection: graphModule.packSection(g) };
+  } catch {
+    return {};
+  }
 }
 
 function findBenchRoot(start) {
@@ -157,15 +173,15 @@ const list = (label, arr, truncated) =>
  */
 export const ROLE_SCOPES = {
   // Schema and data work needs the DocType inventory; UI work does not.
-  'data-model-architect': ['doctypes', 'apps'],
-  'schema-builder': ['doctypes', 'apps', 'recent'],
-  'migration-analyst': ['doctypes', 'apps', 'recent'],
-  'frappe-data': ['doctypes', 'apps', 'recent'],
+  'data-model-architect': ['doctypes', 'apps', 'graph'],
+  'schema-builder': ['doctypes', 'apps', 'recent', 'graph'],
+  'migration-analyst': ['doctypes', 'apps', 'recent', 'graph'],
+  'frappe-data': ['doctypes', 'apps', 'recent', 'graph'],
 
   // Surface work needs pages and the design system, not the report inventory.
   'ui-designer': ['pages', 'apps'],
-  'frontend': ['pages', 'apps', 'recent'],
-  'frappe-frontend': ['pages', 'apps', 'recent'],
+  'frontend': ['pages', 'apps', 'recent', 'graph'],
+  'frappe-frontend': ['pages', 'apps', 'recent', 'graph'],
   'interaction-designer': ['pages'],
   'mobile-ux': ['pages'],
   'accessibility': ['pages'],
@@ -175,11 +191,11 @@ export const ROLE_SCOPES = {
   'dataviz-specialist': ['reports'],
 
   // Review and impact work needs the whole surface -- that is the job.
-  'impact-analyst': ['apps', 'doctypes', 'reports', 'pages', 'recent'],
-  'code-reviewer': ['recent', 'apps'],
+  'impact-analyst': ['apps', 'doctypes', 'reports', 'pages', 'recent', 'graph'],
+  'code-reviewer': ['recent', 'apps', 'graph'],
   'git-safety': ['recent'],
-  'deployment-safety': ['recent', 'apps'],
-  'test-engineer': ['apps', 'recent'],
+  'deployment-safety': ['recent', 'apps', 'graph'],
+  'test-engineer': ['apps', 'recent', 'graph'],
 
   // Documentation describes what exists; it needs the inventory and not the history.
   'user-guide-writer': ['doctypes', 'pages', 'apps'],
@@ -187,9 +203,10 @@ export const ROLE_SCOPES = {
   'uat-coordinator': ['doctypes', 'pages'],
 
   // Planning agents work before the code exists.
+  'performance-analyst': ['apps', 'recent', 'graph'],
   'requirements-analyst': ['apps'],
-  'architect': ['apps', 'doctypes'],
-  'frappe-architect': ['apps', 'doctypes'],
+  'architect': ['apps', 'doctypes', 'graph'],
+  'frappe-architect': ['apps', 'doctypes', 'graph'],
   'business-analyst': ['apps'],
 };
 
@@ -204,7 +221,7 @@ export const ROLE_SCOPES = {
 export const ROLE_ALIASES = new Set(['frappe-data', 'frappe-frontend', 'frappe-architect']);
 
 /** Sections a scoped pack can carry. Anything not listed is always included. */
-export const SCOPABLE = ['apps', 'doctypes', 'reports', 'pages', 'recent'];
+export const SCOPABLE = ['apps', 'doctypes', 'reports', 'pages', 'recent', 'graph'];
 
 export function render(cwd = process.cwd(), { role = null } = {}) {
   const p = collect(cwd);
@@ -244,6 +261,12 @@ export function render(cwd = process.cwd(), { role = null } = {}) {
   if (wants('reports')) surface.push(list('Reports', p.reports, p.truncated));
   if (wants('pages')) surface.push(list('Pages', p.pages, p.truncated));
   if (surface.length) out.push('', '## Frappe surface', ...surface);
+  if (wants('graph') && p.graph) {
+    // The graph is the only part of the pack that says what CALLS what. Withheld from
+    // roles that do not reason about dependencies -- a ui-designer reading the call graph
+    // is the pollution §14 names -- and never fabricated when Graphify has not been run.
+    out.push(p.graphSection);
+  }
   if (wants('recent') && p.git && p.git.recent.length) {
     out.push('', '## Recently touched (last 8 commits)', ...p.git.recent.map((f) => `- ${f}`));
   }
