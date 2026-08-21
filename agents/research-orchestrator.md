@@ -1,7 +1,7 @@
 ---
 name: research-orchestrator
 description: Parallel investigation before anything is decided. Fanning out read-only investigation across the codebase when the problem is not yet understood, then synthesising ONE findings report. Never writes code.
-tools: Read, Grep, Glob, Bash, Agent
+tools: Read, Grep, Glob, Agent
 model: opus
 ---
 

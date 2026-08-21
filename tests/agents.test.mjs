@@ -526,3 +526,114 @@ describe('external research is a grant, not a default', () => {
       `${GRANTED.length} of ${FILES.length} is no longer a grant`);
   });
 });
+
+describe('skills are preloaded, not requested in prose', () => {
+  // 29 agents carried "Skills to load first. `x` · `y`" -- a request, not a mechanism. The
+  // model could comply, forget, or decide it already knew. `skills:` frontmatter is read
+  // by the PLATFORM and injects the content at startup.
+  const LOCAL = (() => {
+    const dir = path.join(ROOT, 'skills');
+    if (!fs.existsSync(dir)) return new Set();
+    return new Set(
+      fs.readdirSync(dir, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && fs.existsSync(path.join(dir, e.name, 'SKILL.md')))
+        .map((e) => e.name)
+    );
+  })();
+
+  test('the local skill tree is non-empty — otherwise every assertion here is vacuous', () => {
+    assert.ok(LOCAL.size >= 10, `only ${LOCAL.size} local skills found`);
+  });
+
+  test('every agent claiming a LOCAL skill preloads it in frontmatter', () => {
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const missing = [];
+    for (const f of FILES) {
+      const id = f.replace(/\.md$/, '');
+      const m = y.match(new RegExp(`^  ${id}:\\n(?:    .*\\n)*?    skills: \\[(.*?)\\]`, 'm'));
+      if (!m) continue;
+      const claimed = m[1].split(',').map((x) => x.trim()).filter(Boolean).filter((x) => LOCAL.has(x));
+      if (!claimed.length) continue;
+      const front = read(f).split(/^---$/m)[1] || '';
+      for (const sk of claimed) {
+        if (!new RegExp(`^\\s*-\\s*${sk}\\s*$`, 'm').test(front)) missing.push(`${id}: ${sk}`);
+      }
+    }
+    assert.deepEqual(missing, [], 'agents that ask for a local skill in prose instead of preloading it');
+  });
+
+  test('no agent preloads a skill that does not exist locally', () => {
+    // A name the platform cannot resolve is a startup problem, which is worse than a
+    // prose mention the model can route around.
+    const bad = [];
+    for (const f of FILES) {
+      const front = read(f).split(/^---$/m)[1] || '';
+      const block = front.match(/^skills:\n((?:\s*-\s*\S+\n?)+)/m);
+      if (!block) continue;
+      for (const line of block[1].split('\n')) {
+        const id = (line.match(/-\s*(\S+)/) || [])[1];
+        if (id && !LOCAL.has(id)) bad.push(`${f}: ${id}`);
+      }
+    }
+    assert.deepEqual(bad, [], 'frontmatter preloads a skill that is not in this repo');
+  });
+});
+
+describe('the lethal trifecta is declared and enforced', () => {
+  const y = () => fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+
+  test('the policy exists and explains the legs', () => {
+    const t = y();
+    assert.match(t, /^trifecta:/m, 'no trifecta policy declared');
+    for (const leg of ['private_data', 'untrusted_content', 'egress']) {
+      assert.ok(t.includes(leg), `the ${leg} leg is not named`);
+    }
+  });
+
+  test('every waiver states a reason, not just a name', () => {
+    // A waiver with no reason is an exemption nobody can audit -- the same defect as a
+    // research grant without a stated reason.
+    const t = y();
+    const block = t.slice(t.indexOf('  waived:'));
+    const entries = [...block.matchAll(/^    ([a-z][a-z0-9-]+): >?\s*$/gm)].map((m) => m[1]);
+    for (const id of entries) {
+      const seg = block.slice(block.indexOf(`    ${id}:`));
+      const body = seg.split('\n').slice(1).filter((l) => l.startsWith('      ')).join(' ');
+      assert.ok(body.trim().length > 80, `waiver for ${id} has no substantive reason`);
+      assert.match(body, /RESIDUAL|residual|not mitigated/, `waiver for ${id} does not state what risk remains`);
+    }
+  });
+
+  test('research-granted agents that write nothing do not also hold Bash', () => {
+    // Breaking the egress leg is the cheapest mitigation for a read-only reporter, and it
+    // is the one the research prescribes: split, do not harden.
+    const t = y();
+    for (const id of ['research-orchestrator', 'architect', 'security-reviewer']) {
+      const m = t.match(new RegExp(`^  ${id}:\\n(?:    .*\\n)*?    tools: \\[(.*?)\\]`, 'm'));
+      assert.ok(m, `${id} not found`);
+      assert.ok(!m[1].includes('Bash'), `${id} regained Bash, restoring the trifecta`);
+    }
+  });
+});
+
+describe('a review verdict must carry external evidence', () => {
+  test('the contract says so, and says why', () => {
+    // arXiv:2310.01798 vs 2305.11738: same-model critique WITHOUT an external signal makes
+    // results worse, not merely useless. A reviewer that checked nothing is a cost.
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const seg = y.slice(y.indexOf('    verdict:'), y.indexOf('    files_changed:'));
+    assert.match(seg, /CITE EXTERNAL EVIDENCE/, 'verdicts are not required to cite evidence');
+    assert.match(seg, /2310\.01798/, 'the rule is asserted without the evidence for it');
+    assert.match(seg, /accept/, 'the rule must bind accept as well as revise');
+  });
+
+  test('every validation agent is told it', () => {
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const modes = new Map();
+    for (const hit of y.matchAll(/^  ([a-z][a-z0-9-]+):\n(?:    .*\n)*?    mode: (\w+)/gm)) modes.set(hit[1], hit[2]);
+    const reviewers = [...modes].filter(([, m]) => m === 'validation').map(([id]) => id);
+    assert.ok(reviewers.length >= 8, `only ${reviewers.length} validation agents parsed`);
+    const missing = reviewers.filter((id) => !read(`${id}.md`).includes('CITE EXTERNAL EVIDENCE'));
+    assert.deepEqual(missing, [], 'validation agents not told to cite evidence');
+  });
+});

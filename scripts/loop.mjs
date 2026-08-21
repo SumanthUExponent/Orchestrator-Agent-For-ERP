@@ -379,6 +379,33 @@ export function verdict({
     }
   }
 
+  // 4c. Claimed done, produced nothing. OpenHands' cheapest critic is `empty_patch`:
+  //     "the agent said done but there is no diff" is a deterministic, zero-model-cost
+  //     false-completion detector, and this driver did not have one. It checked status,
+  //     evidence shape and protocol compliance -- never whether anything changed.
+  //
+  //     Stated as an OR rather than "files must exist", because a reviewer legitimately
+  //     writes nothing: it produces findings. A builder produces files. Producing NEITHER
+  //     and reporting SUCCESS is the empty patch, whichever kind of agent it is.
+  for (const h of handoffs) {
+    if (h.status !== 'SUCCESS') continue;
+    const none = (v) => {
+      const t = String(v || '').trim().toLowerCase();
+      return !t || t === 'none' || t === 'n/a' || t === 'nothing' || t === '-';
+    };
+    const noFiles = none(h.fields.files_changed);
+    const noFindings = none(h.fields.findings);
+    // Only fires when BOTH fields were actually addressed. A missing field is already
+    // reported as a protocol violation; reporting it twice would teach nothing.
+    if (h.fields.files_changed !== undefined && h.fields.findings !== undefined && noFiles && noFindings) {
+      blocking.push({
+        kind: 'empty-patch',
+        agent: h.agent,
+        detail: 'SUCCESS with no files changed and no findings — nothing was produced, so there is nothing to have succeeded at',
+      });
+    }
+  }
+
   // 5. Reviewer verdicts. A reviewer that returned neither accept nor revise has not
   //    reviewed, which is a missing review and not a tacit accept.
   const reviewers = handoffs.filter((h) => h.fields.verdict !== undefined);

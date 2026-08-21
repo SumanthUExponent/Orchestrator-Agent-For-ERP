@@ -1,7 +1,7 @@
 ---
 name: architect
 description: System design before any code exists. The overall shape of a change — which module owns what, service boundaries, and how the pieces integrate. Produces a design; writes no implementation.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
 model: opus
 ---
 

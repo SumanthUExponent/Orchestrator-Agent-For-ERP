@@ -3,6 +3,8 @@ name: business-analyst
 description: Business process and rules behind the request. Mapping the real-world process the software serves — actors, handoffs, approval authority, exceptions — and the business rules that must hold.
 tools: Read, Grep, Glob, Bash
 model: sonnet
+skills:
+  - business-process-doc
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

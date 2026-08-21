@@ -3,6 +3,8 @@ name: user-guide-writer
 description: Documentation for the people who use it. End-user guides written from the user's side of the screen, with every state, button and validation rule traced back to source rather than assumed.
 tools: Read, Grep, Glob, Bash, Edit, Write
 model: sonnet
+skills:
+  - gdoc-user-guide
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

@@ -3,6 +3,9 @@ name: reporting-developer
 description: Reports and print output. Report SQL, filter wiring and print layout. Builds reports; data-analyst decides what they should measure.
 tools: Read, Grep, Glob, Bash, Edit, Write
 model: sonnet
+skills:
+  - frappe-report
+  - frappe-print-format
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

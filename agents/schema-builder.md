@@ -3,6 +3,8 @@ name: schema-builder
 description: Schema implementation. Building the DocTypes, child tables, fields and fixtures the data model specifies.
 tools: Read, Grep, Glob, Bash, Edit, Write
 model: sonnet
+skills:
+  - frappe-fixtures
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

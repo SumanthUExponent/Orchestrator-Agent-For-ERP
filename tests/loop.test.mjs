@@ -208,3 +208,43 @@ describe('who picks it up next', () => {
     assert.ok(v.next, 'refused without naming who should act');
   });
 });
+
+describe('claimed done, produced nothing (the empty-patch check)', () => {
+  // OpenHands' cheapest critic: "the agent said done but there is no diff" is a
+  // deterministic, zero-model-cost false-completion detector. The driver checked status,
+  // evidence shape and protocol compliance -- never whether anything changed.
+  //
+  // Stated as an OR, because a reviewer legitimately writes nothing: it produces findings.
+  // A builder produces files. Producing NEITHER and reporting SUCCESS is the empty patch.
+
+  test('SUCCESS with no files and no findings is refused', () => {
+    const v = run([parse(good({ files_changed: 'none', findings: 'none' }))]);
+    assert.equal(v.done, false);
+    assert.ok(v.blocking.some((b) => b.kind === 'empty-patch'), 'an empty patch passed as done');
+  });
+
+  test('a builder that changed files is fine', () => {
+    const v = run([parse(good({ files_changed: 'vendor_audit.json', findings: 'none' }))]);
+    assert.ok(!v.blocking.some((b) => b.kind === 'empty-patch'));
+  });
+
+  test('a reviewer with findings and no files is fine — that is the job', () => {
+    const v = run([parse(good({ files_changed: 'none', findings: 'the permission check is bypassable' }))]);
+    assert.ok(!v.blocking.some((b) => b.kind === 'empty-patch'), 'a reviewer was penalised for writing nothing');
+  });
+
+  test('it does not fire on a non-SUCCESS status', () => {
+    // BLOCKED with nothing produced is already reported as BLOCKED. Saying it twice
+    // teaches nothing and trains the reader to skim.
+    const v = run([parse(good({ status: 'BLOCKED', files_changed: 'none', findings: 'none' }))]);
+    assert.ok(!v.blocking.some((b) => b.kind === 'empty-patch'));
+  });
+
+  test('it does not fire when the fields were merely omitted', () => {
+    // An omitted field is already a protocol violation. Reporting it as an empty patch as
+    // well would double-count one defect and obscure which one to fix.
+    const v = run([parse(good({ files_changed: undefined, findings: undefined }))]);
+    assert.ok(v.blocking.some((b) => b.kind === 'protocol'), 'the omission was not caught at all');
+    assert.ok(!v.blocking.some((b) => b.kind === 'empty-patch'));
+  });
+});
