@@ -52,6 +52,30 @@ export function readLedger(dir) {
   return rows;
 }
 
+/**
+ * Is this row evidence, or is it a dispatch that happened?
+ *
+ * The ledger reached 188 rows of which 168 named no agent and **every single one** reported
+ * `status: unreported`. They were real SubagentStop events -- but for generic agents
+ * (`general-purpose`, `Explore`, `claude-code-guide`) that were never given the handoff
+ * protocol, so they emit no STATUS marker and there is nothing to learn from them.
+ *
+ * Counting them anyway is the confidently-wrong failure: `learn` would report "168 runs,
+ * never emitted STATUS -> protocol failure" for agents that have no protocol, and the real
+ * signal from the 20 attributable rows would be buried under it.
+ *
+ * Excluded, never deleted. The rows stay on disk -- they are a true record of what was
+ * dispatched -- and the exclusion count is reported, because silently dropping 89% of the
+ * corpus is exactly the kind of quiet filtering that makes a number untrustworthy.
+ */
+export function isEvidence(r) {
+  const agent = String(r.agent || '').trim();
+  const status = String(r.status || '').trim().toLowerCase();
+  if (!agent || agent === 'unknown') return false;
+  if (!status || status === 'unreported') return false;
+  return true;
+}
+
 /** Aggregate per agent. Facts only — no scoring, no ranking. */
 export function summarise(rows) {
   const by = new Map();
@@ -118,6 +142,59 @@ export function propose(summary, { minRuns = MIN_RUNS } = {}) {
   return out;
 }
 
+/**
+ * The capacity cap — Two-Gate's second gate.
+ *
+ * arXiv:2510.04399 (TMLR 2026) proves PAC learnability survives self-modification *iff*
+ * the policy-reachable family stays uniformly capacity-bounded, and proposes a two-gate
+ * guardrail: a validation-improvement requirement AND a cap on how much may change. This
+ * system had gate one (flip-gated evaluation, human approval) and nothing bounding the
+ * SIZE of a single accepted change.
+ *
+ * Without it, "the proposal passed the gate" says nothing about blast radius: one approved
+ * hint could rewrite the whole routing table and still pass 19 probes, because probes test
+ * shape and not scope.
+ *
+ * Deliberately small numbers. A proposal that wants to change more than this is not a
+ * refinement, it is an architecture change -- which is one of the seven human gates and
+ * belongs there rather than here.
+ */
+export const CAPACITY_CAP = {
+  proposals_per_run: 5,
+  agents_touched: 3,
+  // The optimiser may not propose changes to the machinery that judges it. This is the
+  // one entry that is a boundary rather than a budget.
+  forbidden_targets: ['registry/probes.json', 'scripts/evaluate.mjs', 'scripts/learn.mjs', '.eval-baseline.json'],
+};
+
+/**
+ * Enforce the cap. Returns what survives plus what was withheld and why.
+ *
+ * Withheld, not silently truncated: a proposal dropped without a word is the same defect
+ * as a silently-capped benchmark, and the whole point of the inert-file design is that a
+ * human sees everything the loop concluded.
+ */
+export function applyCap(proposals, cap = CAPACITY_CAP) {
+  const kept = [];
+  const withheld = [];
+  const agents = new Set();
+  for (const pr of proposals) {
+    if (kept.length >= cap.proposals_per_run) {
+      withheld.push({ ...pr, why: `over the per-run cap of ${cap.proposals_per_run} proposals` });
+      continue;
+    }
+    const next = new Set(agents);
+    next.add(pr.agent);
+    if (next.size > cap.agents_touched) {
+      withheld.push({ ...pr, why: `would touch a ${next.size}th agent; cap is ${cap.agents_touched}` });
+      continue;
+    }
+    agents.add(pr.agent);
+    kept.push(pr);
+  }
+  return { kept, withheld };
+}
+
 export function render({ root, ledgerDir, apply }) {
   const rows = readLedger(ledgerDir);
   if (!rows.length) {
@@ -125,10 +202,23 @@ export function render({ root, ledgerDir, apply }) {
     console.log('It fills as sub-agents report. Until then, any "hint" would be invention.');
     return 0;
   }
-  const summary = summarise(rows);
+  const usable = rows.filter(isEvidence);
+  const excluded = rows.length - usable.length;
+  const summary = summarise(usable);
   const proposals = propose(summary);
 
-  console.log(`LEDGER: ${rows.length} agent runs across ${summary.length} agents\n`);
+  console.log(`LEDGER: ${rows.length} rows, ${usable.length} usable across ${summary.length} agents`);
+  if (excluded) {
+    console.log(`  ${excluded} excluded: no agent named, or no status reported. Real dispatches,`);
+    console.log(`  but of generic agents that were never given the handoff protocol — so there is`);
+    console.log(`  nothing in them to learn from. Kept on disk; not counted.`);
+  }
+  if (!usable.length) {
+    console.log('\nNothing usable yet. The loop fills as PROTOCOL-FOLLOWING agents report —');
+    console.log('a dispatch of a generic agent is a fact about the session, not about an agent.');
+    return 0;
+  }
+  console.log('');
   for (const e of summary.sort((a, b) => b.runs - a.runs)) {
     console.log(`  ${e.agent.padEnd(22)} ${String(e.runs).padStart(4)} runs   ${e.success} success · ${e.partial} partial · ${e.blocked} blocked · ${e.failed} failed${e.silent ? ` · ${e.silent} silent` : ''}`);
   }
@@ -143,6 +233,14 @@ export function render({ root, ledgerDir, apply }) {
     console.log(`  [${p.kind}] ${p.agent}`);
     console.log(`      evidence: ${p.evidence}`);
     console.log(`      proposal: ${p.proposal}\n`);
+  }
+
+  const { kept, withheld } = applyCap(proposals);
+  if (withheld.length) {
+    console.log(`WITHHELD BY THE CAPACITY CAP (${withheld.length})\n`);
+    for (const w of withheld) console.log(`  [${w.kind}] ${w.agent} — ${w.why}`);
+    console.log('\n  Not dropped silently. A change larger than the cap is not a refinement,');
+    console.log('  it is an architecture change — which is one of the seven human gates.\n');
   }
 
   const file = path.join(root, 'registry', 'hints.yaml');
@@ -161,7 +259,7 @@ export function render({ root, ledgerDir, apply }) {
     `generated_from: ${rows.length} agent runs`,
     `evidence_bar: ${MIN_RUNS}`,
     'proposals:',
-    ...proposals.flatMap((p) => [
+    ...kept.flatMap((p) => [
       `  - kind: ${p.kind}`,
       `    agent: ${p.agent}`,
       `    evidence: ${p.evidence}`,

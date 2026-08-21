@@ -67,6 +67,15 @@ jobs:
           node scripts/jarvis.mjs health
           node scripts/jarvis.mjs doctor
 
+      # Two tiers, and the distinction matters. `evaluate` grades the PLAN -- which agents
+      # get convened, which gates fire. `outcome --model-free` grades the RESULT on
+      # known-answer fixtures. Everything else in this suite would pass identically whether
+      # the swarm writes good code or bad; these are the only probes that would not.
+      - name: Routing probes (plan) and outcome probes (result)
+        run: |
+          node scripts/jarvis.mjs evaluate
+          node scripts/jarvis.mjs outcome --model-free
+
       # Only on one node version per OS: these are wall-clock heavy (real sleeps, real
       # daemon lifecycles) and they exercise shell behaviour, not the Node version.
       - name: Platform and speech assertions

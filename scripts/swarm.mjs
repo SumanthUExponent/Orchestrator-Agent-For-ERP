@@ -651,13 +651,33 @@ export function doctor({ root, readYaml, registry }) {
   try {
     const ledgerDir = path.join(process.env.JARVIS_DIR || path.join(os.homedir(), '.claude', 'jarvis'), 'ledger');
     let rows = 0;
+    let usable = 0;
     if (fs.existsSync(ledgerDir)) {
       for (const f of fs.readdirSync(ledgerDir).filter((x) => x.endsWith('.jsonl'))) {
-        rows += fs.readFileSync(path.join(ledgerDir, f), 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#')).length;
+        for (const line of fs.readFileSync(path.join(ledgerDir, f), 'utf8').split('\n')) {
+          const t = line.trim();
+          if (!t || t.startsWith('#')) continue;
+          rows++;
+          try {
+            const r = JSON.parse(t);
+            const a = String(r.agent || '').trim();
+            const st = String(r.status || '').trim().toLowerCase();
+            if (a && a !== 'unknown' && st && st !== 'unreported') usable++;
+          } catch { /* a torn line is not usable evidence either */ }
+        }
       }
     }
-    if (!rows) {
-      warn.push('learning loop: the outcome ledger is empty — agent-health metrics and `learn` are computed over zero runs (§11/§12). Built and tested, but unexercised: it fills as sub-agents report.');
+    // Total rows is the misleading number. A row that names no agent, or reports no
+    // status, is a dispatch that happened -- not evidence about an agent. Reporting 188
+    // when 0 are usable is how a metric starts lying.
+    if (!usable) {
+      warn.push(
+        rows
+          ? `learning loop: ${rows} ledger row(s) but ZERO usable — every one lacks an agent name or a status. Real dispatches of generic agents that were never given the handoff protocol, so there is nothing to learn from them. \`learn\` computes over an empty set.`
+          : 'learning loop: the outcome ledger is empty — agent-health metrics and `learn` are computed over zero runs (§11/§12). Built and tested, but unexercised: it fills as protocol-following agents report.'
+      );
+    } else if (usable < 5) {
+      warn.push(`learning loop: ${usable} usable ledger row(s) of ${rows}. Below MIN_RUNS=5, so \`learn\` will propose nothing — correctly.`);
     }
   } catch {
     // A ledger we cannot read is not a roster problem; doctor is not the place to fail on it.
@@ -745,6 +765,28 @@ export function doctor({ root, readYaml, registry }) {
     Boolean((research && research.granted && research.granted[a.id]) || declaredUntrusted.has(a.id)) &&
     a.tools.some((t) => WRITE_TOOLS.includes(t))
   ).length;
+
+  // The held-out probe set must exist and must be protected from the optimiser.
+  //
+  // A gate the optimiser can see is a target, not a gate (arXiv:2606.28430). The flag is
+  // only meaningful if something enforces that `learn` cannot reach it, so the forbidden
+  // targets are checked here rather than trusted.
+  try {
+    const probeFile = path.join(root, 'registry', 'probes.json');
+    if (fs.existsSync(probeFile)) {
+      const { probes } = JSON.parse(fs.readFileSync(probeFile, 'utf8'));
+      const held = (probes || []).filter((p) => p.heldout);
+      if (!held.length) {
+        fail.push('held-out probes: none declared. Every probe is visible to the proposal generator, so passing them is a target rather than a gate (§18).');
+      } else if (held.length < 3) {
+        warn.push(`held-out probes: only ${held.length}. A control group of one or two cannot distinguish a real generalisation failure from noise.`);
+      }
+      const learn = fs.readFileSync(path.join(root, 'scripts', 'learn.mjs'), 'utf8');
+      if (!learn.includes('probes.json')) {
+        fail.push('capacity cap: scripts/learn.mjs does not name registry/probes.json as a forbidden target — nothing stops a proposal rewriting the gate that judges it.');
+      }
+    }
+  } catch { /* an unreadable probe file is reported by evaluate, not here */ }
 
   // governance completeness
   if (!gates.length) fail.push('governance: no human_approval_required gates declared (§24)');

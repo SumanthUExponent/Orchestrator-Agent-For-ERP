@@ -670,6 +670,7 @@ try {
         const res = loopModule.recordLedger(v, handoffs, {
           dir: path.join(voiceMod.jarvisDir(), 'ledger'),
           session: flag('session') || 'loop',
+          root: ROOT,
         });
         if (res.written) {
           console.log(`Ledger: +${res.written} row${res.written === 1 ? '' : 's'} -> ${res.file}`);
@@ -790,6 +791,21 @@ try {
       process.exit(0);
       break;
     }
+    case 'outcome': {
+      // Tier 1. Grades the RESULT, where every other instrument here grades the plan.
+      const outcomeModule = await import('./outcome.mjs');
+      const voiceModule = await import('./voice.mjs');
+      const { loadAgents } = await import('./swarm.mjs');
+      const { gates } = loadAgents({ root: ROOT, readYaml });
+      process.exit(
+        outcomeModule.render({
+          root: ROOT,
+          deps: { matchGates: voiceModule.matchGates, gates },
+          only: rest.includes('--model-free') ? 'model-free' : null,
+        })
+      );
+      break;
+    }
     case 'doctor': {
       const { doctor } = await import('./swarm.mjs');
       process.exit(doctor({ root: ROOT, readYaml, registry: build({ quiet: true }) }));
@@ -817,7 +833,8 @@ try {
           '  graph <sub> [--dir d]      query a Graphify code graph if one exists (optional)',
           '                             status | dependents | dependencies | path | explain',
           '  loop [handoff...]          is it done? drives review_loop; exit 0 done, 1 owed',
-          '  evaluate [--save]          flip-centered routing probes (§18)',
+          '  evaluate [--save]          flip-centered routing probes — grades the PLAN',
+          '  outcome [--model-free]     Tier 1 outcome probes — grades the RESULT (§24)',
           '  learn [--apply]            propose routing hints from the ledger (§11)',
           '  doctor                     audit the agent roster (§6)',
           '  show-agent <id>            print one resolved agent definition',

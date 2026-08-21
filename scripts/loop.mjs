@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 /**
  * The review-loop driver — the thing that says "not done yet", and why.
@@ -507,9 +508,34 @@ export function verdict({
  * Append-only, one row per line, single write per call. A crash loses the last write and
  * not the file.
  */
-export function recordLedger(v, handoffs, { dir, session = 'loop', now = null } = {}) {
+/**
+ * A content hash of the configuration in force.
+ *
+ * Without this a flip is OBSERVED but not ATTRIBUTABLE: you can see that behaviour changed
+ * between two runs and cannot say which change caused it. It is the field the evaluation
+ * research named as the one a ledger most needs and this one did not have.
+ *
+ * Hashes the three files that actually decide behaviour -- the agent registry, the routing
+ * table, and the probe set. Not the whole tree: a docs edit must not invalidate the
+ * attribution of every prior row, or the field becomes noise that changes on every commit.
+ */
+export function configVersion(root) {
+  const parts = [];
+  for (const rel of ['registry/agents.yaml', 'registry/routing.yaml', 'registry/probes.json']) {
+    try {
+      parts.push(fs.readFileSync(path.join(root, rel)));
+    } catch {
+      // A missing file is itself part of the configuration's identity.
+      parts.push(Buffer.from(`missing:${rel}`));
+    }
+  }
+  return crypto.createHash('sha256').update(Buffer.concat(parts)).digest('hex').slice(0, 12);
+}
+
+export function recordLedger(v, handoffs, { dir, session = 'loop', now = null, root = null } = {}) {
   if (!dir || !handoffs || !handoffs.length) return { written: 0 };
   const stamp = now || new Date().toISOString().replace(/\.\d+Z$/, '');
+  const cfg = root ? configVersion(root) : null;
   const month = stamp.slice(0, 7);
   const rows = handoffs.map((h) => {
     const unver = (h.fields.unverified || '').trim().toLowerCase();
@@ -526,6 +552,9 @@ export function recordLedger(v, handoffs, { dir, session = 'loop', now = null } 
       verdict: h.verdict || '',
       evidence: hasEvidence(h.fields.testing) ? 1 : 0,
       round: v.round,
+      // Which configuration produced this. A flip with no config_version is an
+      // observation nobody can attribute.
+      ...(cfg ? { config_version: cfg } : {}),
       loop: v.done ? 'done' : v.halt && v.halt.length ? 'halted' : 'owed',
     });
   });
