@@ -383,3 +383,81 @@ describe('per-mode presence — written BEFORE any scoping exists', () => {
     assert.ok(author.length > 0, 'no agent is told what to do with an objection');
   });
 });
+
+describe('mode scoping keeps every agent whole (§14)', () => {
+  // WRITTEN BEFORE THE SCOPING, deliberately. Two earlier attempts at this refactor
+  // produced invalid JS and were reverted; the recorded lesson was that the assertions
+  // had to exist first, because a section silently vanishing from a template literal
+  // leaves `doctor` reporting Healthy -- exactly how a backtick once emptied the review
+  // loop from every agent with nothing failing.
+  //
+  // These assert PRESENCE per mode. They are the safety net that makes scoping safe to
+  // attempt at all, and they must keep passing whether or not any scoping is applied.
+  const modeOf = (body) => {
+    const m = body.match(/^# ([a-z0-9-]+)/m);
+    return m ? m[1] : null;
+  };
+
+  const UNIVERSAL = [
+    'You own exactly this',
+    'Stop and escalate',
+    'Your handoff (required)',
+    'Your first line: STATUS',
+    'When you disagree with another agent',
+    'Also address these',
+  ];
+
+  test('every agent keeps every universal section, whatever its mode', () => {
+    const missing = [];
+    for (const f of FILES) {
+      const b = read(f);
+      for (const s of UNIVERSAL) if (!b.includes(s)) missing.push(`${f}: ${s}`);
+    }
+    assert.deepEqual(missing, [], 'scoping removed a section every agent needs');
+  });
+
+  test('reviewers are told how to vote', () => {
+    // validation-mode agents are the panel. If the reviewing half is ever scoped away
+    // from them the loop has no voters and `verdict` never appears.
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const reviewers = [...y.matchAll(/^  ([a-z][a-z0-9-]+):\n(?:    .*\n)*?    mode: validation$/gm)].map((m) => m[1]);
+    assert.ok(reviewers.length >= 8, `only ${reviewers.length} validation agents found`);
+    for (const id of reviewers) {
+      const b = read(`${id}.md`);
+      assert.match(b, /If you are reviewing/, `${id} is a reviewer and is not told how to vote`);
+      assert.match(b, /verdict/, `${id} is a reviewer with no verdict field`);
+    }
+  });
+
+  test('builders are told what happens when their work is revised', () => {
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const builders = [...y.matchAll(/^  ([a-z][a-z0-9-]+):\n(?:    .*\n)*?    mode: active$/gm)].map((m) => m[1]);
+    assert.ok(builders.length >= 20, `only ${builders.length} active agents found`);
+    for (const id of builders) {
+      assert.match(read(`${id}.md`), /If your work is being revised/, `${id} builds and is not told the revision rule`);
+    }
+  });
+
+  test('every agent still carries the seven gates verbatim', () => {
+    // The one thing that must never be scoped by mode. A passive agent that observes a
+    // production deployment still has to refuse.
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const gates = [...y.matchAll(/^  - (.+)$/gm)]
+      .map((m) => m[1])
+      .filter((g) => /production deployment|destructive database changes/.test(g));
+    assert.ok(gates.length >= 2, 'could not locate the gate list');
+    for (const f of FILES) {
+      const b = read(f);
+      for (const g of gates) assert.ok(b.includes(g), `${f} lost gate: ${g}`);
+    }
+  });
+
+  test('no agent is a stub — scoping must narrow, never gut', () => {
+    // A crude but effective backstop: if a mode-scoping edit accidentally drops most of
+    // a template, size collapses long before any individual assertion notices.
+    for (const f of FILES) {
+      const bytes = fs.statSync(path.join(ROOT, 'agents', f)).size;
+      assert.ok(bytes > 8000, `${f} is only ${bytes} bytes — a section block was probably lost`);
+    }
+  });
+});
