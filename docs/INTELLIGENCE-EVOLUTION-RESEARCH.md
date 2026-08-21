@@ -151,16 +151,75 @@ events"; the fetched page does not enumerate them, so the complete list is **UNK
 
 | Framework | Control decided by | Boundary object | Perf routing | Write conflicts | Conflict resolution |
 |---|---|---|---|---|---|
-| LangGraph | code (mostly) | typed state delta | no | **reducer required, else error** | none |
+| LangGraph | code (mostly) | typed state delta | no | **same-step ambiguity = runtime error** | none |
 | OpenAI Agents SDK | model | full history (filterable) + typed handoff args | no | n/a | none |
 | CrewAI | code / manager LLM | text | no | unmodelled | none |
 | MS AF / AutoGen | both, explicitly split | typed msg / workflow state | no | unmodelled | termination + Magentic ledger |
 | Google ADK | both, explicitly split | shared session state | no | convention (`output_key`) | none |
 | PydanticAI | code | typed deps / typed output | no | n/a | none |
 | smolagents | model (code actions) | interpreter namespace | no | unmodelled | none |
-| Letta | model | **shared memory blocks** | no | unknown / LWW | none |
+| Letta | model | **shared memory blocks** | no | **optimistic locking (CAS) → 409** | detect, not merge |
 | Mastra | code | zod-typed step I/O | no | unmodelled | none |
 | LlamaIndex | events | typed Event + Context | no | collect barrier | none |
+
+### Write-safety, settled from source — and one prior was wrong
+
+The previous pass flagged three concurrency questions as UNVERIFIED with a stated prior.
+All three are now answered from source code, and **the Letta prior was wrong.**
+
+**Letta does NOT do last-write-wins.** It uses SQLAlchemy optimistic locking — `Block`
+declares a `version` column wired as `__mapper_args__ = {"version_id_col": version}`
+(`letta/orm/block.py:53-61`), so every UPDATE emits `WHERE id = :id AND version =
+:loaded_version`. Zero affected rows raises `StaleDataError`, which is converted to a
+domain error rather than swallowed: `ConcurrentUpdateError`, `ErrorCode.CONFLICT`, HTTP
+409, *"was updated by another transaction. Please retry your request."*
+(`letta/orm/sqlalchemy_base.py:779`, `letta/errors.py:72-78`).
+
+The design detail worth stealing is the deliberate asymmetry: **deadlocks get bounded
+retry with backoff; a stale write is re-raised immediately.** Letta detects the conflict
+and refuses to resolve it — no merge, no CRDT, the loser re-reads and retries. That is
+conflict *detection* without conflict *resolution*, and it is the correct division: the
+framework knows a lost update happened, the caller knows what the write meant.
+
+Verified at tag `0.16.8` and present at 0.11.0, so not a recent addition. Note also that
+the Letta OSS server source was **removed from `main` on 2026-08-16** ("archive the
+legacy server repository") — a third repudiation-shaped event alongside OpenHands and
+Roo Code.
+
+**Google ADK: confirmed no enforcement, and the primitive is deprecated.**
+`_create_branch_ctx_for_sub_agent` does a *shallow* `model_copy()`, so `session` is the
+same object in every branch; `State.__setitem__` writes straight into the shared dict; the
+commit path is a literal `session.state.update({key: value})`. A grep for
+`asyncio.Lock|threading.Lock|RLock` across `agents/`, `sessions/`, `flows/` and
+`workflow/` returns **zero hits**. `ParallelAgent` now carries a deprecation notice, and
+the replacement `workflow/` package adds no locking either. The docs themselves put the
+burden on the caller: *"you'd need to manage concurrent access to this shared context
+carefully (e.g., using locks) to avoid race conditions."* A framework that enforced
+something would not tell you to add your own locks.
+
+**LangGraph: confirmed, but my characterisation was too strong.** It is a **run-time**
+error, never compile time — `InvalidUpdateError` from `LastValue.update`, message *"At key
+'X': Can receive only one value per step. Use an Annotated key to handle multiple
+values."*, raised at the superstep boundary from `apply_writes` (`pregel/_algo.py:232,319`).
+
+Two limits I had wrong. It fires only on **two writes in the SAME superstep** — a fan-out.
+Sequential steps each carry one value and overwrite silently, which is ordinary
+last-write-wins. And **declaring a reducer removes the error entirely**: the reducer
+becomes the merge rule, so `operator.add` gives append-only accumulation and *no conflict
+signal at all*. So the hard failure is the **default**, not a floor — and it is
+intra-graph only, saying nothing about two runs or two processes against one checkpoint.
+
+That reframes what to absorb. The valuable pattern is not "make collisions a type error";
+it is **make AMBIGUITY loud and require the merge rule to be declared** — with Letta's
+addition that a detected lost update should be *rejected*, not silently merged.
+
+**Mastra Agent Networks: deprecated**, and routing is purely an LLM choosing over
+`name: description` strings. Scorers exist but gate *task completion*, not agent
+selection, and nothing reads or writes a per-agent performance record. Memory processors
+are deliberately withheld from the router because they "interfere with routing decisions."
+That closes the last open question from the ten-framework survey: **the finding that no
+shipping framework routes on historical performance now holds with no unverified
+exceptions.**
 
 Four transferable ideas stand out:
 
@@ -677,10 +736,10 @@ full suites + a planted-violation check for any new enforcement.
 
 ## 11. Open questions
 
-1. Does Google ADK's `ParallelAgent` enforce anything on concurrent session-state writes,
-   or is distinct-`output_key` discipline the only protection? **UNVERIFIED.**
-2. Does Letta lock shared memory blocks, or is it last-write-wins? **UNVERIFIED** — the
-   risk to test first before copying anything from that design.
+1. ~~ADK `ParallelAgent` write enforcement~~ — **ANSWERED: none, and the primitive is
+   deprecated.** Source-confirmed; the docs tell you to add your own locks.
+2. ~~Letta locking~~ — **ANSWERED, and my prior was wrong: optimistic locking with a
+   distinct `ConcurrentUpdateError` / HTTP 409.** Detection without resolution.
 3. The complete Claude Code hook event list ("30+" per the docs, not enumerated on the
    fetched page).
 4. Is flip-centered gating established practice? **Stream did not return.**
