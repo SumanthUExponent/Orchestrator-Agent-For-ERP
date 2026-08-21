@@ -3,6 +3,8 @@ name: knowledge-guardian
 description: Consistency of shared knowledge. Detecting stale documentation, contradictory instructions across skills, and decisions made but never written down.
 tools: Read, Grep, Glob, Bash
 model: sonnet
+skills:
+  - context-keeper
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

@@ -3,6 +3,8 @@ name: knowledge-curator
 description: Decisions that would otherwise be lost. Capturing architectural decisions and hard-won gotchas at the moment they are made, so the next session does not rediscover them.
 tools: Read, Grep, Glob, Bash, Edit, Write
 model: sonnet
+skills:
+  - context-keeper
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

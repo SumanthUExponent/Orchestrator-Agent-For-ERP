@@ -3,6 +3,9 @@ name: frontend
 description: User-facing surfaces. Implementing interfaces — pages, forms, views and client-side behaviour. Owns HOW an interface is built; ui-designer owns what it should be.
 tools: Read, Grep, Glob, Bash, Edit, Write
 model: sonnet
+skills:
+  - frappe-ui-page
+  - frappe-web-page
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

@@ -3,6 +3,8 @@ name: skill-guardian
 description: Health of the skill ecosystem. Detecting orphan, duplicate, broken-reference and stale skills, and proposing new skills for recurring gaps. Proposals only — never creates or deletes.
 tools: Read, Grep, Glob, Bash
 model: sonnet
+skills:
+  - find-skills
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

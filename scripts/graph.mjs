@@ -154,11 +154,7 @@ export function load(file, { root = null } = {}) {
       ? { state: 'unknown', detail: 'not a git repository here, so the build commit cannot be compared' }
       : head === builtAt
         ? { state: 'fresh', detail: `built at HEAD (${builtAt.slice(0, 8)})` }
-        : {
-            state: 'stale',
-            detail: `built at ${builtAt.slice(0, 8)}, HEAD is ${head.slice(0, 8)}`,
-            behind: sh('git', ['rev-list', '--count', `${builtAt}..HEAD`], repoRoot),
-          };
+        : staleness(repoRoot, builtAt, head, nodes);
 
   return {
     ok: true,
@@ -179,6 +175,52 @@ export function load(file, { root = null } = {}) {
       inferred: links.filter((l) => l.confidence === 'INFERRED').length,
       relations: [...new Set(links.map((l) => l.relation).filter(Boolean))].sort(),
     },
+  };
+}
+
+/**
+ * Commit differs from HEAD — but is the graph actually out of date?
+ *
+ * A commit check alone is too coarse in a way that matters. `graphify update` skips
+ * rewriting the graph when it finds no topology change, so a commit touching only docs,
+ * tests or a README leaves `built_at_commit` behind while the graph is a perfectly
+ * accurate description of the code. Reporting that as STALE is crying wolf, and a warning
+ * that fires when nothing is wrong is one people learn to scroll past — which costs the
+ * real warning its force.
+ *
+ * So the commit range is compared against the files the graph was actually BUILT from.
+ * If none of them changed, the graph is current by content and says so, while still
+ * naming the commit gap rather than hiding it. If any did, it is stale and names how many
+ * of its own sources moved — which is more useful than a commit count, because two
+ * commits touching one graphed file is a smaller problem than one commit touching forty.
+ *
+ * Uses git only. No dependency, and if git cannot answer, the answer defaults to STALE:
+ * the direction that warns is the safe one.
+ */
+function staleness(repoRoot, builtAt, head, nodes) {
+  const gap = sh('git', ['rev-list', '--count', `${builtAt}..HEAD`], repoRoot);
+  const detail = `built at ${builtAt.slice(0, 8)}, HEAD is ${head.slice(0, 8)}`;
+  const changed = sh('git', ['diff', '--name-only', `${builtAt}..HEAD`], repoRoot);
+  if (changed === null) return { state: 'stale', detail, behind: gap };
+
+  const touched = new Set(changed.split('\n').map((x) => x.trim()).filter(Boolean));
+  if (!touched.size) return { state: 'stale', detail, behind: gap };
+
+  const sources = new Set(nodes.map((n) => n && n.source_file).filter(Boolean));
+  const movedSources = [...touched].filter((f) => sources.has(f));
+
+  if (!movedSources.length) {
+    return {
+      state: 'current-by-content',
+      detail: `${detail}, but none of the ${sources.size} graphed source files changed in those ${gap} commit(s)`,
+      behind: gap,
+    };
+  }
+  return {
+    state: 'stale',
+    detail: `${detail} — ${movedSources.length} graphed source file(s) changed`,
+    behind: gap,
+    movedSources: movedSources.slice(0, 8),
   };
 }
 
@@ -324,6 +366,13 @@ export function freshnessNote(g) {
     : '';
   const f = g.freshness;
   if (f.state === 'fresh') return `> Graph is current — ${f.detail}.${vocab}`;
+  if (f.state === 'current-by-content') {
+    return (
+      `> Graph is current by content — ${f.detail}.\n` +
+      '> The commit moved on, none of the code it describes did. Treated as usable.' +
+      vocab
+    );
+  }
   if (f.state === 'stale') {
     return [
       `> **STALE GRAPH — ${f.detail}${f.behind ? `, ${f.behind} commit(s) behind` : ''}.**`,

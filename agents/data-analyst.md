@@ -3,6 +3,8 @@ name: data-analyst
 description: What the numbers should say. Defining the metric — what question a report answers, which rows count, how periods and edge cases are handled. Specifies; reporting-developer builds.
 tools: Read, Grep, Glob, Bash
 model: sonnet
+skills:
+  - frappe-report
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

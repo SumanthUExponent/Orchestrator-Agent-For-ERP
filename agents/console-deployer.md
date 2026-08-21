@@ -3,6 +3,9 @@ name: console-deployer
 description: Deployment via Desk to System Console. Idempotent, re-runnable System Console installers. On managed hosting this is the ONLY deployment path — bench does not exist there.
 tools: Read, Grep, Glob, Bash, Edit, Write
 model: opus
+skills:
+  - console-automation-engine
+  - console-report-engineer
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

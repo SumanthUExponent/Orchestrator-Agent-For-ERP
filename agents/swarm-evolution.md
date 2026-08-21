@@ -3,6 +3,8 @@ name: swarm-evolution
 description: Growing the swarm, under human control. Spotting recurring problems no current agent owns, and proposing exactly one new agent or skill with its measurable responsibility written out.
 tools: Read, Grep, Glob, Bash
 model: opus
+skills:
+  - find-skills
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

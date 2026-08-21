@@ -119,13 +119,33 @@ export function render({ root, save, ...deps }) {
   const baseline = fs.existsSync(baseFile) ? JSON.parse(fs.readFileSync(baseFile, 'utf8')) : null;
   const passed = results.filter((r) => r.pass).length;
 
-  console.log('ROUTING PROBES\n');
-  for (const r of results) {
-    const mark = r.pass ? '✓' : '✗';
-    console.log(`  ${mark} ${r.id}`);
+  // Gating and held-out are reported apart, because a regression in each means a
+  // different thing. A gating probe breaking says a known case broke. A HELD-OUT probe
+  // breaking says the change did not generalise -- and since the proposal generator never
+  // sees these, it cannot have tuned against them. That makes them the only probes whose
+  // pass is not potentially Goodharted (arXiv:2606.28430).
+  const heldIds = new Set((out.probes || []).filter((p) => p.heldout).map((p) => p.id));
+  const gating = results.filter((r) => !heldIds.has(r.id));
+  const held = results.filter((r) => heldIds.has(r.id));
+
+  console.log('ROUTING PROBES — gating set\n');
+  for (const r of gating) {
+    console.log(`  ${r.pass ? '✓' : '✗'} ${r.id}`);
     for (const f of r.fails) console.log(`      ${f}`);
   }
-  console.log(`\n  ${passed}/${results.length} hold`);
+  if (held.length) {
+    console.log('\nHELD-OUT SET — the optimiser never sees these\n');
+    for (const r of held) {
+      console.log(`  ${r.pass ? '✓' : '✗'} ${r.id}`);
+      for (const f of r.fails) console.log(`      ${f}`);
+    }
+    const heldPass = held.filter((r) => r.pass).length;
+    if (heldPass < held.length) {
+      console.log(`\n  ${held.length - heldPass} HELD-OUT FAILURE(S). This is the loud kind: nothing tuned`);
+      console.log('  against these, so a break here means the change did not generalise.');
+    }
+  }
+  console.log(`\n  ${passed}/${results.length} hold  (${gating.filter((r) => r.pass).length}/${gating.length} gating, ${held.filter((r) => r.pass).length}/${held.length} held-out)`);
 
   if (!baseline) {
     console.log('\n  No baseline yet. A total on its own cannot tell you whether a change');

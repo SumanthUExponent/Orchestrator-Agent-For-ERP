@@ -71,6 +71,8 @@ export function loadAgents({ root, readYaml }) {
     version: spec.version ?? 1,
     reviewLoop: spec.review_loop || {},
     reconciliation: spec.conflict_reconciliation || {},
+    research: spec.external_research || {},
+    trifecta: spec.trifecta || {},
   };
 }
 
@@ -125,7 +127,7 @@ These forms are longer on purpose. Do not "simplify" them.
 `;
 }
 
-function agentMarkdown(a, protocol, gates, resources) {
+function agentMarkdown(a, protocol, gates, resources, research) {
   const fields = protocol.fields || {};
   const handoffDoc = a.handoff.map((f) => `- **${f}** — ${fields[f] || 'see registry/agents.yaml'}`).join('\n');
   // The second tier. These were declared in the registry from the start and reached no
@@ -154,7 +156,14 @@ function agentMarkdown(a, protocol, gates, resources) {
   review, it is an opinion, and it costs a whole round to discover that.
 - One clear objection beats five speculative ones. The author gets your words verbatim.
 - If it is genuinely fine, say \`accept\`. A reviewer who never accepts is a reviewer
-  nobody can ship past.`;
+  nobody can ship past.
+- **CITE EXTERNAL EVIDENCE, for \`accept\` as much as for \`revise\`.** The command you ran
+  and its output. The file and line you read. The caller you grepped for. The screen you
+  rendered. A verdict is only worth its tokens if you held a signal the author lacked --
+  arXiv:2310.01798 found that same-model critique WITHOUT an external signal makes results
+  *worse*, not merely useless, while arXiv:2305.11738 found the gains concentrate entirely
+  where the critic can check something against the world. An \`accept\` with no evidence is
+  the most expensive line in this protocol, because it ends the loop.`;
   const AUTHOR_HALF = `**If your work is being revised** — you wrote it, so you fix it.
 
 - You will receive the objection verbatim. Fix **that**, not your reading of the brief.
@@ -166,6 +175,18 @@ function agentMarkdown(a, protocol, gates, resources) {
   const loopHalves =
     a.mode === 'validation' ? `${REVIEWER_HALF}\n\n${AUTHOR_HALF}` : AUTHOR_HALF;
 
+  // External research, for the four agents granted it and nobody else.
+  //
+  // Scoped rather than universal because an agent that CAN search the web will search the
+  // web instead of reading the file in front of it -- a confident answer about how the
+  // framework "generally" works when the real answer was two directories away. Telling
+  // every agent the capability exists is most of the way to that failure even when the
+  // tool is absent.
+  const grant = research && research.granted ? research.granted[a.id] : null;
+  const researchDoc = grant
+    ? `\n## You may look outside this repository\n\n${String(grant).replace(/\s+/g, ' ').trim()}\n\nTools: ${(research.tools || []).map((t) => `\`${t}\``).join(', ')} — built in, free, nothing to configure. They can still be ABSENT (WebSearch is US-only and can be disabled), so check rather than assume; if missing, say so in \`unverified\` and continue from the code. An unanswered question presented as an answered one is worse than no search.\n\n${(research.discipline || []).map((d) => `- ${d}`).join('\n')}\n\nThe test is not whether a search would be useful. It is whether the answer is OUTSIDE this repository. Most of the time it is not.\n`
+    : '';
+
   const applicable = (protocol.when_applicable || []).filter((f) => !a.handoff.includes(f));
   const applicableDoc = applicable.length
     ? `\n## Also address these — write "none" rather than omitting one\n\n${applicable
@@ -173,12 +194,27 @@ function agentMarkdown(a, protocol, gates, resources) {
         .join('\n')}\n\nNot every one applies to every turn. **Silence is not one of the options.** An\nomitted \`risks\` and a \`risks: none\` read identically to whoever picks this up, and only\none of them is a statement — so the field you have nothing for is where you write\n"none". That is a claim you are making, and it is the point: it separates "I checked and\nthere are none" from "I did not think about it", which is the distinction every field\nbelow exists to preserve.\n`
     : '';
 
+  // `skills:` PRELOADS the skill's content into the subagent's context at startup. It is
+  // a documented Claude Code field and this generator never used it.
+  //
+  // Instead, 29 agents carried a prose line -- "Skills to load first. `x` · `y`. Load them
+  // before reasoning about the task" -- which is a request, not a mechanism. The model
+  // could comply, forget, or decide it already knew. Same declared-vs-enforced family as
+  // every other defect this repo has found: the intent was in the prompt and nothing made
+  // it happen.
+  //
+  // Only skills that exist locally are emitted. An unresolvable name in `skills:` is worse
+  // than a prose mention, because the platform reads this field and a bad entry is a
+  // startup problem rather than a sentence the model can route around. External skills
+  // stay in the prose line, which is honest about being a request.
+  const preload = (a.skills || []).filter((id) => resources && resources.localSkills && resources.localSkills.has(id));
   const frontmatter = [
     '---',
     `name: ${a.id}`,
     `description: ${a.role}. ${a.owns.replace(/\s+/g, ' ')}`,
     `tools: ${a.tools.join(', ')}`,
     `model: ${a.model}`,
+    ...(preload.length ? [`skills:`, ...preload.map((id) => `  - ${id}`)] : []),
     '---',
   ].join('\n');
 
@@ -211,7 +247,7 @@ Never finish with "done". Return these fields:
 ${handoffDoc}
 
 Structured fields, not an essay. JARVIS reads these to decide what happens next; prose it has to parse is a failure of the protocol.
-${applicableDoc}
+${applicableDoc}${researchDoc}
 ## Your first line: STATUS
 
 Begin your handoff with one word.
@@ -401,14 +437,34 @@ Omit either when it does not apply. Both are optional; \`VOICE\` is not.
 `;
 }
 
+/**
+ * Which skills exist in this repo's `skills/` tree.
+ *
+ * Needed because `skills:` frontmatter is read by the PLATFORM, not by the model. A name
+ * the platform cannot resolve is a startup problem, whereas a name in a prose line is just
+ * a sentence the model can route around. So only locally-present skills are preloaded;
+ * anything installed externally stays in the prose line, which is honest about being a
+ * request rather than a guarantee.
+ */
+function localSkillIds(root) {
+  const dir = path.join(root, 'skills');
+  if (!fs.existsSync(dir)) return new Set();
+  return new Set(
+    fs.readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && fs.existsSync(path.join(dir, e.name, 'SKILL.md')))
+      .map((e) => e.name)
+  );
+}
+
 export function buildAgents({ root, readYaml, apply = false }) {
-  const { agents, protocol, gates, resources } = loadAgents({ root, readYaml });
+  const { agents, protocol, gates, resources, research } = loadAgents({ root, readYaml });
+  resources.localSkills = localSkillIds(root);
   const dir = path.join(root, 'agents');
   const written = [];
   if (apply) fs.mkdirSync(dir, { recursive: true });
   for (const a of agents) {
     const file = path.join(dir, `${a.id}.md`);
-    const body = agentMarkdown(a, protocol, gates, resources);
+    const body = agentMarkdown(a, protocol, gates, resources, research);
     if (apply) fs.writeFileSync(file, body);
     written.push({ id: a.id, mode: a.mode, model: a.model, bytes: body.length });
   }
@@ -433,7 +489,7 @@ export function buildAgents({ root, readYaml, apply = false }) {
 
 /* ------------------------------------------------------------- doctor (§6) */
 export function doctor({ root, readYaml, registry }) {
-  const { agents, protocol, gates, reviewLoop, reconciliation, resources } = loadAgents({ root, readYaml });
+  const { agents, protocol, gates, reviewLoop, reconciliation, resources, research, trifecta } = loadAgents({ root, readYaml });
   const skillIds = new Set((registry.skills || []).map((s) => s.id));
   const agentIds = new Set(agents.map((a) => a.id));
   const fail = [];
@@ -496,6 +552,27 @@ export function doctor({ root, readYaml, registry }) {
     if (!k) continue;
     if (seenOwns.has(k)) fail.push(`duplicate responsibility: "${a.id}" and "${seenOwns.get(k)}" own the same thing`);
     else seenOwns.set(k, a.id);
+    // Exact string equality catches a copy-paste and nothing else -- it reported
+    // "Duplicate responsibilities: 0" while two agents' remits genuinely overlapped.
+    // Anthropic's test is the stronger one: "If a human engineer can't definitively say
+    // which tool should be used in a given situation, an AI agent can't be expected to do
+    // better." Approximated by content-word overlap, which is coarse but catches the case
+    // equality cannot: different prose, same territory.
+    for (const [otherK, otherId] of seenOwns) {
+      if (otherId === a.id) continue;
+      const words = (t) => new Set(String(t).split(/\s+/).filter((w) => w.length > 4));
+      const A = words(k);
+      const B = words(otherK);
+      if (A.size < 4 || B.size < 4) continue;
+      let shared = 0;
+      for (const w of A) if (B.has(w)) shared++;
+      const jaccard = shared / (A.size + B.size - shared);
+      if (jaccard >= 0.6) {
+        warn.push(
+          `ambiguous ownership: "${a.id}" and "${otherId}" describe overlapping territory (${Math.round(jaccard * 100)}% of content words shared). A human engineer must be able to say which one handles a given request.`
+        );
+      }
+    }
   }
 
   // A writer with no declared scope cannot be checked for collisions, so `plan` has to
@@ -539,7 +616,7 @@ export function doctor({ root, readYaml, registry }) {
     }
   }
   if (agents.length) {
-    const sample = agentMarkdown(agents[0], protocol, gates, resources);
+    const sample = agentMarkdown(agents[0], protocol, gates, { ...resources, localSkills: localSkillIds(root) }, research);
     for (const f of declared) {
       // Either tier renders the field name; the decision markers render uppercase.
       if (!sample.includes(`**${f}**`) && !sample.includes(f.toUpperCase())) {
@@ -574,13 +651,33 @@ export function doctor({ root, readYaml, registry }) {
   try {
     const ledgerDir = path.join(process.env.JARVIS_DIR || path.join(os.homedir(), '.claude', 'jarvis'), 'ledger');
     let rows = 0;
+    let usable = 0;
     if (fs.existsSync(ledgerDir)) {
       for (const f of fs.readdirSync(ledgerDir).filter((x) => x.endsWith('.jsonl'))) {
-        rows += fs.readFileSync(path.join(ledgerDir, f), 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#')).length;
+        for (const line of fs.readFileSync(path.join(ledgerDir, f), 'utf8').split('\n')) {
+          const t = line.trim();
+          if (!t || t.startsWith('#')) continue;
+          rows++;
+          try {
+            const r = JSON.parse(t);
+            const a = String(r.agent || '').trim();
+            const st = String(r.status || '').trim().toLowerCase();
+            if (a && a !== 'unknown' && st && st !== 'unreported') usable++;
+          } catch { /* a torn line is not usable evidence either */ }
+        }
       }
     }
-    if (!rows) {
-      warn.push('learning loop: the outcome ledger is empty — agent-health metrics and `learn` are computed over zero runs (§11/§12). Built and tested, but unexercised: it fills as sub-agents report.');
+    // Total rows is the misleading number. A row that names no agent, or reports no
+    // status, is a dispatch that happened -- not evidence about an agent. Reporting 188
+    // when 0 are usable is how a metric starts lying.
+    if (!usable) {
+      warn.push(
+        rows
+          ? `learning loop: ${rows} ledger row(s) but ZERO usable — every one lacks an agent name or a status. Real dispatches of generic agents that were never given the handoff protocol, so there is nothing to learn from them. \`learn\` computes over an empty set.`
+          : 'learning loop: the outcome ledger is empty — agent-health metrics and `learn` are computed over zero runs (§11/§12). Built and tested, but unexercised: it fills as protocol-following agents report.'
+      );
+    } else if (usable < 5) {
+      warn.push(`learning loop: ${usable} usable ledger row(s) of ${rows}. Below MIN_RUNS=5, so \`learn\` will propose nothing — correctly.`);
     }
   } catch {
     // A ledger we cannot read is not a roster problem; doctor is not the place to fail on it.
@@ -604,6 +701,92 @@ export function doctor({ root, readYaml, registry }) {
   } catch {
     // An unreadable graph is not a roster problem.
   }
+
+  // External research is a GRANT. Two ways it can rot, both silent.
+  if (research && research.granted) {
+    for (const id of Object.keys(research.granted)) {
+      if (!agentIds.has(id)) {
+        fail.push(`external research: granted to "${id}", which is not an agent — the grant does nothing (§3)`);
+      }
+      const why = String(research.granted[id] || '').trim();
+      if (why.length < 40) {
+        // The reason requirement survives the tools becoming free. Cost was never the
+        // real justification -- an agent that CAN search will search instead of reading
+        // the file in front of it, and a grant with no stated reason cannot be audited
+        // for that. Rewording rather than removing.
+        fail.push(`external research: "${id}" is granted without a stated reason. A grant nobody can audit is not a grant, it is a default.`);
+      }
+    }
+    if (!(research.discipline || []).length) {
+      fail.push('external research: no discipline declared — an unbounded web search is not a capability, it is an untrusted-content ingestion channel');
+    }
+    // The grant is meant to be narrow. If it ever covers most of the roster it has
+    // stopped being a grant, and the failure it prevents (searching instead of reading)
+    // is back.
+    const share = Object.keys(research.granted).length / Math.max(1, agents.length);
+    if (share > 0.25) {
+      warn.push(`external research: granted to ${Math.round(share * 100)}% of the roster. It is a grant precisely because an agent that can search will search instead of reading the code.`);
+    }
+  }
+
+  // The lethal trifecta, derived rather than declared.
+  //
+  // private_data + untrusted_content + egress in one agent means anything it reads can
+  // make it exfiltrate. Willison's conclusion is that the only safe move is to avoid the
+  // combination, so this fails rather than warns -- and the legs are DERIVED from tools,
+  // because a tool added later silently changes an agent's exposure and a hand-maintained
+  // flag would not notice.
+  const READ_TOOLS = ['Read', 'Grep', 'Glob'];
+  const WRITE_TOOLS = ['Write', 'Edit', 'Bash'];
+  const declaredUntrusted = new Set((trifecta && trifecta.untrusted_content_declared) || []);
+  const waived = (trifecta && trifecta.waived) || {};
+  for (const a of agents) {
+    const legs = {
+      private_data: a.tools.some((t) => READ_TOOLS.includes(t)),
+      // A research grant is an untrusted-content channel by construction: a fetched page
+      // is attacker-influenceable text arriving in this agent's context.
+      untrusted_content: Boolean((research && research.granted && research.granted[a.id]) || declaredUntrusted.has(a.id)),
+      egress: a.tools.some((t) => WRITE_TOOLS.includes(t)),
+    };
+    if (legs.private_data && legs.untrusted_content && legs.egress) {
+      if (waived[a.id]) {
+        warn.push(`trifecta: "${a.id}" holds all three legs, waived — ${waived[a.id]}`);
+      } else {
+        fail.push(
+          `trifecta: "${a.id}" holds private_data + untrusted_content + egress. Anything it reads can make it exfiltrate. Split the reading agent from the writing one, or add a reasoned waiver under \`trifecta.waived\`.`
+        );
+      }
+    }
+  }
+  // Counted here, printed further down: `mark` is declared later, and using it above its
+  // declaration is a temporal-dead-zone error, not a hoisting convenience.
+  const trifectaExposed = agents.filter((a) =>
+    a.tools.some((t) => READ_TOOLS.includes(t)) &&
+    Boolean((research && research.granted && research.granted[a.id]) || declaredUntrusted.has(a.id)) &&
+    a.tools.some((t) => WRITE_TOOLS.includes(t))
+  ).length;
+
+  // The held-out probe set must exist and must be protected from the optimiser.
+  //
+  // A gate the optimiser can see is a target, not a gate (arXiv:2606.28430). The flag is
+  // only meaningful if something enforces that `learn` cannot reach it, so the forbidden
+  // targets are checked here rather than trusted.
+  try {
+    const probeFile = path.join(root, 'registry', 'probes.json');
+    if (fs.existsSync(probeFile)) {
+      const { probes } = JSON.parse(fs.readFileSync(probeFile, 'utf8'));
+      const held = (probes || []).filter((p) => p.heldout);
+      if (!held.length) {
+        fail.push('held-out probes: none declared. Every probe is visible to the proposal generator, so passing them is a target rather than a gate (§18).');
+      } else if (held.length < 3) {
+        warn.push(`held-out probes: only ${held.length}. A control group of one or two cannot distinguish a real generalisation failure from noise.`);
+      }
+      const learn = fs.readFileSync(path.join(root, 'scripts', 'learn.mjs'), 'utf8');
+      if (!learn.includes('probes.json')) {
+        fail.push('capacity cap: scripts/learn.mjs does not name registry/probes.json as a forbidden target — nothing stops a proposal rewriting the gate that judges it.');
+      }
+    }
+  } catch { /* an unreadable probe file is reported by evaluate, not here */ }
 
   // governance completeness
   if (!gates.length) fail.push('governance: no human_approval_required gates declared (§24)');
@@ -655,6 +838,10 @@ export function doctor({ root, readYaml, registry }) {
   console.log(mark(
     !fail.some((f) => f.startsWith('review loop')),
     `Review loop: ${rl.rounds || 0} rounds, panel by ${rl.panel_selected_by || '?'}, ${(rl.halt_on || []).length} halt conditions`
+  ));
+  console.log(mark(
+    trifectaExposed === 0,
+    `Lethal trifecta: ${trifectaExposed === 0 ? 'no agent holds all three legs' : `${trifectaExposed} agent(s) hold all three legs`}`
   ));
   const rc = reconciliation || {};
   console.log(mark(

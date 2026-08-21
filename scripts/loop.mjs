@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 /**
  * The review-loop driver — the thing that says "not done yet", and why.
@@ -379,6 +380,33 @@ export function verdict({
     }
   }
 
+  // 4c. Claimed done, produced nothing. OpenHands' cheapest critic is `empty_patch`:
+  //     "the agent said done but there is no diff" is a deterministic, zero-model-cost
+  //     false-completion detector, and this driver did not have one. It checked status,
+  //     evidence shape and protocol compliance -- never whether anything changed.
+  //
+  //     Stated as an OR rather than "files must exist", because a reviewer legitimately
+  //     writes nothing: it produces findings. A builder produces files. Producing NEITHER
+  //     and reporting SUCCESS is the empty patch, whichever kind of agent it is.
+  for (const h of handoffs) {
+    if (h.status !== 'SUCCESS') continue;
+    const none = (v) => {
+      const t = String(v || '').trim().toLowerCase();
+      return !t || t === 'none' || t === 'n/a' || t === 'nothing' || t === '-';
+    };
+    const noFiles = none(h.fields.files_changed);
+    const noFindings = none(h.fields.findings);
+    // Only fires when BOTH fields were actually addressed. A missing field is already
+    // reported as a protocol violation; reporting it twice would teach nothing.
+    if (h.fields.files_changed !== undefined && h.fields.findings !== undefined && noFiles && noFindings) {
+      blocking.push({
+        kind: 'empty-patch',
+        agent: h.agent,
+        detail: 'SUCCESS with no files changed and no findings — nothing was produced, so there is nothing to have succeeded at',
+      });
+    }
+  }
+
   // 5. Reviewer verdicts. A reviewer that returned neither accept nor revise has not
   //    reviewed, which is a missing review and not a tacit accept.
   const reviewers = handoffs.filter((h) => h.fields.verdict !== undefined);
@@ -480,9 +508,34 @@ export function verdict({
  * Append-only, one row per line, single write per call. A crash loses the last write and
  * not the file.
  */
-export function recordLedger(v, handoffs, { dir, session = 'loop', now = null } = {}) {
+/**
+ * A content hash of the configuration in force.
+ *
+ * Without this a flip is OBSERVED but not ATTRIBUTABLE: you can see that behaviour changed
+ * between two runs and cannot say which change caused it. It is the field the evaluation
+ * research named as the one a ledger most needs and this one did not have.
+ *
+ * Hashes the three files that actually decide behaviour -- the agent registry, the routing
+ * table, and the probe set. Not the whole tree: a docs edit must not invalidate the
+ * attribution of every prior row, or the field becomes noise that changes on every commit.
+ */
+export function configVersion(root) {
+  const parts = [];
+  for (const rel of ['registry/agents.yaml', 'registry/routing.yaml', 'registry/probes.json']) {
+    try {
+      parts.push(fs.readFileSync(path.join(root, rel)));
+    } catch {
+      // A missing file is itself part of the configuration's identity.
+      parts.push(Buffer.from(`missing:${rel}`));
+    }
+  }
+  return crypto.createHash('sha256').update(Buffer.concat(parts)).digest('hex').slice(0, 12);
+}
+
+export function recordLedger(v, handoffs, { dir, session = 'loop', now = null, root = null } = {}) {
   if (!dir || !handoffs || !handoffs.length) return { written: 0 };
   const stamp = now || new Date().toISOString().replace(/\.\d+Z$/, '');
+  const cfg = root ? configVersion(root) : null;
   const month = stamp.slice(0, 7);
   const rows = handoffs.map((h) => {
     const unver = (h.fields.unverified || '').trim().toLowerCase();
@@ -499,6 +552,9 @@ export function recordLedger(v, handoffs, { dir, session = 'loop', now = null } 
       verdict: h.verdict || '',
       evidence: hasEvidence(h.fields.testing) ? 1 : 0,
       round: v.round,
+      // Which configuration produced this. A flip with no config_version is an
+      // observation nobody can attribute.
+      ...(cfg ? { config_version: cfg } : {}),
       loop: v.done ? 'done' : v.halt && v.halt.length ? 'halted' : 'owed',
     });
   });

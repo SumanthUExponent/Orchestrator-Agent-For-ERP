@@ -277,6 +277,20 @@ gate_note() { marker_note GATE; }
 # job and a human gates what the judgement changes.
 ledger_append() {
   local agent="$1" st="$2" conf="$3" nxt="$4" unver="$5"
+
+  # A row with no agent AND no status is not data -- it is a dispatch that happened.
+  # Writing it anyway is how the ledger reached 188 rows of which 168 named no agent and
+  # ALL reported no status: `learn` would then compute per-agent patterns over phantoms,
+  # which is the confidently-wrong failure this codebase keeps finding.
+  #
+  # Counted rather than discarded, so the volume stays visible: a session that dispatched
+  # forty unattributable subagents is a fact worth knowing, just not an agent-health fact.
+  if [ -z "$agent" ] && { [ -z "$st" ] || [ "$st" = unreported ]; }; then
+    local c="$J/ledger/unattributed.count" n=0
+    [ -f "$c" ] && n=$(cat "$c" 2>/dev/null || echo 0)
+    printf '%s\n' "$(( n + 1 ))" > "$c" 2>/dev/null
+    return 0
+  fi
   [ -n "$agent" ] || agent=unknown
   local f
   f="$J/ledger/$(date +%Y-%m).jsonl"
@@ -289,11 +303,17 @@ ledger_append() {
 # The agent that just finished, from the hook payload. SubagentStop carries it; without
 # it the ledger would record 45 agents as one.
 agent_type_of() {
-  case "$IN" in
-    *'"agent_type"'*) v=${IN#*\"agent_type\":\"}; v=${v%%\"*}
-                      printf '%s' "$(printf '%s' "$v" | tr -cd 'A-Za-z0-9-')" ;;
-    *) printf '' ;;
-  esac
+  # Three keys, because 89% of ledger rows came back `unknown` on one. The payload shape
+  # is not guaranteed across events or versions, and a single hardcoded key fails silently
+  # -- producing a row that looks like data and is not.
+  for k in agent_type subagent_type agentType; do
+    case "$IN" in
+      *"\"$k\""*) v=${IN#*\"$k\":\"}; v=${v%%\"*}
+                 v=$(printf '%s' "$v" | tr -cd 'A-Za-z0-9-')
+                 [ -n "$v" ] && { printf '%s' "$v"; return 0; } ;;
+    esac
+  done
+  printf ''
 }
 
 # The permanent record of the day, as distinct from what gets announced.

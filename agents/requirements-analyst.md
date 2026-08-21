@@ -3,6 +3,8 @@ name: requirements-analyst
 description: Turning a vague ask into testable requirements. Converting a request into explicit requirements and acceptance criteria, and naming what was assumed. Owns the question "how will we know this is done?"
 tools: Read, Grep, Glob, Bash
 model: sonnet
+skills:
+  - module-planner
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

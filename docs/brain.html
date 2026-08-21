@@ -1,0 +1,686 @@
+<title>JARVIS Brain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+  :root{
+    --bg:#05070a; --panel:#090d12; --panel-2:#0c1219; --line:#152530; --line-2:#1e3340;
+    --text:#e8f4f7; --muted:#7b939e; --dim:#4d626d;
+    --signal:#35e7ff; --gate:#ffc857; --refuse:#ff5364; --pass:#5ff0a8;
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:var(--sans); font-size:16px; line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:0 24px 96px}
+
+  /* ── silkscreen labels ─────────────────────────────── */
+  .lbl{
+    font-family:var(--mono); font-weight:600; font-size:11px;
+    letter-spacing:.16em; text-transform:uppercase; color:var(--signal);
+  }
+  .lbl.muted{color:var(--dim)}
+  .num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+
+  /* ── masthead ──────────────────────────────────────── */
+  header{
+    border-bottom:1px solid var(--line);
+    padding:72px 0 0;
+    background:
+      radial-gradient(900px 320px at 12% -20%, rgba(53,231,255,.09), transparent 70%);
+  }
+  h1{
+    font-family:var(--mono); font-weight:600; font-size:clamp(34px,6vw,60px);
+    letter-spacing:-.02em; margin:0; line-height:1.02; text-wrap:balance;
+  }
+  h1 span{color:var(--signal)}
+  .sub{max-width:62ch; color:var(--muted); margin:18px 0 0; font-size:17px}
+  .sub b{color:var(--text); font-weight:500}
+
+  /* ── readout strip ─────────────────────────────────── */
+  .readout{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(118px,1fr));
+    gap:1px; background:var(--line); border:1px solid var(--line);
+    margin:44px 0 -1px;
+  }
+  .cell{background:var(--panel); padding:14px 16px}
+  .cell .v{font-family:var(--mono); font-variant-numeric:tabular-nums;
+           font-size:24px; font-weight:600; line-height:1.1; display:block}
+  .cell .k{font-family:var(--mono); font-size:10px; letter-spacing:.13em;
+           text-transform:uppercase; color:var(--dim); display:block; margin-top:5px}
+  .cell.zero .v{color:var(--refuse)}
+  .cell.good .v{color:var(--pass)}
+
+  /* ── sections ──────────────────────────────────────── */
+  section{padding-top:76px}
+  h2{
+    font-family:var(--mono); font-weight:600; font-size:13px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--signal); margin:0 0 6px;
+  }
+  h2 + .kicker{
+    font-size:23px; line-height:1.35; margin:0 0 26px; max-width:56ch;
+    text-wrap:balance; font-weight:500;
+  }
+  p{max-width:68ch}
+  p.note{color:var(--muted); font-size:15px}
+  a{color:var(--signal)}
+  code{
+    font-family:var(--mono); font-size:.88em; background:var(--panel-2);
+    border:1px solid var(--line); padding:.1em .38em; border-radius:3px; color:var(--text);
+  }
+
+  /* ── figures ───────────────────────────────────────── */
+  figure{margin:30px 0 0; border:1px solid var(--line); background:var(--panel); padding:26px 22px 0}
+  figure svg{display:block; width:100%; max-width:100%; height:auto; color:var(--muted)}
+  figcaption{
+    border-top:1px solid var(--line); margin:22px -22px 0; padding:14px 22px;
+    color:var(--muted); font-size:14px; line-height:1.55;
+  }
+  figcaption b{color:var(--text); font-weight:500}
+
+  /* ── faculty panels ───────────────────────────────── */
+  .grid{display:grid; gap:1px; background:var(--line); border:1px solid var(--line); margin-top:30px}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+  .card{background:var(--panel); padding:22px 22px 24px}
+  .card h3{
+    font-family:var(--mono); font-size:14px; font-weight:600; margin:0 0 3px;
+    letter-spacing:.01em;
+  }
+  .card .role{font-family:var(--mono); font-size:10px; letter-spacing:.13em;
+              text-transform:uppercase; color:var(--dim); display:block; margin-bottom:14px}
+  .card p{font-size:14.5px; color:var(--muted); margin:0 0 14px; max-width:none}
+  .card p b{color:var(--text); font-weight:500}
+  .bar{display:flex; height:5px; background:var(--panel-2); overflow:hidden; margin:0 0 10px}
+  .bar i{display:block; height:100%}
+  .keys{font-family:var(--mono); font-size:11.5px; color:var(--dim);
+        display:flex; flex-wrap:wrap; gap:4px 14px; font-variant-numeric:tabular-nums}
+  .keys s{text-decoration:none}
+  .dot{width:7px; height:7px; display:inline-block; margin-right:6px; vertical-align:1px}
+
+  /* ── tables ───────────────────────────────────────── */
+  .scroll{overflow-x:auto; margin-top:30px; border:1px solid var(--line); background:var(--panel)}
+  table{border-collapse:collapse; width:100%; min-width:640px; font-size:14.5px}
+  th,td{text-align:left; padding:12px 16px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{
+    font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase;
+    color:var(--dim); font-weight:600; background:var(--panel-2); white-space:nowrap;
+  }
+  tr:last-child td{border-bottom:0}
+  td.m{font-family:var(--mono); font-size:13px; white-space:nowrap; color:var(--text)}
+  .tag{
+    font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+    padding:2px 7px; border:1px solid currentColor; white-space:nowrap;
+  }
+  .t-ref{color:var(--refuse)} .t-gate{color:var(--gate)} .t-ok{color:var(--pass)}
+
+  /* ── callout ──────────────────────────────────────── */
+  .call{
+    border-left:2px solid var(--gate); background:var(--panel);
+    padding:18px 22px; margin-top:30px;
+  }
+  .call .lbl{color:var(--gate)}
+  .call p{margin:8px 0 0; color:var(--muted); font-size:15px}
+  .call p b{color:var(--text); font-weight:500}
+  .call.red{border-left-color:var(--refuse)}
+  .call.red .lbl{color:var(--refuse)}
+
+  /* ── roster ────────────────────────────────────────── */
+  table.roster{min-width:760px; font-size:14px}
+  table.roster tr.div td{
+    background:var(--panel-2); border-bottom:1px solid var(--line-2);
+    font-family:var(--mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+    color:var(--signal); padding:11px 16px;
+  }
+  table.roster tr.div s{text-decoration:none; color:var(--dim); margin-left:8px}
+  table.roster td.id{font-family:var(--mono); font-size:13px; white-space:nowrap; color:var(--text)}
+  table.roster td.tier{font-family:var(--mono); font-size:11px; white-space:nowrap}
+  table.roster td.mode{font-family:var(--mono); font-size:11px; color:var(--dim); white-space:nowrap}
+  table.roster td.owns{color:var(--muted); font-size:14px; line-height:1.5}
+  .bdg{display:inline-block; margin-top:5px; font-family:var(--mono); font-size:10px}
+  .bdg em{font-style:normal; color:var(--dim); border:1px solid var(--line-2); padding:1px 6px; margin-right:5px}
+  .bdg u{text-decoration:none; color:var(--gate); border:1px solid var(--gate); padding:1px 6px}
+  .legend{display:flex; flex-wrap:wrap; gap:6px 20px; margin-top:16px;
+          font-family:var(--mono); font-size:11px; color:var(--dim)}
+
+  footer{margin-top:88px; padding-top:26px; border-top:1px solid var(--line);
+         color:var(--dim); font-size:13.5px; font-family:var(--mono)}
+  footer a{color:var(--muted)}
+</style>
+
+<header>
+  <div class="wrap">
+    <span class="lbl">Anatomy of a decision machine</span>
+    <h1>The <span>JARVIS</span> brain</h1>
+    <p class="sub">Not the agents — the machinery that decides <b>which</b> agents, in what
+      order, at what cost, and above all <b>when the work is allowed to be called done</b>.
+      Every number below was read from the running system.</p>
+
+    <div class="readout">
+      <div class="cell"><span class="v">46</span><span class="k">named specialists</span></div>
+      <div class="cell"><span class="v">21</span><span class="k">skills</span></div>
+      <div class="cell"><span class="v">7</span><span class="k">human gates</span></div>
+      <div class="cell"><span class="v">12</span><span class="k">handoff fields</span></div>
+      <div class="cell"><span class="v">19</span><span class="k">route probes</span></div>
+      <div class="cell good"><span class="v">432</span><span class="k">tests green</span></div>
+      <div class="cell zero"><span class="v">0</span><span class="k">ledger rows</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ══════════════════════════════════════════ SIGNAL PATH -->
+  <section>
+    <h2>The signal path</h2>
+    <p class="kicker">A request enters at the left. It cannot reach “done” without passing a
+      check that is allowed to say no.</p>
+
+    <figure>
+      <svg viewBox="0 0 1000 380" role="img"
+           aria-label="A request flows through triage, routing, batching and dispatch to a loop driver, which either returns the work for another round, halts at a human gate, or emits a done verdict. Every verdict also writes a ledger row, which feeds a learning step whose output stops at a human.">
+        <defs>
+          <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="ac" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#35e7ff"/>
+          </marker>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#ff5364"/>
+          </marker>
+          <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#ffc857"/>
+          </marker>
+        </defs>
+
+        <g font-family="IBM Plex Mono, monospace" font-size="12">
+
+          <!-- main row -->
+          <rect x="8" y="88" width="118" height="46" fill="none" stroke="currentColor"/>
+          <text x="67" y="107" text-anchor="middle" fill="#e8f4f7">request</text>
+          <text x="67" y="123" text-anchor="middle" fill="#4d626d" font-size="10">from you</text>
+
+          <line x1="126" y1="111" x2="176" y2="111" stroke="currentColor" marker-end="url(#a)"/>
+
+          <rect x="176" y="88" width="120" height="46" fill="none" stroke="currentColor"/>
+          <text x="236" y="107" text-anchor="middle" fill="#e8f4f7">triage</text>
+          <text x="236" y="123" text-anchor="middle" fill="#4d626d" font-size="10">how much swarm?</text>
+
+          <line x1="296" y1="111" x2="346" y2="111" stroke="currentColor" marker-end="url(#a)"/>
+
+          <rect x="346" y="88" width="120" height="46" fill="none" stroke="#35e7ff"/>
+          <text x="406" y="107" text-anchor="middle" fill="#35e7ff">route</text>
+          <text x="406" y="123" text-anchor="middle" fill="#4d626d" font-size="10">rules, then score</text>
+
+          <line x1="466" y1="111" x2="516" y2="111" stroke="currentColor" marker-end="url(#a)"/>
+
+          <rect x="516" y="88" width="120" height="46" fill="none" stroke="currentColor"/>
+          <text x="576" y="107" text-anchor="middle" fill="#e8f4f7">batch</text>
+          <text x="576" y="123" text-anchor="middle" fill="#4d626d" font-size="10">phase · depth · writes</text>
+
+          <line x1="636" y1="111" x2="686" y2="111" stroke="currentColor" marker-end="url(#a)"/>
+
+          <rect x="686" y="88" width="120" height="46" fill="none" stroke="currentColor"/>
+          <text x="746" y="107" text-anchor="middle" fill="#e8f4f7">dispatch</text>
+          <text x="746" y="123" text-anchor="middle" fill="#4d626d" font-size="10">≤4 in parallel</text>
+
+          <!-- down into the driver -->
+          <path d="M746,134 L746,176" fill="none" stroke="currentColor" marker-end="url(#a)"/>
+          <text x="756" y="160" fill="#7b939e" font-size="10">12-field handoffs</text>
+
+          <!-- driver -->
+          <rect x="576" y="176" width="340" height="58" fill="none" stroke="#35e7ff" stroke-width="1.5"/>
+          <text x="746" y="200" text-anchor="middle" fill="#35e7ff" font-size="13">loop driver</text>
+          <text x="746" y="218" text-anchor="middle" fill="#7b939e" font-size="10">is this done?  ·  refuses by default</text>
+
+          <!-- refusal back up -->
+          <path d="M576,205 L500,205 L500,111 L466,111" fill="none" stroke="#ff5364"
+                stroke-dasharray="5 4" marker-end="url(#ar)"/>
+          <text x="508" y="152" fill="#ff5364" font-size="10">another round owed</text>
+
+          <!-- gate exit -->
+          <path d="M746,234 L746,282" fill="none" stroke="#ffc857" marker-end="url(#ag)"/>
+          <rect x="646" y="282" width="200" height="42" fill="none" stroke="#ffc857"/>
+          <text x="746" y="300" text-anchor="middle" fill="#ffc857">human gate</text>
+          <text x="746" y="315" text-anchor="middle" fill="#4d626d" font-size="10">one of seven · halts everything</text>
+
+          <!-- done exit -->
+          <path d="M916,205 L962,205" fill="none" stroke="#5ff0a8" marker-end="url(#a)"/>
+          <text x="939" y="196" text-anchor="middle" fill="#5ff0a8" font-size="10">done</text>
+
+          <!-- ledger + learn -->
+          <path d="M606,234 L606,282" fill="none" stroke="currentColor" marker-end="url(#a)"/>
+          <rect x="330" y="282" width="150" height="42" fill="none" stroke="currentColor"/>
+          <text x="405" y="300" text-anchor="middle" fill="#e8f4f7">ledger</text>
+          <text x="405" y="315" text-anchor="middle" fill="#ff5364" font-size="10">0 rows so far</text>
+          <path d="M596,303 L484,303" fill="none" stroke="currentColor" marker-end="url(#a)"/>
+          <text x="540" y="295" text-anchor="middle" fill="#4d626d" font-size="10">one row per handoff</text>
+
+          <path d="M330,303 L218,303" fill="none" stroke="currentColor" marker-end="url(#a)"/>
+          <rect x="68" y="282" width="150" height="42" fill="none" stroke="currentColor" stroke-dasharray="3 3"/>
+          <text x="143" y="300" text-anchor="middle" fill="#e8f4f7">learn</text>
+          <text x="143" y="315" text-anchor="middle" fill="#4d626d" font-size="10">proposes · never applies</text>
+
+          <path d="M143,282 L143,196" fill="none" stroke="#4d626d" stroke-dasharray="3 3"/>
+          <path d="M143,196 L143,150" fill="none" stroke="#4d626d" stroke-dasharray="3 3" marker-end="url(#a)"/>
+          <text x="153" y="176" fill="#4d626d" font-size="10">only via a human</text>
+
+          <text x="8" y="356" fill="#4d626d" font-size="10">solid = automatic</text>
+          <text x="150" y="356" fill="#ff5364" font-size="10">dashed red = refusal</text>
+          <text x="310" y="356" fill="#4d626d" font-size="10">dashed grey = requires a person</text>
+        </g>
+      </svg>
+      <figcaption><b>The only edge that reaches “done” passes through the driver.</b> Two of the
+        three exits are not success: a refusal sends the work back for another round, and a
+        human gate stops the run entirely. The learning path is drawn dashed because it
+        deliberately does not close — <code>learn</code> writes a proposal that nothing loads.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ══════════════════════════════════════════ FACULTIES -->
+  <section>
+    <h2>Four faculties</h2>
+    <p class="kicker">Each answers one question, and each is checked by something that can fail.</p>
+
+    <div class="grid g2">
+      <div class="card">
+        <h3>Routing</h3><span class="role">which agents, at what cost</span>
+        <p>Deterministic rules first, a weighted score only when nothing matches. No model is
+          involved, so the whole probe set runs in seconds and can gate every commit.</p>
+        <div class="bar">
+          <i style="width:52.2%;background:#35e7ff"></i>
+          <i style="width:23.9%;background:#5ff0a8"></i>
+          <i style="width:13%;background:#ffc857"></i>
+          <i style="width:10.9%;background:#4d626d"></i>
+        </div>
+        <div class="keys">
+          <s><span class="dot" style="background:#35e7ff"></span>24 active</s>
+          <s><span class="dot" style="background:#5ff0a8"></span>11 validation</s>
+          <s><span class="dot" style="background:#ffc857"></span>6 passive</s>
+          <s><span class="dot" style="background:#4d626d"></span>5 control</s>
+        </div>
+        <p style="margin-top:14px">Model tiers: <b>13 opus · 31 sonnet · 2 haiku</b>. The control
+          plane exists to <em>prevent</em> dispatches — an agent that cannot pay for its own
+          latency is theatre with better vocabulary.</p>
+      </div>
+
+      <div class="card">
+        <h3>Protocol</h3><span class="role">what an agent must return</span>
+        <p>Twelve fields, in two tiers. Five are required; seven must be <b>addressed</b> — and
+          the rule that makes those enforceable is that silence is not an option.</p>
+        <div class="keys" style="margin:14px 0">
+          <s style="color:#35e7ff">status · summary · voice · log · handoff</s>
+        </div>
+        <div class="keys">
+          <s>objective · findings · testing · files_changed · dependencies · risks · questions</s>
+        </div>
+        <p style="margin-top:14px">An omitted <code>risks</code> and a <code>risks: none</code>
+          read identically to whoever picks the work up, and <b>only one of them is a
+          statement</b>. Seven of these twelve used to be declared in the registry and rendered
+          to nobody.</p>
+      </div>
+
+      <div class="card">
+        <h3>The loop</h3><span class="role">is it good yet</span>
+        <p>Three rounds, a panel, and <b>four halt conditions with code behind every one</b>.
+          Revisions go back to the original author with the objection verbatim — the author
+          holds the context, and a paraphrase loses the thing objected to.</p>
+        <p>Disagreement is a procedure, not a ranking: <b>5 steps</b>, a <b>6-deep tiebreak</b>
+          where safety outranks architecture on purpose, and <b>3 conditions</b> that go
+          straight to a person.</p>
+      </div>
+
+      <div class="card">
+        <h3>Memory</h3><span class="role">what it knows about the ground</span>
+        <p>A deterministic context pack, scoped per role so a UI agent is not handed the DocType
+          inventory. Plus an optional <b>code graph</b> — 1,608 nodes and 1,887 edges of real
+          call, import and inheritance structure.</p>
+        <p><b>18 write scopes</b> keep two agents from editing the same area at once, and the
+          outcome ledger records what every dispatch actually produced.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════ REFUSAL -->
+  <section>
+    <h2>The refusal cycle</h2>
+    <p class="kicker">“Done” is a computed verdict. Ambiguity always resolves toward another
+      round, because the two mistakes cost wildly different amounts.</p>
+
+    <figure>
+      <svg viewBox="0 0 1000 300" role="img"
+           aria-label="Work enters a cycle of build then review. The cycle exits on one of four conditions: every reviewer accepts, the round cap is reached, a human gate is crossed, or the same objection returns twice.">
+        <defs>
+          <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Mono, monospace" font-size="12">
+          <!-- the cycle -->
+          <rect x="60" y="104" width="130" height="52" fill="none" stroke="currentColor"/>
+          <text x="125" y="128" text-anchor="middle" fill="#e8f4f7">build</text>
+          <text x="125" y="144" text-anchor="middle" fill="#4d626d" font-size="10">the author</text>
+
+          <path d="M190,118 L318,118" fill="none" stroke="currentColor" marker-end="url(#b)"/>
+          <text x="254" y="110" text-anchor="middle" fill="#7b939e" font-size="10">handoff</text>
+
+          <rect x="318" y="104" width="130" height="52" fill="none" stroke="currentColor"/>
+          <text x="383" y="128" text-anchor="middle" fill="#e8f4f7">review</text>
+          <text x="383" y="144" text-anchor="middle" fill="#4d626d" font-size="10">the panel</text>
+
+          <path d="M318,142 L190,142" fill="none" stroke="#ff5364" marker-end="url(#b)" stroke-dasharray="5 4"/>
+          <text x="254" y="158" text-anchor="middle" fill="#ff5364" font-size="10">revise, verbatim</text>
+
+          <!-- exits -->
+          <path d="M448,130 L540,130" fill="none" stroke="currentColor" marker-end="url(#b)"/>
+          <text x="494" y="122" text-anchor="middle" fill="#7b939e" font-size="10">exit on</text>
+
+          <rect x="540" y="30" width="400" height="34" fill="none" stroke="#5ff0a8"/>
+          <text x="556" y="52" fill="#5ff0a8">every reviewer accepts</text>
+          <text x="928" y="52" text-anchor="end" fill="#4d626d" font-size="10">the good one</text>
+
+          <rect x="540" y="76" width="400" height="34" fill="none" stroke="currentColor"/>
+          <text x="556" y="98" fill="#e8f4f7">the round cap is reached</text>
+          <text x="928" y="98" text-anchor="end" fill="#4d626d" font-size="10">3 rounds</text>
+
+          <rect x="540" y="122" width="400" height="34" fill="none" stroke="#ffc857"/>
+          <text x="556" y="144" fill="#ffc857">a human gate is crossed</text>
+          <text x="928" y="144" text-anchor="end" fill="#4d626d" font-size="10">outranks acceptance</text>
+
+          <rect x="540" y="168" width="400" height="34" fill="none" stroke="#ff5364"/>
+          <text x="556" y="190" fill="#ff5364">the same objection returns twice</text>
+          <text x="928" y="190" text-anchor="end" fill="#4d626d" font-size="10">not converging</text>
+
+          <line x1="540" y1="47" x2="524" y2="47" stroke="currentColor"/>
+          <line x1="540" y1="93" x2="524" y2="93" stroke="currentColor"/>
+          <line x1="540" y1="139" x2="524" y2="139" stroke="currentColor"/>
+          <line x1="540" y1="185" x2="524" y2="185" stroke="currentColor"/>
+          <line x1="524" y1="47" x2="524" y2="185" stroke="currentColor"/>
+          <line x1="524" y1="130" x2="540" y2="130" stroke="currentColor"/>
+
+          <text x="60" y="238" fill="#7b939e" font-size="11">The fourth condition is the one that matters. Two identical objections mean the loop</text>
+          <text x="60" y="256" fill="#7b939e" font-size="11">is not converging, and spending another round on it is worse than handing it back.</text>
+          <text x="60" y="280" fill="#4d626d" font-size="10">Detected by similarity, not string equality — a reviewer who rewords has not been answered.</text>
+        </g>
+      </svg>
+      <figcaption><b>Only the green exit is success.</b> The round cap and the no-progress
+        condition both end the loop with work still open, and say so — a run that stopped is
+        not a run that finished.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ══════════════════════════════════════════ WHAT IT REFUSES -->
+  <section>
+    <h2>What it actually refuses</h2>
+    <p class="kicker">Real output from the real command. Each of these was previously
+      indistinguishable from a finished task.</p>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>An agent returns</th><th>Verdict</th><th>Because</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="m">Done! Looks good.</td>
+            <td><span class="tag t-ref">exit 1</span></td>
+            <td>12 fields missing. An unparseable handoff cannot be judged, so it is
+              not-done rather than assumed fine.</td>
+          </tr>
+          <tr>
+            <td class="m">status: SUCCESS<br>confidence: HIGH<br>unverified: nothing was run</td>
+            <td><span class="tag t-ref">exit 1</span></td>
+            <td>Reading the status and stopping is the mistake. Routed to
+              <code>test-engineer</code>.</td>
+          </tr>
+          <tr>
+            <td class="m">testing: passed</td>
+            <td><span class="tag t-ref">exit 1</span></td>
+            <td>That is a claim, not output. <code>4 passed, 0 failed</code> is evidence;
+              an adjective is an opinion of one's own work.</td>
+          </tr>
+          <tr>
+            <td class="m">verdict: revise</td>
+            <td><span class="tag t-ref">exit 1</span></td>
+            <td>No remedy named. An objection nobody can act on is not a review, it is an
+              opinion — and it costs a whole round to discover that.</td>
+          </tr>
+          <tr>
+            <td class="m">risks: <em>(field omitted)</em></td>
+            <td><span class="tag t-ref">exit 1</span></td>
+            <td>Silence is not one of the options. Writing <code>none</code> is a claim you
+              are making, and that is the point.</td>
+          </tr>
+          <tr>
+            <td class="m">GATE: production deployment</td>
+            <td><span class="tag t-gate">halt</span></td>
+            <td>Outranks unanimous acceptance. A run that stopped for authorisation is not
+              a run that finished.</td>
+          </tr>
+          <tr>
+            <td class="m">status: SUCCESS<br>testing: 4 passed, 0 failed<br>verdict: accept</td>
+            <td><span class="tag t-ok">exit 0</span></td>
+            <td>The only thing that authorises “done”. Not a plausible-looking diff, and not
+              the coordinator running out of patience.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════ GRAPH -->
+  <section>
+    <h2>The graph layer</h2>
+    <p class="kicker">Impact analysis used to mean grep. A file listing says what exists; it
+      cannot say what calls what.</p>
+
+    <p>An optional <a href="https://github.com/Graphify-Labs/graphify">Graphify</a> graph is read
+      if one is present — a JSON file another tool produced, so there is no dependency, no
+      subprocess, no network and no model call. Absent, everything degrades to exactly the
+      previous behaviour.</p>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Freshness</th><th>Meaning</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td class="m" style="color:#5ff0a8">fresh</td>
+              <td>Built at HEAD.</td><td>Answers normally.</td></tr>
+          <tr><td class="m" style="color:#5ff0a8">current&nbsp;by&nbsp;content</td>
+              <td>The commit moved on; none of the graphed source files did.</td>
+              <td>Treated as usable. A warning that fires when nothing is wrong is one people
+                learn to scroll past.</td></tr>
+          <tr><td class="m" style="color:#ff5364">stale</td>
+              <td>Graphed sources changed — and it names how many.</td>
+              <td>Loud. A stale graph is worse than none: it answers confidently, about code
+                that has moved, and nothing in the answer looks wrong.</td></tr>
+          <tr><td class="m" style="color:#ffc857">unknown</td>
+              <td>No recorded commit, or not a repository.</td>
+              <td>Treated as possibly stale. “Cannot check” and “checked and fine” must never
+                render the same.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 style="margin-top:64px">Reaching outside the repo</h2>
+    <p class="kicker">A second, opposite source: Graphify is local and free, Perplexity is
+      remote and costs per call. Four agents may use it. Forty-two may not.</p>
+
+    <p>The interesting design question was not how to add it — it was <b>who must not have
+      it</b>. An agent that <em>can</em> search the web will search the web instead of
+      reading the file in front of it, and produce a confident answer about how the
+      framework “generally” works when the real answer was two directories away. So it is a
+      grant with a stated reason per agent, which <code>doctor</code> enforces.</p>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Granted</th><th>Because the answer is genuinely outside</th></tr></thead>
+        <tbody>
+          <tr><td class="m">research-orchestrator</td><td>Its brief is routinely a question the
+            repository cannot answer — a library's behaviour, a platform limit, whether an
+            approach is known to fail.</td></tr>
+          <tr><td class="m">migration-analyst</td><td>Breaking changes and deprecations live in
+            release notes and issue threads, not in the checkout being upgraded.</td></tr>
+          <tr><td class="m">security-reviewer</td><td>A vulnerability published last month is
+            not discoverable by reading the code.</td></tr>
+          <tr><td class="m">architect</td><td>Prior art only. Granted narrowly: <em>not</em> for
+            how this codebase works, which is a repository question.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="note" style="margin-top:20px"><b>The test is not whether a search would be
+      useful.</b> Almost every agent would find one useful. The test is whether the answer is
+      <em>outside</em> this repository — and for 42 of 46, it is not. Nothing in the speech
+      path may touch it: that rule is absolute and predates this layer. The provider is
+      detected rather than assumed, and an agent that finds no tool says so in
+      <code>unverified</code> and continues from the code, because an unanswered question
+      presented as an answered one is worse than no search.</p>
+
+    <div class="call">
+      <span class="lbl">Found on the first real run</span>
+      <p>An existing graph on this machine was <b>43 commits behind, with 57 of its own source
+        files changed</b>. It would have produced confident, wrong impact analysis, and nothing
+        in the output would have said so.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════ ROSTER -->
+  <section>
+    <h2>The specialists</h2>
+    <p class="kicker">All 46, by name. Counts were the wrong answer to “what is in the
+      swarm” — a roster you cannot read is a number.</p>
+
+    <p class="note">Each is generated from <code>registry/agents.yaml</code>, so
+      <code>agents/*.md</code> is build output: adding one is a registry edit, not 46 files
+      to keep in sync. <b>Colour is the model tier</b> — the expensive one is spent on
+      judgement, not typing. <b>Mode</b> is what the agent is allowed to do at all.</p>
+
+    <div class="legend">
+      <span><span class="dot" style="background:#35e7ff"></span>opus · judgement</span>
+      <span><span class="dot" style="background:#5ff0a8"></span>sonnet · execution</span>
+      <span><span class="dot" style="background:#7b939e"></span>haiku · mechanical checks</span>
+      <span>builds / checks / observes / decides = mode</span>
+      <span style="color:#ffc857">web = may search outside the repo</span>
+    </div>
+
+    <div class="scroll">
+      <table class="roster">
+        <thead><tr><th>Agent</th><th>Tier</th><th>Mode</th><th>Owns exactly this</th></tr></thead>
+        <tbody>
+      <tr class="div"><td colspan="4">Orchestration <s>3</s></td></tr>
+      <tr><td class="id">jarvis-deep</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">Decomposing a self-contained brief into sub-tasks, dispatching specialists, and returning ONE consolidated handoff. Used only when the work needs no mid-flight human decision.<br><span class=bdg><em title="write scope">any</em></span></td></tr>
+      <tr><td class="id">delivery-orchestrator</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">Ordering work ACROSS divisions for a multi-phase feature — what planning must finish before development starts, what can run in parallel, where the quality gates sit. Produces a phase plan; implements nothing.</td></tr>
+      <tr><td class="id">research-orchestrator</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">Fanning out read-only investigation across the codebase when the problem is not yet understood, then synthesising ONE findings report. Never writes code.<br><span class=bdg><u title="may search outside the repository">web</u></span></td></tr>
+      <tr class="div"><td colspan="4">Planning <s>5</s></td></tr>
+      <tr><td class="id">requirements-analyst</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Converting a request into explicit requirements and acceptance criteria, and naming what was assumed. Owns the question &quot;how will we know this is done?&quot;</td></tr>
+      <tr><td class="id">business-analyst</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Mapping the real-world process the software serves — actors, handoffs, approval authority, exceptions — and the business rules that must hold.</td></tr>
+      <tr><td class="id">architect</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">The overall shape of a change — which module owns what, service boundaries, and how the pieces integrate. Produces a design; writes no implementation.<br><span class=bdg><u title="may search outside the repository">web</u></span></td></tr>
+      <tr><td class="id">data-model-architect</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">The entity graph and its dependency order — linked DocTypes before referencers, child tables before parents, states before workflow — plus the permission matrix per role. Designs the schema; schema-builder builds it.</td></tr>
+      <tr><td class="id">impact-analyst</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Identifying everything that depends on the code being changed — callers, hooks, client scripts, reports, permissions, integrations — and what could break. Writes nothing.</td></tr>
+      <tr class="div"><td colspan="4">Development <s>6</s></td></tr>
+      <tr><td class="id">schema-builder</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Building the DocTypes, child tables, fields and fixtures the data model specifies.<br><span class=bdg><em title="write scope">schema</em></span></td></tr>
+      <tr><td class="id">backend</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Whitelisted methods, doc events, scheduler entries and workflow state machines.<br><span class=bdg><em title="write scope">server-logic</em></span></td></tr>
+      <tr><td class="id">frontend</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Implementing interfaces — pages, forms, views and client-side behaviour. Owns HOW an interface is built; ui-designer owns what it should be.<br><span class=bdg><em title="write scope">ui-code</em></span></td></tr>
+      <tr><td class="id">integration-developer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Connections to systems outside this one — outbound calls, inbound webhooks, auth, retry and failure handling at the boundary.<br><span class=bdg><em title="write scope">integrations</em></span></td></tr>
+      <tr><td class="id">console-deployer</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">Idempotent, re-runnable System Console installers. On managed hosting this is the ONLY deployment path — bench does not exist there.<br><span class=bdg><em title="write scope">deploy-scripts</em></span></td></tr>
+      <tr><td class="id">reporting-developer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Report SQL, filter wiring and print layout. Builds reports; data-analyst decides what they should measure.<br><span class=bdg><em title="write scope">reports</em></span></td></tr>
+      <tr class="div"><td colspan="4">UI/UX <s>5</s></td></tr>
+      <tr><td class="id">ux-researcher</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">The current user journey and where it costs people time — click paths, dead ends, repeated work. Produces evidence about behaviour; proposes no visuals.</td></tr>
+      <tr><td class="id">ui-designer</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">How a surface looks — hierarchy, typography, colour, spacing, and consistency with the design system. Owns WHAT the interface should be; frontend owns how.<br><span class=bdg><em title="write scope">design/tokens/** design/system/**</em></span></td></tr>
+      <tr><td class="id">interaction-designer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">What happens between screens — step sequences, empty/loading/error states, confirmations, and what the interface says when something goes wrong.<br><span class=bdg><em title="write scope">design/flows/**</em></span></td></tr>
+      <tr><td class="id">mobile-ux</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Interfaces used one-handed, outdoors, on a phone — tap targets, offline tolerance, camera and scanner flows, and minimising taps for a technician in the field.<br><span class=bdg><em title="write scope">mobile/**</em></span></td></tr>
+      <tr><td class="id">accessibility</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Contrast, keyboard reachability, focus visibility, semantic structure and screen reader behaviour. Reports violations; does not redesign.</td></tr>
+      <tr class="div"><td colspan="4">Data <s>3</s></td></tr>
+      <tr><td class="id">data-analyst</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Defining the metric — what question a report answers, which rows count, how periods and edge cases are handled. Specifies; reporting-developer builds.</td></tr>
+      <tr><td class="id">data-scientist</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">Anything where the output is a prediction, score or ranking rather than a recorded fact — the method, its assumptions, and how it is validated.<br><span class=bdg><em title="write scope">analytics</em></span></td></tr>
+      <tr><td class="id">dataviz-specialist</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Chart form and encoding — which mark suits the question, colour that survives both themes, axes that do not mislead, and dashboards that summarise before detail.<br><span class=bdg><em title="write scope">reports/charts/**</em></span></td></tr>
+      <tr class="div"><td colspan="4">Quality <s>6</s></td></tr>
+      <tr><td class="id">test-engineer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Producing evidence a change works. Runs tests, reports real output. A failure is reported as a failure.<br><span class=bdg><em title="write scope">tests</em></span></td></tr>
+      <tr><td class="id">uat-coordinator</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Turning acceptance criteria into a UAT script a non-technical user can follow — steps, expected results, test data, and a record of what passed and what did not.<br><span class=bdg><em title="write scope">docs/uat/**</em></span></td></tr>
+      <tr><td class="id">qa-engineer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Finding what automated tests miss — walking the real journey, the unhappy paths, permissions as a different role, and boundaries nobody specified.</td></tr>
+      <tr><td class="id">code-reviewer</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">checks</td><td class="owns">Reviewing changed code for correctness, safe_exec violations and over-engineering. Writes nothing — findings only.</td></tr>
+      <tr><td class="id">security-reviewer</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">checks</td><td class="owns">Reviewing a change for exploitable weakness rather than for correctness — permission and role checks that can be bypassed, injection through query or template construction, secrets in code or fixtures, unauthenticated endpoints, and data exposed across tenant or role boundaries. Reports findings; writes nothing.<br><span class=bdg><u title="may search outside the repository">web</u></span></td></tr>
+      <tr><td class="id">performance-analyst</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Query counts, N+1 patterns, unbounded result sets, missing indexes, and anything that degrades as data grows. Reports; does not rewrite.</td></tr>
+      <tr class="div"><td colspan="4">Demo &amp; docs <s>4</s></td></tr>
+      <tr><td class="id">demo-builder</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Realistic demo data and a walkthrough that shows the feature working end to end, including the failure case. Owns &quot;can we show this to someone on Monday?&quot;<br><span class=bdg><em title="write scope">demo-data</em></span></td></tr>
+      <tr><td class="id">user-guide-writer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">End-user guides written from the user&#x27;s side of the screen, with every state, button and validation rule traced back to source rather than assumed.<br><span class=bdg><em title="write scope">docs/guides/**</em></span></td></tr>
+      <tr><td class="id">process-documenter</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">SOPs, handover documents and runbooks — how the process operates, not how the UI works.<br><span class=bdg><em title="write scope">docs/sop/**</em></span></td></tr>
+      <tr><td class="id">knowledge-curator</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Capturing architectural decisions and hard-won gotchas at the moment they are made, so the next session does not rediscover them.<br><span class=bdg><em title="write scope">docs/decisions/**</em></span></td></tr>
+      <tr class="div"><td colspan="4">Ops <s>3</s></td></tr>
+      <tr><td class="id">git-safety</td><td class="tier"><span style="color:#7b939e">haiku</span></td><td class="mode">checks</td><td class="owns">Knowing the branch, the base, what is uncommitted and what is unrelated to the task — so no one else&#x27;s work is discarded. Destructive git operations require human approval, always.</td></tr>
+      <tr><td class="id">deployment-safety</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">checks</td><td class="owns">Pre-deployment verification and the rollback path — what is being deployed, what breaks if it fails, and how to get back. Production deployment requires human approval.</td></tr>
+      <tr><td class="id">migration-analyst</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Whether a migration or version upgrade is safe — data loss risk, irreversible steps, patch ordering, and what existing customisations it would break.<br><span class=bdg><u title="may search outside the repository">web</u></span></td></tr>
+      <tr class="div"><td colspan="4">Governance <s>6</s></td></tr>
+      <tr><td class="id">skill-guardian</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">observes</td><td class="owns">Detecting orphan, duplicate, broken-reference and stale skills, and proposing new skills for recurring gaps. Proposals only — never creates or deletes.</td></tr>
+      <tr><td class="id">agent-guardian</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">observes</td><td class="owns">Detecting agents never selected, overlapping ownership, agents whose skills no longer exist, and routing coverage gaps.</td></tr>
+      <tr><td class="id">routing-auditor</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">observes</td><td class="owns">Reviewing routing decisions for wrong delegation, unnecessary agent invocation, over-parallelisation and missing specialists.</td></tr>
+      <tr><td class="id">knowledge-guardian</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">observes</td><td class="owns">Detecting stale documentation, contradictory instructions across skills, and decisions made but never written down.</td></tr>
+      <tr><td class="id">swarm-evolution</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">observes</td><td class="owns">Spotting recurring problems no current agent owns, and proposing exactly one new agent or skill with its measurable responsibility written out.</td></tr>
+      <tr><td class="id">efficiency-auditor</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">observes</td><td class="owns">Measuring what each dispatch cost against what it returned, and naming the dispatches that were not worth making.</td></tr>
+      <tr class="div"><td colspan="4">Control plane <s>5</s></td></tr>
+      <tr><td class="id">fast-path-triage</td><td class="tier"><span style="color:#7b939e">haiku</span></td><td class="mode">decides</td><td class="owns">Deciding the smallest execution mode a request can be answered in — direct answer, one specialist, or the full pipeline — and refusing to escalate beyond it without naming the reason.</td></tr>
+      <tr><td class="id">context-broker</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">decides</td><td class="owns">Producing ONE shared Context Pack per run — the file map, app ownership and active constraints that every downstream specialist would otherwise rediscover separately.</td></tr>
+      <tr><td class="id">swarm-dispatcher</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">decides</td><td class="owns">Turning a chosen agent list into the cheapest correct execution order — which agents share a parallel batch, which model tier each one runs at, and what must wait behind a gate.</td></tr>
+      <tr><td class="id">result-synthesizer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">decides</td><td class="owns">Collapsing many finished handoffs into one deduplicated brief — merging repeated findings, reconciling contradictions, and carrying every unanswered question through verbatim.</td></tr>
+      <tr><td class="id">quality-sentinel</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">decides</td><td class="owns">Choosing which outputs of a run need deep review and which need none, ranked by blast radius, so verification effort lands where the risk actually is.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="call">
+      <span class="lbl">Why one owns exactly one thing</span>
+      <p><code>doctor</code> fails any agent whose <code>owns</code> is empty, and fails two
+        agents that own the same thing. <b>An agent without a measurable responsibility is
+        theatre with better vocabulary</b> — and the control plane at the bottom of that
+        list exists to <em>prevent</em> dispatches, not to add them.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════ HONEST -->
+  <section>
+    <h2>What is not true yet</h2>
+    <p class="kicker">A page that lists only wins is the failure mode this system was built to
+      detect.</p>
+
+    <div class="call red">
+      <span class="lbl">The ledger is empty</span>
+      <p><b>Zero rows.</b> Every agent-health metric is therefore computed over an empty set, and
+        <code>learn</code> has never run on real data. The machinery is built and tested; the
+        loop is unproven. <code>doctor</code> now says so out loud, because <b>“the loop is
+        built” and “the loop is working” are different claims</b> and only one of them was ever
+        checkable.</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Limit</th><th>Why it stands</th></tr></thead>
+        <tbody>
+          <tr><td class="m">The driver does not dispatch</td>
+              <td>It answers “is this done?” and names who is next. It removes the ability to
+                <em>skip</em> the question, not the ability to ignore the answer.</td></tr>
+          <tr><td class="m">It cannot judge quality</td>
+              <td>It checks protocol compliance, declared gates, and whether evidence looks like
+                output. Whether a reviewer was <em>right</em> stays the panel's job.</td></tr>
+          <tr><td class="m">Objection matching misses derivations</td>
+              <td>Inflections unify — “orphan”, “orphaned”, “orphaning” are one objection.
+                “Submit” and “submission” do not. Fixing that needs a dictionary, which is a
+                dependency.</td></tr>
+          <tr><td class="m">Write scopes are directories</td>
+              <td>Not per-file. Two agents writing different files in one directory are
+                serialised unnecessarily — conservative in the safe direction, but a real
+                cost.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    46 named specialists · 21 skills · 7 gates · 432 tests green · 19/19 route probes ·
+    <a href="https://github.com/SumanthUExponent/JARVIS-For-ERP">JARVIS-For-ERP</a><br>
+    Every figure read from the running system. Nothing on this page was typed from memory.
+  </footer>
+
+</div>

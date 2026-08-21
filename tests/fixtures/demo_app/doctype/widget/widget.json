@@ -1,0 +1,13 @@
+{
+  "doctype": "DocType",
+  "name": "Widget",
+  "module": "Demo App",
+  "autoname": "field:widget_code",
+  "fields": [
+    { "fieldname": "widget_code", "fieldtype": "Data", "label": "Widget Code", "reqd": 1, "unique": 1 },
+    { "fieldname": "description", "fieldtype": "Small Text", "label": "Description" }
+  ],
+  "permissions": [
+    { "role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1 }
+  ]
+}

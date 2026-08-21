@@ -3,6 +3,11 @@ name: backend
 description: Server-side logic. Whitelisted methods, doc events, scheduler entries and workflow state machines.
 tools: Read, Grep, Glob, Bash, Edit, Write
 model: sonnet
+skills:
+  - frappe-api
+  - frappe-hooks
+  - frappe-workflow
+  - frappe-app-dev
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

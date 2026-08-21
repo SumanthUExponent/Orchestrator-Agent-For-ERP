@@ -3,6 +3,8 @@ name: data-model-architect
 description: DocType graph design, before implementation. The entity graph and its dependency order — linked DocTypes before referencers, child tables before parents, states before workflow — plus the permission matrix per role. Designs the schema; schema-builder builds it.
 tools: Read, Grep, Glob, Bash
 model: opus
+skills:
+  - frappe-doctype
 ---
 
 <!-- GENERATED from registry/agents.yaml by scripts/swarm.mjs. Do not hand-edit;

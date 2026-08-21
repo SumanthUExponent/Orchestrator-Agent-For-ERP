@@ -383,3 +383,257 @@ describe('per-mode presence — written BEFORE any scoping exists', () => {
     assert.ok(author.length > 0, 'no agent is told what to do with an objection');
   });
 });
+
+describe('mode scoping keeps every agent whole (§14)', () => {
+  // WRITTEN BEFORE THE SCOPING, deliberately. Two earlier attempts at this refactor
+  // produced invalid JS and were reverted; the recorded lesson was that the assertions
+  // had to exist first, because a section silently vanishing from a template literal
+  // leaves `doctor` reporting Healthy -- exactly how a backtick once emptied the review
+  // loop from every agent with nothing failing.
+  //
+  // These assert PRESENCE per mode. They are the safety net that makes scoping safe to
+  // attempt at all, and they must keep passing whether or not any scoping is applied.
+  const modeOf = (body) => {
+    const m = body.match(/^# ([a-z0-9-]+)/m);
+    return m ? m[1] : null;
+  };
+
+  const UNIVERSAL = [
+    'You own exactly this',
+    'Stop and escalate',
+    'Your handoff (required)',
+    'Your first line: STATUS',
+    'When you disagree with another agent',
+    'Also address these',
+  ];
+
+  test('every agent keeps every universal section, whatever its mode', () => {
+    const missing = [];
+    for (const f of FILES) {
+      const b = read(f);
+      for (const s of UNIVERSAL) if (!b.includes(s)) missing.push(`${f}: ${s}`);
+    }
+    assert.deepEqual(missing, [], 'scoping removed a section every agent needs');
+  });
+
+  test('reviewers are told how to vote', () => {
+    // validation-mode agents are the panel. If the reviewing half is ever scoped away
+    // from them the loop has no voters and `verdict` never appears.
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const reviewers = [...y.matchAll(/^  ([a-z][a-z0-9-]+):\n(?:    .*\n)*?    mode: validation$/gm)].map((m) => m[1]);
+    assert.ok(reviewers.length >= 8, `only ${reviewers.length} validation agents found`);
+    for (const id of reviewers) {
+      const b = read(`${id}.md`);
+      assert.match(b, /If you are reviewing/, `${id} is a reviewer and is not told how to vote`);
+      assert.match(b, /verdict/, `${id} is a reviewer with no verdict field`);
+    }
+  });
+
+  test('builders are told what happens when their work is revised', () => {
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const builders = [...y.matchAll(/^  ([a-z][a-z0-9-]+):\n(?:    .*\n)*?    mode: active$/gm)].map((m) => m[1]);
+    assert.ok(builders.length >= 20, `only ${builders.length} active agents found`);
+    for (const id of builders) {
+      assert.match(read(`${id}.md`), /If your work is being revised/, `${id} builds and is not told the revision rule`);
+    }
+  });
+
+  test('every agent still carries the seven gates verbatim', () => {
+    // The one thing that must never be scoped by mode. A passive agent that observes a
+    // production deployment still has to refuse.
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const gates = [...y.matchAll(/^  - (.+)$/gm)]
+      .map((m) => m[1])
+      .filter((g) => /production deployment|destructive database changes/.test(g));
+    assert.ok(gates.length >= 2, 'could not locate the gate list');
+    for (const f of FILES) {
+      const b = read(f);
+      for (const g of gates) assert.ok(b.includes(g), `${f} lost gate: ${g}`);
+    }
+  });
+
+  test('no agent is a stub — scoping must narrow, never gut', () => {
+    // A crude but effective backstop: if a mode-scoping edit accidentally drops most of
+    // a template, size collapses long before any individual assertion notices.
+    for (const f of FILES) {
+      const bytes = fs.statSync(path.join(ROOT, 'agents', f)).size;
+      assert.ok(bytes > 8000, `${f} is only ${bytes} bytes — a section block was probably lost`);
+    }
+  });
+});
+
+describe('external research is a grant, not a default', () => {
+  // The failure this guards is not "an agent cannot search". It is an agent that CAN
+  // search doing so INSTEAD of reading the file in front of it -- a confident answer about
+  // how the framework generally works, when the real answer was two directories away.
+  // Telling every agent the capability exists is most of the way to that failure, even
+  // when no provider is configured.
+  const GRANTED = ['research-orchestrator', 'migration-analyst', 'security-reviewer', 'architect'];
+  const MARKER = 'look outside this repository';
+
+  test('exactly the granted agents are told about it', () => {
+    const told = FILES.filter((f) => read(f).includes(MARKER)).map((f) => f.replace(/\.md$/, '')).sort();
+    assert.deepEqual(told, [...GRANTED].sort(), 'the grant does not match who was told');
+  });
+
+  test('the roster is not quietly told by another route', () => {
+    // A tool name leaking into an ungranted prompt is the same defect wearing a hat.
+    //
+    // Derived from the registry, not hardcoded. This test used to match /perplexity_/,
+    // which silently stopped testing anything the moment the grant moved to the built-in
+    // WebSearch/WebFetch tools -- it would have passed on every agent forever while
+    // checking for a string that no longer appears anywhere.
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const block = y.slice(y.indexOf('external_research:'));
+    const tools = (block.match(/^  tools: \[(.+)\]$/m) || [])[1] || '';
+    const names = tools.split(',').map((t) => t.trim()).filter(Boolean);
+    assert.ok(names.length >= 2, `only ${names.length} research tool(s) parsed from the registry — this test would be vacuous`);
+
+    const leaked = FILES.filter((f) => {
+      const id = f.replace(/\.md$/, '');
+      if (GRANTED.includes(id)) return false;
+      // Body only: an agent legitimately holding WebFetch in its `tools:` frontmatter is
+      // not the leak being tested for. The leak is being TOLD the capability exists.
+      const body = read(f).split(/^---$/m).slice(2).join('---');
+      return names.some((n) => new RegExp(`\\b${n}\\b`).test(body));
+    });
+    assert.deepEqual(leaked, [], 'an ungranted agent was told the research tool names');
+  });
+
+  test('every granted agent is told the discipline, not just the permission', () => {
+    for (const id of GRANTED) {
+      const b = read(`${id}.md`);
+      assert.match(b, /Read the repository first/, `${id} got the permission without the rule`);
+      assert.match(b, /OUTSIDE this repository/, `${id} was not given the test to apply`);
+      assert.match(b, /unverified/, `${id} was not told what to do when the tool is absent`);
+    }
+  });
+
+  test('the grant states a reason for each agent', () => {
+    // A capability with a real bill attached needs a reason, and doctor fails a grant
+    // shorter than a sentence. This pins that the reasons are actually there.
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const block = y.split('external_research:')[1].split('\n# ')[0];
+    for (const id of GRANTED) {
+      assert.ok(block.includes(`${id}:`), `${id} is not named in the grant block`);
+    }
+    assert.match(block, /discipline:/, 'no discipline declared');
+    assert.match(block, /provider_optional/, 'the provider must be optional, never assumed');
+  });
+
+  test('the grant stays narrow', () => {
+    assert.ok(GRANTED.length / FILES.length <= 0.25,
+      `${GRANTED.length} of ${FILES.length} is no longer a grant`);
+  });
+});
+
+describe('skills are preloaded, not requested in prose', () => {
+  // 29 agents carried "Skills to load first. `x` · `y`" -- a request, not a mechanism. The
+  // model could comply, forget, or decide it already knew. `skills:` frontmatter is read
+  // by the PLATFORM and injects the content at startup.
+  const LOCAL = (() => {
+    const dir = path.join(ROOT, 'skills');
+    if (!fs.existsSync(dir)) return new Set();
+    return new Set(
+      fs.readdirSync(dir, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && fs.existsSync(path.join(dir, e.name, 'SKILL.md')))
+        .map((e) => e.name)
+    );
+  })();
+
+  test('the local skill tree is non-empty — otherwise every assertion here is vacuous', () => {
+    assert.ok(LOCAL.size >= 10, `only ${LOCAL.size} local skills found`);
+  });
+
+  test('every agent claiming a LOCAL skill preloads it in frontmatter', () => {
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const missing = [];
+    for (const f of FILES) {
+      const id = f.replace(/\.md$/, '');
+      const m = y.match(new RegExp(`^  ${id}:\\n(?:    .*\\n)*?    skills: \\[(.*?)\\]`, 'm'));
+      if (!m) continue;
+      const claimed = m[1].split(',').map((x) => x.trim()).filter(Boolean).filter((x) => LOCAL.has(x));
+      if (!claimed.length) continue;
+      const front = read(f).split(/^---$/m)[1] || '';
+      for (const sk of claimed) {
+        if (!new RegExp(`^\\s*-\\s*${sk}\\s*$`, 'm').test(front)) missing.push(`${id}: ${sk}`);
+      }
+    }
+    assert.deepEqual(missing, [], 'agents that ask for a local skill in prose instead of preloading it');
+  });
+
+  test('no agent preloads a skill that does not exist locally', () => {
+    // A name the platform cannot resolve is a startup problem, which is worse than a
+    // prose mention the model can route around.
+    const bad = [];
+    for (const f of FILES) {
+      const front = read(f).split(/^---$/m)[1] || '';
+      const block = front.match(/^skills:\n((?:\s*-\s*\S+\n?)+)/m);
+      if (!block) continue;
+      for (const line of block[1].split('\n')) {
+        const id = (line.match(/-\s*(\S+)/) || [])[1];
+        if (id && !LOCAL.has(id)) bad.push(`${f}: ${id}`);
+      }
+    }
+    assert.deepEqual(bad, [], 'frontmatter preloads a skill that is not in this repo');
+  });
+});
+
+describe('the lethal trifecta is declared and enforced', () => {
+  const y = () => fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+
+  test('the policy exists and explains the legs', () => {
+    const t = y();
+    assert.match(t, /^trifecta:/m, 'no trifecta policy declared');
+    for (const leg of ['private_data', 'untrusted_content', 'egress']) {
+      assert.ok(t.includes(leg), `the ${leg} leg is not named`);
+    }
+  });
+
+  test('every waiver states a reason, not just a name', () => {
+    // A waiver with no reason is an exemption nobody can audit -- the same defect as a
+    // research grant without a stated reason.
+    const t = y();
+    const block = t.slice(t.indexOf('  waived:'));
+    const entries = [...block.matchAll(/^    ([a-z][a-z0-9-]+): >?\s*$/gm)].map((m) => m[1]);
+    for (const id of entries) {
+      const seg = block.slice(block.indexOf(`    ${id}:`));
+      const body = seg.split('\n').slice(1).filter((l) => l.startsWith('      ')).join(' ');
+      assert.ok(body.trim().length > 80, `waiver for ${id} has no substantive reason`);
+      assert.match(body, /RESIDUAL|residual|not mitigated/, `waiver for ${id} does not state what risk remains`);
+    }
+  });
+
+  test('research-granted agents that write nothing do not also hold Bash', () => {
+    // Breaking the egress leg is the cheapest mitigation for a read-only reporter, and it
+    // is the one the research prescribes: split, do not harden.
+    const t = y();
+    for (const id of ['research-orchestrator', 'architect', 'security-reviewer']) {
+      const m = t.match(new RegExp(`^  ${id}:\\n(?:    .*\\n)*?    tools: \\[(.*?)\\]`, 'm'));
+      assert.ok(m, `${id} not found`);
+      assert.ok(!m[1].includes('Bash'), `${id} regained Bash, restoring the trifecta`);
+    }
+  });
+});
+
+describe('a review verdict must carry external evidence', () => {
+  test('the contract says so, and says why', () => {
+    // arXiv:2310.01798 vs 2305.11738: same-model critique WITHOUT an external signal makes
+    // results worse, not merely useless. A reviewer that checked nothing is a cost.
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const seg = y.slice(y.indexOf('    verdict:'), y.indexOf('    files_changed:'));
+    assert.match(seg, /CITE EXTERNAL EVIDENCE/, 'verdicts are not required to cite evidence');
+    assert.match(seg, /2310\.01798/, 'the rule is asserted without the evidence for it');
+    assert.match(seg, /accept/, 'the rule must bind accept as well as revise');
+  });
+
+  test('every validation agent is told it', () => {
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const modes = new Map();
+    for (const hit of y.matchAll(/^  ([a-z][a-z0-9-]+):\n(?:    .*\n)*?    mode: (\w+)/gm)) modes.set(hit[1], hit[2]);
+    const reviewers = [...modes].filter(([, m]) => m === 'validation').map(([id]) => id);
+    assert.ok(reviewers.length >= 8, `only ${reviewers.length} validation agents parsed`);
+    const missing = reviewers.filter((id) => !read(`${id}.md`).includes('CITE EXTERNAL EVIDENCE'));
+    assert.deepEqual(missing, [], 'validation agents not told to cite evidence');
+  });
+});

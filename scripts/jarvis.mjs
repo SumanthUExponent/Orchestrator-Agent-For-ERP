@@ -15,6 +15,12 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
+
+/** Where user settings live, for capability detection. */
+function settingsFileFor() {
+  return process.env.JARVIS_SETTINGS_FILE || path.join(os.homedir(), '.claude', 'settings.json');
+}
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -224,7 +230,7 @@ export function build({ quiet = false } = {}) {
 }
 
 /* -------------------------------------------------------------- health */
-function health() {
+async function health() {
   const reg = build({ quiet: true });
   const tax = reg.categories;
   const ids = new Set(reg.skills.map((s) => s.id));
@@ -306,6 +312,81 @@ function health() {
   console.log(mark(!count(fail, 'orphan'), `Orphan skills: ${count(fail, 'orphan')}`));
   console.log(mark(true, `External sources declared: ${reg.counts.external}`));
 
+  // Voice-layer drift.
+  //
+  // This is here because it cost a real silence. The installed voice scripts were two
+  // days behind the repo, so JARVIS ran, enqueued, drained -- and said nothing. Nothing
+  // reported it: `doctor` audits the roster, `health` audited the skills, and neither
+  // looked at the six shell files that actually produce the sound. A voice layer that is
+  // silently old is indistinguishable from one that has nothing to say.
+  //
+  // Reported as a WARNING, not a failure: an older voice layer still works, it just is
+  // not the one you built. The words say which.
+  const voiceSrc = path.join(ROOT, 'voice');
+  const voiceDst = process.env.JARVIS_DIR || path.join(os.homedir(), '.claude', 'jarvis');
+  const drifted = [];
+  const absent = [];
+  if (fs.existsSync(voiceSrc)) {
+    for (const f of fs.readdirSync(voiceSrc)) {
+      const src = path.join(voiceSrc, f);
+      if (!fs.statSync(src).isFile()) continue;
+      // config.sh is meant to be edited by hand; a difference there is the user's own
+      // settings, not drift, so comparing it would cry wolf on every customised install.
+      if (f === 'config.sh') continue;
+      const dst = path.join(voiceDst, f);
+      if (!fs.existsSync(dst)) { absent.push(f); continue; }
+      try {
+        if (!fs.readFileSync(src).equals(fs.readFileSync(dst))) drifted.push(f);
+      } catch { drifted.push(f); }
+    }
+  }
+  const voiceInstalled = fs.existsSync(path.join(voiceDst, 'jarvis.sh'));
+  if (!voiceInstalled) {
+    console.log(mark(false, 'Voice layer: not installed'));
+    warn.push('voice: not installed — run `node scripts/jarvis.mjs voice --apply`');
+  } else if (drifted.length || absent.length) {
+    console.log(mark(false, `Voice layer: ${drifted.length} stale, ${absent.length} missing`));
+    warn.push(
+      `voice: ${[...drifted, ...absent].join(', ')} differ${drifted.length + absent.length === 1 ? 's' : ''} from this checkout. ` +
+        'A stale voice layer runs and stays SILENT, and nothing else reports it. ' +
+        'Fix: node scripts/jarvis.mjs voice --force --apply'
+    );
+  } else {
+    console.log(mark(true, 'Voice layer: current'));
+  }
+
+  // Is the external-research provider actually configured?
+  //
+  // The capability is built in (`WebSearch`, `WebFetch`), so there is nothing to detect
+  // and nothing that can be missing at the config layer.
+  //
+  // This used to probe for a Perplexity MCP server and report a FAILED check when it
+  // found none -- for a capability the system already had, under a different name. The
+  // six-stream research in docs/INTELLIGENCE-EVOLUTION-RESEARCH.md was produced on the
+  // built-in tools while this check was red. A health check that fails on a capability you
+  // possess is worse than no check: it teaches its reader that red means nothing.
+  //
+  // Still REPORTED rather than dropped, because "these four agents may search" is a fact
+  // about their answers that a reader needs. Reported as a fact, not as a fault.
+  let researchGrant = {};
+  try {
+    // Read from the registry rather than hardcoding the tool names here: two places
+    // naming the same capability is how one of them goes stale.
+    const { loadAgents } = await import('./swarm.mjs');
+    researchGrant = loadAgents({ root: ROOT, readYaml }).research || {};
+  } catch { /* a registry we cannot read is reported elsewhere; do not fail health on it */ }
+  const researchTools = (researchGrant.tools || []).length ? researchGrant.tools : ['WebSearch', 'WebFetch'];
+  const grantedTo = Object.keys(researchGrant.granted || {});
+  console.log(
+    mark(true, `External research: built-in ${researchTools.join(' + ')}, granted to ${grantedTo.length} agent${grantedTo.length === 1 ? '' : 's'} (free, no provider to configure)`)
+  );
+  // WebSearch is US-only and can be disabled in settings, so absence is still possible --
+  // which is why the discipline tells the agent to check rather than assume, and why this
+  // says "built-in" rather than "guaranteed".
+  if (!grantedTo.length) {
+    warn.push('external research: the capability is available but granted to nobody, so no agent can look outside the repo');
+  }
+
   if (fail.length) {
     console.log('\nFAILURES');
     fail.forEach((f) => console.log('  - ' + f));
@@ -342,7 +423,7 @@ try {
       build();
       break;
     case 'health':
-      process.exit(health());
+      process.exit(await health());
       break;
     case 'route': {
       // route.mjs must not import this module back — see the note at its top.
@@ -589,6 +670,7 @@ try {
         const res = loopModule.recordLedger(v, handoffs, {
           dir: path.join(voiceMod.jarvisDir(), 'ledger'),
           session: flag('session') || 'loop',
+          root: ROOT,
         });
         if (res.written) {
           console.log(`Ledger: +${res.written} row${res.written === 1 ? '' : 's'} -> ${res.file}`);
@@ -709,6 +791,21 @@ try {
       process.exit(0);
       break;
     }
+    case 'outcome': {
+      // Tier 1. Grades the RESULT, where every other instrument here grades the plan.
+      const outcomeModule = await import('./outcome.mjs');
+      const voiceModule = await import('./voice.mjs');
+      const { loadAgents } = await import('./swarm.mjs');
+      const { gates } = loadAgents({ root: ROOT, readYaml });
+      process.exit(
+        outcomeModule.render({
+          root: ROOT,
+          deps: { matchGates: voiceModule.matchGates, gates },
+          only: rest.includes('--model-free') ? 'model-free' : null,
+        })
+      );
+      break;
+    }
     case 'doctor': {
       const { doctor } = await import('./swarm.mjs');
       process.exit(doctor({ root: ROOT, readYaml, registry: build({ quiet: true }) }));
@@ -736,7 +833,8 @@ try {
           '  graph <sub> [--dir d]      query a Graphify code graph if one exists (optional)',
           '                             status | dependents | dependencies | path | explain',
           '  loop [handoff...]          is it done? drives review_loop; exit 0 done, 1 owed',
-          '  evaluate [--save]          flip-centered routing probes (§18)',
+          '  evaluate [--save]          flip-centered routing probes — grades the PLAN',
+          '  outcome [--model-free]     Tier 1 outcome probes — grades the RESULT (§24)',
           '  learn [--apply]            propose routing hints from the ledger (§11)',
           '  doctor                     audit the agent roster (§6)',
           '  show-agent <id>            print one resolved agent definition',

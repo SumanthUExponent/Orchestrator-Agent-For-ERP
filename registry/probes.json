@@ -12,7 +12,9 @@
     "F->P per probe and treats a single P->F as blocking.",
     "",
     "Keep these cheap: routing is deterministic and involves no model, so the whole set",
-    "runs in seconds and can gate every commit."
+    "runs in seconds and can gate every commit.",
+    "",
+    "Four probes carry `heldout: true`. `learn` must never read them, and no proposal may be validated against them -- they are the control group. arXiv:2606.28430 (Building to the Test) found that with the oracle in the loop, agents drove scores to near-perfect while shipping code that was 'dead or absent' outside the tested behaviour. GEPA keeps a validation set disjoint from the feedback set for exactly this reason. A gate the optimiser can see is a target, not a gate."
   ],
   "probes": [
     {
@@ -22,7 +24,8 @@
       "expect": {
         "effort": "minimal",
         "maxAgents": 0
-      }
+      },
+      "heldout": true
     },
     {
       "id": "rename-stays-minimal",
@@ -83,7 +86,8 @@
         "humanGates": [
           "production deployment"
         ]
-      }
+      },
+      "heldout": true
     },
     {
       "id": "dropped-table-hits-the-gate",
@@ -119,7 +123,8 @@
       "why": "the false-positive case. A gate warning people learn to ignore is worse than none.",
       "expect": {
         "humanGateCount": 0
-      }
+      },
+      "heldout": true
     },
     {
       "id": "production-noun-stays-silent",
@@ -181,7 +186,8 @@
         "mustExclude": [
           "security-reviewer"
         ]
-      }
+      },
+      "heldout": true
     },
     {
       "id": "permission-matrix-is-not-a-security-review",
