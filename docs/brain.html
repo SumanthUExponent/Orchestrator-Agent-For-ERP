@@ -129,6 +129,24 @@
   .call.red{border-left-color:var(--refuse)}
   .call.red .lbl{color:var(--refuse)}
 
+  /* ── roster ────────────────────────────────────────── */
+  table.roster{min-width:760px; font-size:14px}
+  table.roster tr.div td{
+    background:var(--panel-2); border-bottom:1px solid var(--line-2);
+    font-family:var(--mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+    color:var(--signal); padding:11px 16px;
+  }
+  table.roster tr.div s{text-decoration:none; color:var(--dim); margin-left:8px}
+  table.roster td.id{font-family:var(--mono); font-size:13px; white-space:nowrap; color:var(--text)}
+  table.roster td.tier{font-family:var(--mono); font-size:11px; white-space:nowrap}
+  table.roster td.mode{font-family:var(--mono); font-size:11px; color:var(--dim); white-space:nowrap}
+  table.roster td.owns{color:var(--muted); font-size:14px; line-height:1.5}
+  .bdg{display:inline-block; margin-top:5px; font-family:var(--mono); font-size:10px}
+  .bdg em{font-style:normal; color:var(--dim); border:1px solid var(--line-2); padding:1px 6px; margin-right:5px}
+  .bdg u{text-decoration:none; color:var(--gate); border:1px solid var(--gate); padding:1px 6px}
+  .legend{display:flex; flex-wrap:wrap; gap:6px 20px; margin-top:16px;
+          font-family:var(--mono); font-size:11px; color:var(--dim)}
+
   footer{margin-top:88px; padding-top:26px; border-top:1px solid var(--line);
          color:var(--dim); font-size:13.5px; font-family:var(--mono)}
   footer a{color:var(--muted)}
@@ -143,12 +161,12 @@
       Every number below was read from the running system.</p>
 
     <div class="readout">
-      <div class="cell"><span class="v">46</span><span class="k">agents</span></div>
+      <div class="cell"><span class="v">46</span><span class="k">named specialists</span></div>
       <div class="cell"><span class="v">21</span><span class="k">skills</span></div>
       <div class="cell"><span class="v">7</span><span class="k">human gates</span></div>
       <div class="cell"><span class="v">12</span><span class="k">handoff fields</span></div>
       <div class="cell"><span class="v">19</span><span class="k">route probes</span></div>
-      <div class="cell good"><span class="v">427</span><span class="k">tests green</span></div>
+      <div class="cell good"><span class="v">432</span><span class="k">tests green</span></div>
       <div class="cell zero"><span class="v">0</span><span class="k">ledger rows</span></div>
     </div>
   </div>
@@ -486,11 +504,138 @@
       </table>
     </div>
 
+    <h2 style="margin-top:64px">Reaching outside the repo</h2>
+    <p class="kicker">A second, opposite source: Graphify is local and free, Perplexity is
+      remote and costs per call. Four agents may use it. Forty-two may not.</p>
+
+    <p>The interesting design question was not how to add it — it was <b>who must not have
+      it</b>. An agent that <em>can</em> search the web will search the web instead of
+      reading the file in front of it, and produce a confident answer about how the
+      framework “generally” works when the real answer was two directories away. So it is a
+      grant with a stated reason per agent, which <code>doctor</code> enforces.</p>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Granted</th><th>Because the answer is genuinely outside</th></tr></thead>
+        <tbody>
+          <tr><td class="m">research-orchestrator</td><td>Its brief is routinely a question the
+            repository cannot answer — a library's behaviour, a platform limit, whether an
+            approach is known to fail.</td></tr>
+          <tr><td class="m">migration-analyst</td><td>Breaking changes and deprecations live in
+            release notes and issue threads, not in the checkout being upgraded.</td></tr>
+          <tr><td class="m">security-reviewer</td><td>A vulnerability published last month is
+            not discoverable by reading the code.</td></tr>
+          <tr><td class="m">architect</td><td>Prior art only. Granted narrowly: <em>not</em> for
+            how this codebase works, which is a repository question.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="note" style="margin-top:20px"><b>The test is not whether a search would be
+      useful.</b> Almost every agent would find one useful. The test is whether the answer is
+      <em>outside</em> this repository — and for 42 of 46, it is not. Nothing in the speech
+      path may touch it: that rule is absolute and predates this layer. The provider is
+      detected rather than assumed, and an agent that finds no tool says so in
+      <code>unverified</code> and continues from the code, because an unanswered question
+      presented as an answered one is worse than no search.</p>
+
     <div class="call">
       <span class="lbl">Found on the first real run</span>
       <p>An existing graph on this machine was <b>43 commits behind, with 57 of its own source
         files changed</b>. It would have produced confident, wrong impact analysis, and nothing
         in the output would have said so.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════ ROSTER -->
+  <section>
+    <h2>The specialists</h2>
+    <p class="kicker">All 46, by name. Counts were the wrong answer to “what is in the
+      swarm” — a roster you cannot read is a number.</p>
+
+    <p class="note">Each is generated from <code>registry/agents.yaml</code>, so
+      <code>agents/*.md</code> is build output: adding one is a registry edit, not 46 files
+      to keep in sync. <b>Colour is the model tier</b> — the expensive one is spent on
+      judgement, not typing. <b>Mode</b> is what the agent is allowed to do at all.</p>
+
+    <div class="legend">
+      <span><span class="dot" style="background:#35e7ff"></span>opus · judgement</span>
+      <span><span class="dot" style="background:#5ff0a8"></span>sonnet · execution</span>
+      <span><span class="dot" style="background:#7b939e"></span>haiku · mechanical checks</span>
+      <span>builds / checks / observes / decides = mode</span>
+      <span style="color:#ffc857">web = may search outside the repo</span>
+    </div>
+
+    <div class="scroll">
+      <table class="roster">
+        <thead><tr><th>Agent</th><th>Tier</th><th>Mode</th><th>Owns exactly this</th></tr></thead>
+        <tbody>
+      <tr class="div"><td colspan="4">Orchestration <s>3</s></td></tr>
+      <tr><td class="id">jarvis-deep</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">Decomposing a self-contained brief into sub-tasks, dispatching specialists, and returning ONE consolidated handoff. Used only when the work needs no mid-flight human decision.<br><span class=bdg><em title="write scope">any</em></span></td></tr>
+      <tr><td class="id">delivery-orchestrator</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">Ordering work ACROSS divisions for a multi-phase feature — what planning must finish before development starts, what can run in parallel, where the quality gates sit. Produces a phase plan; implements nothing.</td></tr>
+      <tr><td class="id">research-orchestrator</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">Fanning out read-only investigation across the codebase when the problem is not yet understood, then synthesising ONE findings report. Never writes code.<br><span class=bdg><u title="may search outside the repository">web</u></span></td></tr>
+      <tr class="div"><td colspan="4">Planning <s>5</s></td></tr>
+      <tr><td class="id">requirements-analyst</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Converting a request into explicit requirements and acceptance criteria, and naming what was assumed. Owns the question &quot;how will we know this is done?&quot;</td></tr>
+      <tr><td class="id">business-analyst</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Mapping the real-world process the software serves — actors, handoffs, approval authority, exceptions — and the business rules that must hold.</td></tr>
+      <tr><td class="id">architect</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">The overall shape of a change — which module owns what, service boundaries, and how the pieces integrate. Produces a design; writes no implementation.<br><span class=bdg><u title="may search outside the repository">web</u></span></td></tr>
+      <tr><td class="id">data-model-architect</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">The entity graph and its dependency order — linked DocTypes before referencers, child tables before parents, states before workflow — plus the permission matrix per role. Designs the schema; schema-builder builds it.</td></tr>
+      <tr><td class="id">impact-analyst</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Identifying everything that depends on the code being changed — callers, hooks, client scripts, reports, permissions, integrations — and what could break. Writes nothing.</td></tr>
+      <tr class="div"><td colspan="4">Development <s>6</s></td></tr>
+      <tr><td class="id">schema-builder</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Building the DocTypes, child tables, fields and fixtures the data model specifies.<br><span class=bdg><em title="write scope">schema</em></span></td></tr>
+      <tr><td class="id">backend</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Whitelisted methods, doc events, scheduler entries and workflow state machines.<br><span class=bdg><em title="write scope">server-logic</em></span></td></tr>
+      <tr><td class="id">frontend</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Implementing interfaces — pages, forms, views and client-side behaviour. Owns HOW an interface is built; ui-designer owns what it should be.<br><span class=bdg><em title="write scope">ui-code</em></span></td></tr>
+      <tr><td class="id">integration-developer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Connections to systems outside this one — outbound calls, inbound webhooks, auth, retry and failure handling at the boundary.<br><span class=bdg><em title="write scope">integrations</em></span></td></tr>
+      <tr><td class="id">console-deployer</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">Idempotent, re-runnable System Console installers. On managed hosting this is the ONLY deployment path — bench does not exist there.<br><span class=bdg><em title="write scope">deploy-scripts</em></span></td></tr>
+      <tr><td class="id">reporting-developer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Report SQL, filter wiring and print layout. Builds reports; data-analyst decides what they should measure.<br><span class=bdg><em title="write scope">reports</em></span></td></tr>
+      <tr class="div"><td colspan="4">UI/UX <s>5</s></td></tr>
+      <tr><td class="id">ux-researcher</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">The current user journey and where it costs people time — click paths, dead ends, repeated work. Produces evidence about behaviour; proposes no visuals.</td></tr>
+      <tr><td class="id">ui-designer</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">How a surface looks — hierarchy, typography, colour, spacing, and consistency with the design system. Owns WHAT the interface should be; frontend owns how.<br><span class=bdg><em title="write scope">design/tokens/** design/system/**</em></span></td></tr>
+      <tr><td class="id">interaction-designer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">What happens between screens — step sequences, empty/loading/error states, confirmations, and what the interface says when something goes wrong.<br><span class=bdg><em title="write scope">design/flows/**</em></span></td></tr>
+      <tr><td class="id">mobile-ux</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Interfaces used one-handed, outdoors, on a phone — tap targets, offline tolerance, camera and scanner flows, and minimising taps for a technician in the field.<br><span class=bdg><em title="write scope">mobile/**</em></span></td></tr>
+      <tr><td class="id">accessibility</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Contrast, keyboard reachability, focus visibility, semantic structure and screen reader behaviour. Reports violations; does not redesign.</td></tr>
+      <tr class="div"><td colspan="4">Data <s>3</s></td></tr>
+      <tr><td class="id">data-analyst</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Defining the metric — what question a report answers, which rows count, how periods and edge cases are handled. Specifies; reporting-developer builds.</td></tr>
+      <tr><td class="id">data-scientist</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">builds</td><td class="owns">Anything where the output is a prediction, score or ranking rather than a recorded fact — the method, its assumptions, and how it is validated.<br><span class=bdg><em title="write scope">analytics</em></span></td></tr>
+      <tr><td class="id">dataviz-specialist</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Chart form and encoding — which mark suits the question, colour that survives both themes, axes that do not mislead, and dashboards that summarise before detail.<br><span class=bdg><em title="write scope">reports/charts/**</em></span></td></tr>
+      <tr class="div"><td colspan="4">Quality <s>6</s></td></tr>
+      <tr><td class="id">test-engineer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Producing evidence a change works. Runs tests, reports real output. A failure is reported as a failure.<br><span class=bdg><em title="write scope">tests</em></span></td></tr>
+      <tr><td class="id">uat-coordinator</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Turning acceptance criteria into a UAT script a non-technical user can follow — steps, expected results, test data, and a record of what passed and what did not.<br><span class=bdg><em title="write scope">docs/uat/**</em></span></td></tr>
+      <tr><td class="id">qa-engineer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Finding what automated tests miss — walking the real journey, the unhappy paths, permissions as a different role, and boundaries nobody specified.</td></tr>
+      <tr><td class="id">code-reviewer</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">checks</td><td class="owns">Reviewing changed code for correctness, safe_exec violations and over-engineering. Writes nothing — findings only.</td></tr>
+      <tr><td class="id">security-reviewer</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">checks</td><td class="owns">Reviewing a change for exploitable weakness rather than for correctness — permission and role checks that can be bypassed, injection through query or template construction, secrets in code or fixtures, unauthenticated endpoints, and data exposed across tenant or role boundaries. Reports findings; writes nothing.<br><span class=bdg><u title="may search outside the repository">web</u></span></td></tr>
+      <tr><td class="id">performance-analyst</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Query counts, N+1 patterns, unbounded result sets, missing indexes, and anything that degrades as data grows. Reports; does not rewrite.</td></tr>
+      <tr class="div"><td colspan="4">Demo &amp; docs <s>4</s></td></tr>
+      <tr><td class="id">demo-builder</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Realistic demo data and a walkthrough that shows the feature working end to end, including the failure case. Owns &quot;can we show this to someone on Monday?&quot;<br><span class=bdg><em title="write scope">demo-data</em></span></td></tr>
+      <tr><td class="id">user-guide-writer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">End-user guides written from the user&#x27;s side of the screen, with every state, button and validation rule traced back to source rather than assumed.<br><span class=bdg><em title="write scope">docs/guides/**</em></span></td></tr>
+      <tr><td class="id">process-documenter</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">SOPs, handover documents and runbooks — how the process operates, not how the UI works.<br><span class=bdg><em title="write scope">docs/sop/**</em></span></td></tr>
+      <tr><td class="id">knowledge-curator</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">builds</td><td class="owns">Capturing architectural decisions and hard-won gotchas at the moment they are made, so the next session does not rediscover them.<br><span class=bdg><em title="write scope">docs/decisions/**</em></span></td></tr>
+      <tr class="div"><td colspan="4">Ops <s>3</s></td></tr>
+      <tr><td class="id">git-safety</td><td class="tier"><span style="color:#7b939e">haiku</span></td><td class="mode">checks</td><td class="owns">Knowing the branch, the base, what is uncommitted and what is unrelated to the task — so no one else&#x27;s work is discarded. Destructive git operations require human approval, always.</td></tr>
+      <tr><td class="id">deployment-safety</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">checks</td><td class="owns">Pre-deployment verification and the rollback path — what is being deployed, what breaks if it fails, and how to get back. Production deployment requires human approval.</td></tr>
+      <tr><td class="id">migration-analyst</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">checks</td><td class="owns">Whether a migration or version upgrade is safe — data loss risk, irreversible steps, patch ordering, and what existing customisations it would break.<br><span class=bdg><u title="may search outside the repository">web</u></span></td></tr>
+      <tr class="div"><td colspan="4">Governance <s>6</s></td></tr>
+      <tr><td class="id">skill-guardian</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">observes</td><td class="owns">Detecting orphan, duplicate, broken-reference and stale skills, and proposing new skills for recurring gaps. Proposals only — never creates or deletes.</td></tr>
+      <tr><td class="id">agent-guardian</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">observes</td><td class="owns">Detecting agents never selected, overlapping ownership, agents whose skills no longer exist, and routing coverage gaps.</td></tr>
+      <tr><td class="id">routing-auditor</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">observes</td><td class="owns">Reviewing routing decisions for wrong delegation, unnecessary agent invocation, over-parallelisation and missing specialists.</td></tr>
+      <tr><td class="id">knowledge-guardian</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">observes</td><td class="owns">Detecting stale documentation, contradictory instructions across skills, and decisions made but never written down.</td></tr>
+      <tr><td class="id">swarm-evolution</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">observes</td><td class="owns">Spotting recurring problems no current agent owns, and proposing exactly one new agent or skill with its measurable responsibility written out.</td></tr>
+      <tr><td class="id">efficiency-auditor</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">observes</td><td class="owns">Measuring what each dispatch cost against what it returned, and naming the dispatches that were not worth making.</td></tr>
+      <tr class="div"><td colspan="4">Control plane <s>5</s></td></tr>
+      <tr><td class="id">fast-path-triage</td><td class="tier"><span style="color:#7b939e">haiku</span></td><td class="mode">decides</td><td class="owns">Deciding the smallest execution mode a request can be answered in — direct answer, one specialist, or the full pipeline — and refusing to escalate beyond it without naming the reason.</td></tr>
+      <tr><td class="id">context-broker</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">decides</td><td class="owns">Producing ONE shared Context Pack per run — the file map, app ownership and active constraints that every downstream specialist would otherwise rediscover separately.</td></tr>
+      <tr><td class="id">swarm-dispatcher</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">decides</td><td class="owns">Turning a chosen agent list into the cheapest correct execution order — which agents share a parallel batch, which model tier each one runs at, and what must wait behind a gate.</td></tr>
+      <tr><td class="id">result-synthesizer</td><td class="tier"><span style="color:#5ff0a8">sonnet</span></td><td class="mode">decides</td><td class="owns">Collapsing many finished handoffs into one deduplicated brief — merging repeated findings, reconciling contradictions, and carrying every unanswered question through verbatim.</td></tr>
+      <tr><td class="id">quality-sentinel</td><td class="tier"><span style="color:#35e7ff">opus</span></td><td class="mode">decides</td><td class="owns">Choosing which outputs of a run need deep review and which need none, ranked by blast radius, so verification effort lands where the risk actually is.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="call">
+      <span class="lbl">Why one owns exactly one thing</span>
+      <p><code>doctor</code> fails any agent whose <code>owns</code> is empty, and fails two
+        agents that own the same thing. <b>An agent without a measurable responsibility is
+        theatre with better vocabulary</b> — and the control plane at the bottom of that
+        list exists to <em>prevent</em> dispatches, not to add them.</p>
     </div>
   </section>
 
@@ -533,7 +678,7 @@
   </section>
 
   <footer>
-    46 agents · 21 skills · 7 gates · 427 tests green · 19/19 route probes ·
+    46 named specialists · 21 skills · 7 gates · 432 tests green · 19/19 route probes ·
     <a href="https://github.com/SumanthUExponent/JARVIS-For-ERP">JARVIS-For-ERP</a><br>
     Every figure read from the running system. Nothing on this page was typed from memory.
   </footer>

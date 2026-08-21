@@ -75,6 +75,20 @@ one of them is a statement — so the field you have nothing for is where you wr
 there are none" from "I did not think about it", which is the distinction every field
 below exists to preserve.
 
+## You may look outside this repository
+
+Compares an approach against how the problem is solved elsewhere. Granted narrowly: for prior art, NOT for how this codebase works, which is a repository question.
+
+Tools, if configured: `perplexity_search`, `perplexity_ask`, `perplexity_research`, `perplexity_reason`. They may be ABSENT — check rather than assume, and if they are missing say so in `unverified` and continue from the code. An unanswered question presented as an answered one is worse than no search.
+
+- Read the repository first. A question answerable from the checkout is not a search, it is laziness with a bill attached.
+- Search for what changes outside this repo - versions, advisories, upstream behaviour, prior art. Not for how this code works.
+- Name the source in findings. An external claim without a citation is a rumour, and a rumour in a handoff outranks the code by accident.
+- Prefer one specific query to three vague ones. Cost is per call and a vague query returns a summary of the internet.
+- If the tool is absent or fails, say so in unverified and continue from the code. Never present an unanswered question as an answered one.
+
+The test is not whether a search would be useful. It is whether the answer is OUTSIDE this repository. Most of the time it is not.
+
 ## Your first line: STATUS
 
 Begin your handoff with one word.

@@ -15,6 +15,12 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
+
+/** Where user settings live, for capability detection. */
+function settingsFileFor() {
+  return process.env.JARVIS_SETTINGS_FILE || path.join(os.homedir(), '.claude', 'settings.json');
+}
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -305,6 +311,72 @@ function health() {
   console.log(mark(!count(warn, 'routing'), `Routing conflicts: ${count(warn, 'routing')}`));
   console.log(mark(!count(fail, 'orphan'), `Orphan skills: ${count(fail, 'orphan')}`));
   console.log(mark(true, `External sources declared: ${reg.counts.external}`));
+
+  // Voice-layer drift.
+  //
+  // This is here because it cost a real silence. The installed voice scripts were two
+  // days behind the repo, so JARVIS ran, enqueued, drained -- and said nothing. Nothing
+  // reported it: `doctor` audits the roster, `health` audited the skills, and neither
+  // looked at the six shell files that actually produce the sound. A voice layer that is
+  // silently old is indistinguishable from one that has nothing to say.
+  //
+  // Reported as a WARNING, not a failure: an older voice layer still works, it just is
+  // not the one you built. The words say which.
+  const voiceSrc = path.join(ROOT, 'voice');
+  const voiceDst = process.env.JARVIS_DIR || path.join(os.homedir(), '.claude', 'jarvis');
+  const drifted = [];
+  const absent = [];
+  if (fs.existsSync(voiceSrc)) {
+    for (const f of fs.readdirSync(voiceSrc)) {
+      const src = path.join(voiceSrc, f);
+      if (!fs.statSync(src).isFile()) continue;
+      // config.sh is meant to be edited by hand; a difference there is the user's own
+      // settings, not drift, so comparing it would cry wolf on every customised install.
+      if (f === 'config.sh') continue;
+      const dst = path.join(voiceDst, f);
+      if (!fs.existsSync(dst)) { absent.push(f); continue; }
+      try {
+        if (!fs.readFileSync(src).equals(fs.readFileSync(dst))) drifted.push(f);
+      } catch { drifted.push(f); }
+    }
+  }
+  const voiceInstalled = fs.existsSync(path.join(voiceDst, 'jarvis.sh'));
+  if (!voiceInstalled) {
+    console.log(mark(false, 'Voice layer: not installed'));
+    warn.push('voice: not installed — run `node scripts/jarvis.mjs voice --apply`');
+  } else if (drifted.length || absent.length) {
+    console.log(mark(false, `Voice layer: ${drifted.length} stale, ${absent.length} missing`));
+    warn.push(
+      `voice: ${[...drifted, ...absent].join(', ')} differ${drifted.length + absent.length === 1 ? 's' : ''} from this checkout. ` +
+        'A stale voice layer runs and stays SILENT, and nothing else reports it. ' +
+        'Fix: node scripts/jarvis.mjs voice --force --apply'
+    );
+  } else {
+    console.log(mark(true, 'Voice layer: current'));
+  }
+
+  // Is the external-research provider actually configured?
+  //
+  // Detected, never assumed. Four agents are told the capability may exist; if no server
+  // is configured they fall back to the code, which is correct but worth SAYING -- an
+  // agent silently degrading to grep looks identical to one that searched and found
+  // nothing, and those are very different facts about an answer.
+  let mcpConfigured = false;
+  try {
+    const cfg = path.join(os.homedir(), '.claude.json');
+    const blob = fs.existsSync(cfg) ? fs.readFileSync(cfg, 'utf8') : '';
+    const settingsBlob = fs.existsSync(settingsFileFor()) ? fs.readFileSync(settingsFileFor(), 'utf8') : '';
+    mcpConfigured = /perplexity/i.test(blob) || /perplexity/i.test(settingsBlob);
+  } catch { /* absent config is simply "not configured" */ }
+  console.log(mark(mcpConfigured, `External research: ${mcpConfigured ? 'provider configured' : 'no provider configured (4 agents fall back to the code)'}`));
+  if (!mcpConfigured) {
+    warn.push(
+      'external research: no provider found. research-orchestrator, migration-analyst, ' +
+        'security-reviewer and architect will read the code instead, which is correct but ' +
+        'not the same as having searched. Add one: claude mcp add --transport http --scope user ' +
+        'perplexity https://api.perplexity.ai/mcp --header "Authorization: Bearer $PERPLEXITY_API_KEY"'
+    );
+  }
 
   if (fail.length) {
     console.log('\nFAILURES');

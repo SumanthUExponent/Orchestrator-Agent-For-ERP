@@ -926,6 +926,60 @@ review_loop:
   # A reviewer that cannot say what would satisfy it has not reviewed anything.
   objection_must_state_remedy: true
 
+# ---------------------------------------------------------- external research
+# Reaching OUTSIDE the repository for an answer.
+#
+# The capability arrives as MCP tools (Perplexity's `perplexity_search`,
+# `perplexity_ask`, `perplexity_research`, `perplexity_reason`). Availability is not
+# assumed: `health` reports whether the server is actually configured, and an agent that
+# is granted the capability but finds no tool falls back to reading the code, which is
+# what it would have done anyway.
+#
+# WHY THIS IS A GRANT AND NOT A DEFAULT
+#
+# Three reasons, in the order they bite.
+#
+# 1. An agent that CAN search the web will search the web instead of reading the file in
+#    front of it. That is the failure that matters: a confident answer about how Frappe
+#    "generally" works, when the actual answer was in apps/frappe two directories away.
+#    Every agent whose question is answerable from the repository is therefore denied it,
+#    not as a restriction but because searching would make it worse.
+#
+# 2. It costs money per call, and unlike every other capability here the cost is real
+#    rather than a token estimate. A capability with a bill attached needs a reason.
+#
+# 3. It is a network call, so it can be slow, rate-limited, or down. Anything on the
+#    critical path of a routine dispatch would then fail for a reason unrelated to the
+#    work. Nothing in the speech path may touch it, ever -- that rule is absolute and
+#    predates this block.
+#
+# The test is not "would this agent find it useful". Almost all of them would. The test is
+# "is the answer OUTSIDE this repository" -- and for most of the roster it is not.
+external_research:
+  tools: [perplexity_search, perplexity_ask, perplexity_research, perplexity_reason]
+  # Detected, never assumed. `health` says whether it is configured.
+  provider_optional: true
+  granted:
+    research-orchestrator: >
+      Owns investigation before anything is decided, and is the one agent whose brief is
+      routinely a question the repository cannot answer -- a library's behaviour, a
+      platform limit, whether an approach is known to fail.
+    migration-analyst: >
+      Judges whether a version change is safe. Breaking changes, deprecations and upgrade
+      notes live in release notes and issue threads, not in the checkout being upgraded.
+    security-reviewer: >
+      Needs advisories and known exploit patterns for the versions actually in use. A
+      vulnerability published last month is not discoverable by reading the code.
+    architect: >
+      Compares an approach against how the problem is solved elsewhere. Granted narrowly:
+      for prior art, NOT for how this codebase works, which is a repository question.
+  discipline:
+    - Read the repository first. A question answerable from the checkout is not a search, it is laziness with a bill attached.
+    - Search for what changes outside this repo - versions, advisories, upstream behaviour, prior art. Not for how this code works.
+    - Name the source in findings. An external claim without a citation is a rumour, and a rumour in a handoff outranks the code by accident.
+    - Prefer one specific query to three vague ones. Cost is per call and a vague query returns a summary of the internet.
+    - If the tool is absent or fails, say so in unverified and continue from the code. Never present an unanswered question as an answered one.
+
 # ------------------------------------------------------------ human gates
 # §24. The JARVIS skill enforces these; agents must refuse and escalate.
 human_approval_required:

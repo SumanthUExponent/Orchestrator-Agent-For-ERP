@@ -461,3 +461,56 @@ describe('mode scoping keeps every agent whole (§14)', () => {
     }
   });
 });
+
+describe('external research is a grant, not a default', () => {
+  // The failure this guards is not "an agent cannot search". It is an agent that CAN
+  // search doing so INSTEAD of reading the file in front of it -- a confident answer about
+  // how the framework generally works, when the real answer was two directories away.
+  // Telling every agent the capability exists is most of the way to that failure, even
+  // when no provider is configured.
+  const GRANTED = ['research-orchestrator', 'migration-analyst', 'security-reviewer', 'architect'];
+  const MARKER = 'look outside this repository';
+
+  test('exactly the granted agents are told about it', () => {
+    const told = FILES.filter((f) => read(f).includes(MARKER)).map((f) => f.replace(/\.md$/, '')).sort();
+    assert.deepEqual(told, [...GRANTED].sort(), 'the grant does not match who was told');
+  });
+
+  test('the roster is not quietly told by another route', () => {
+    // A tool name leaking into an ungranted prompt is the same defect wearing a hat.
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const tools = (y.match(/^  tools: \[(.+)\]$/m) || [])[1] || 'perplexity_search, perplexity_ask';
+    const leaked = FILES.filter((f) => {
+      const b = read(f);
+      const id = f.replace(/\.md$/, '');
+      return !GRANTED.includes(id) && /perplexity_/.test(b);
+    });
+    assert.deepEqual(leaked, [], 'an ungranted agent was told the tool names');
+  });
+
+  test('every granted agent is told the discipline, not just the permission', () => {
+    for (const id of GRANTED) {
+      const b = read(`${id}.md`);
+      assert.match(b, /Read the repository first/, `${id} got the permission without the rule`);
+      assert.match(b, /OUTSIDE this repository/, `${id} was not given the test to apply`);
+      assert.match(b, /unverified/, `${id} was not told what to do when the tool is absent`);
+    }
+  });
+
+  test('the grant states a reason for each agent', () => {
+    // A capability with a real bill attached needs a reason, and doctor fails a grant
+    // shorter than a sentence. This pins that the reasons are actually there.
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const block = y.split('external_research:')[1].split('\n# ')[0];
+    for (const id of GRANTED) {
+      assert.ok(block.includes(`${id}:`), `${id} is not named in the grant block`);
+    }
+    assert.match(block, /discipline:/, 'no discipline declared');
+    assert.match(block, /provider_optional/, 'the provider must be optional, never assumed');
+  });
+
+  test('the grant stays narrow', () => {
+    assert.ok(GRANTED.length / FILES.length <= 0.25,
+      `${GRANTED.length} of ${FILES.length} is no longer a grant`);
+  });
+});

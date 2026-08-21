@@ -71,6 +71,7 @@ export function loadAgents({ root, readYaml }) {
     version: spec.version ?? 1,
     reviewLoop: spec.review_loop || {},
     reconciliation: spec.conflict_reconciliation || {},
+    research: spec.external_research || {},
   };
 }
 
@@ -125,7 +126,7 @@ These forms are longer on purpose. Do not "simplify" them.
 `;
 }
 
-function agentMarkdown(a, protocol, gates, resources) {
+function agentMarkdown(a, protocol, gates, resources, research) {
   const fields = protocol.fields || {};
   const handoffDoc = a.handoff.map((f) => `- **${f}** — ${fields[f] || 'see registry/agents.yaml'}`).join('\n');
   // The second tier. These were declared in the registry from the start and reached no
@@ -165,6 +166,18 @@ function agentMarkdown(a, protocol, gates, resources) {
   // A reviewer gets BOTH: it reviews, and its own findings can be objected to.
   const loopHalves =
     a.mode === 'validation' ? `${REVIEWER_HALF}\n\n${AUTHOR_HALF}` : AUTHOR_HALF;
+
+  // External research, for the four agents granted it and nobody else.
+  //
+  // Scoped rather than universal because an agent that CAN search the web will search the
+  // web instead of reading the file in front of it -- a confident answer about how the
+  // framework "generally" works when the real answer was two directories away. Telling
+  // every agent the capability exists is most of the way to that failure even when the
+  // tool is absent.
+  const grant = research && research.granted ? research.granted[a.id] : null;
+  const researchDoc = grant
+    ? `\n## You may look outside this repository\n\n${String(grant).replace(/\s+/g, ' ').trim()}\n\nTools, if configured: ${(research.tools || []).map((t) => `\`${t}\``).join(', ')}. They may be ABSENT — check rather than assume, and if they are missing say so in \`unverified\` and continue from the code. An unanswered question presented as an answered one is worse than no search.\n\n${(research.discipline || []).map((d) => `- ${d}`).join('\n')}\n\nThe test is not whether a search would be useful. It is whether the answer is OUTSIDE this repository. Most of the time it is not.\n`
+    : '';
 
   const applicable = (protocol.when_applicable || []).filter((f) => !a.handoff.includes(f));
   const applicableDoc = applicable.length
@@ -211,7 +224,7 @@ Never finish with "done". Return these fields:
 ${handoffDoc}
 
 Structured fields, not an essay. JARVIS reads these to decide what happens next; prose it has to parse is a failure of the protocol.
-${applicableDoc}
+${applicableDoc}${researchDoc}
 ## Your first line: STATUS
 
 Begin your handoff with one word.
@@ -402,13 +415,13 @@ Omit either when it does not apply. Both are optional; \`VOICE\` is not.
 }
 
 export function buildAgents({ root, readYaml, apply = false }) {
-  const { agents, protocol, gates, resources } = loadAgents({ root, readYaml });
+  const { agents, protocol, gates, resources, research } = loadAgents({ root, readYaml });
   const dir = path.join(root, 'agents');
   const written = [];
   if (apply) fs.mkdirSync(dir, { recursive: true });
   for (const a of agents) {
     const file = path.join(dir, `${a.id}.md`);
-    const body = agentMarkdown(a, protocol, gates, resources);
+    const body = agentMarkdown(a, protocol, gates, resources, research);
     if (apply) fs.writeFileSync(file, body);
     written.push({ id: a.id, mode: a.mode, model: a.model, bytes: body.length });
   }
@@ -433,7 +446,7 @@ export function buildAgents({ root, readYaml, apply = false }) {
 
 /* ------------------------------------------------------------- doctor (§6) */
 export function doctor({ root, readYaml, registry }) {
-  const { agents, protocol, gates, reviewLoop, reconciliation, resources } = loadAgents({ root, readYaml });
+  const { agents, protocol, gates, reviewLoop, reconciliation, resources, research } = loadAgents({ root, readYaml });
   const skillIds = new Set((registry.skills || []).map((s) => s.id));
   const agentIds = new Set(agents.map((a) => a.id));
   const fail = [];
@@ -539,7 +552,7 @@ export function doctor({ root, readYaml, registry }) {
     }
   }
   if (agents.length) {
-    const sample = agentMarkdown(agents[0], protocol, gates, resources);
+    const sample = agentMarkdown(agents[0], protocol, gates, resources, research);
     for (const f of declared) {
       // Either tier renders the field name; the decision markers render uppercase.
       if (!sample.includes(`**${f}**`) && !sample.includes(f.toUpperCase())) {
@@ -603,6 +616,29 @@ export function doctor({ root, readYaml, registry }) {
     }
   } catch {
     // An unreadable graph is not a roster problem.
+  }
+
+  // External research is a GRANT. Two ways it can rot, both silent.
+  if (research && research.granted) {
+    for (const id of Object.keys(research.granted)) {
+      if (!agentIds.has(id)) {
+        fail.push(`external research: granted to "${id}", which is not an agent — the grant does nothing (§3)`);
+      }
+      const why = String(research.granted[id] || '').trim();
+      if (why.length < 40) {
+        fail.push(`external research: "${id}" is granted without a stated reason. A capability with a bill attached needs one.`);
+      }
+    }
+    if (!(research.discipline || []).length) {
+      fail.push('external research: no discipline declared — an unbounded web search is not a capability, it is a cost centre');
+    }
+    // The grant is meant to be narrow. If it ever covers most of the roster it has
+    // stopped being a grant, and the failure it prevents (searching instead of reading)
+    // is back.
+    const share = Object.keys(research.granted).length / Math.max(1, agents.length);
+    if (share > 0.25) {
+      warn.push(`external research: granted to ${Math.round(share * 100)}% of the roster. It is a grant precisely because an agent that can search will search instead of reading the code.`);
+    }
   }
 
   // governance completeness
