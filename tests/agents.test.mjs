@@ -478,14 +478,26 @@ describe('external research is a grant, not a default', () => {
 
   test('the roster is not quietly told by another route', () => {
     // A tool name leaking into an ungranted prompt is the same defect wearing a hat.
+    //
+    // Derived from the registry, not hardcoded. This test used to match /perplexity_/,
+    // which silently stopped testing anything the moment the grant moved to the built-in
+    // WebSearch/WebFetch tools -- it would have passed on every agent forever while
+    // checking for a string that no longer appears anywhere.
     const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
-    const tools = (y.match(/^  tools: \[(.+)\]$/m) || [])[1] || 'perplexity_search, perplexity_ask';
+    const block = y.slice(y.indexOf('external_research:'));
+    const tools = (block.match(/^  tools: \[(.+)\]$/m) || [])[1] || '';
+    const names = tools.split(',').map((t) => t.trim()).filter(Boolean);
+    assert.ok(names.length >= 2, `only ${names.length} research tool(s) parsed from the registry — this test would be vacuous`);
+
     const leaked = FILES.filter((f) => {
-      const b = read(f);
       const id = f.replace(/\.md$/, '');
-      return !GRANTED.includes(id) && /perplexity_/.test(b);
+      if (GRANTED.includes(id)) return false;
+      // Body only: an agent legitimately holding WebFetch in its `tools:` frontmatter is
+      // not the leak being tested for. The leak is being TOLD the capability exists.
+      const body = read(f).split(/^---$/m).slice(2).join('---');
+      return names.some((n) => new RegExp(`\\b${n}\\b`).test(body));
     });
-    assert.deepEqual(leaked, [], 'an ungranted agent was told the tool names');
+    assert.deepEqual(leaked, [], 'an ungranted agent was told the research tool names');
   });
 
   test('every granted agent is told the discipline, not just the permission', () => {

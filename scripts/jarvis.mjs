@@ -230,7 +230,7 @@ export function build({ quiet = false } = {}) {
 }
 
 /* -------------------------------------------------------------- health */
-function health() {
+async function health() {
   const reg = build({ quiet: true });
   const tax = reg.categories;
   const ids = new Set(reg.skills.map((s) => s.id));
@@ -357,25 +357,34 @@ function health() {
 
   // Is the external-research provider actually configured?
   //
-  // Detected, never assumed. Four agents are told the capability may exist; if no server
-  // is configured they fall back to the code, which is correct but worth SAYING -- an
-  // agent silently degrading to grep looks identical to one that searched and found
-  // nothing, and those are very different facts about an answer.
-  let mcpConfigured = false;
+  // The capability is built in (`WebSearch`, `WebFetch`), so there is nothing to detect
+  // and nothing that can be missing at the config layer.
+  //
+  // This used to probe for a Perplexity MCP server and report a FAILED check when it
+  // found none -- for a capability the system already had, under a different name. The
+  // six-stream research in docs/INTELLIGENCE-EVOLUTION-RESEARCH.md was produced on the
+  // built-in tools while this check was red. A health check that fails on a capability you
+  // possess is worse than no check: it teaches its reader that red means nothing.
+  //
+  // Still REPORTED rather than dropped, because "these four agents may search" is a fact
+  // about their answers that a reader needs. Reported as a fact, not as a fault.
+  let researchGrant = {};
   try {
-    const cfg = path.join(os.homedir(), '.claude.json');
-    const blob = fs.existsSync(cfg) ? fs.readFileSync(cfg, 'utf8') : '';
-    const settingsBlob = fs.existsSync(settingsFileFor()) ? fs.readFileSync(settingsFileFor(), 'utf8') : '';
-    mcpConfigured = /perplexity/i.test(blob) || /perplexity/i.test(settingsBlob);
-  } catch { /* absent config is simply "not configured" */ }
-  console.log(mark(mcpConfigured, `External research: ${mcpConfigured ? 'provider configured' : 'no provider configured (4 agents fall back to the code)'}`));
-  if (!mcpConfigured) {
-    warn.push(
-      'external research: no provider found. research-orchestrator, migration-analyst, ' +
-        'security-reviewer and architect will read the code instead, which is correct but ' +
-        'not the same as having searched. Add one: claude mcp add --transport http --scope user ' +
-        'perplexity https://api.perplexity.ai/mcp --header "Authorization: Bearer $PERPLEXITY_API_KEY"'
-    );
+    // Read from the registry rather than hardcoding the tool names here: two places
+    // naming the same capability is how one of them goes stale.
+    const { loadAgents } = await import('./swarm.mjs');
+    researchGrant = loadAgents({ root: ROOT, readYaml }).research || {};
+  } catch { /* a registry we cannot read is reported elsewhere; do not fail health on it */ }
+  const researchTools = (researchGrant.tools || []).length ? researchGrant.tools : ['WebSearch', 'WebFetch'];
+  const grantedTo = Object.keys(researchGrant.granted || {});
+  console.log(
+    mark(true, `External research: built-in ${researchTools.join(' + ')}, granted to ${grantedTo.length} agent${grantedTo.length === 1 ? '' : 's'} (free, no provider to configure)`)
+  );
+  // WebSearch is US-only and can be disabled in settings, so absence is still possible --
+  // which is why the discipline tells the agent to check rather than assume, and why this
+  // says "built-in" rather than "guaranteed".
+  if (!grantedTo.length) {
+    warn.push('external research: the capability is available but granted to nobody, so no agent can look outside the repo');
   }
 
   if (fail.length) {
@@ -414,7 +423,7 @@ try {
       build();
       break;
     case 'health':
-      process.exit(health());
+      process.exit(await health());
       break;
     case 'route': {
       // route.mjs must not import this module back — see the note at its top.

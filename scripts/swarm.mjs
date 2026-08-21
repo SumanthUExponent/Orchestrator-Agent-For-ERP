@@ -176,7 +176,7 @@ function agentMarkdown(a, protocol, gates, resources, research) {
   // tool is absent.
   const grant = research && research.granted ? research.granted[a.id] : null;
   const researchDoc = grant
-    ? `\n## You may look outside this repository\n\n${String(grant).replace(/\s+/g, ' ').trim()}\n\nTools, if configured: ${(research.tools || []).map((t) => `\`${t}\``).join(', ')}. They may be ABSENT — check rather than assume, and if they are missing say so in \`unverified\` and continue from the code. An unanswered question presented as an answered one is worse than no search.\n\n${(research.discipline || []).map((d) => `- ${d}`).join('\n')}\n\nThe test is not whether a search would be useful. It is whether the answer is OUTSIDE this repository. Most of the time it is not.\n`
+    ? `\n## You may look outside this repository\n\n${String(grant).replace(/\s+/g, ' ').trim()}\n\nTools: ${(research.tools || []).map((t) => `\`${t}\``).join(', ')} — built in, free, nothing to configure. They can still be ABSENT (WebSearch is US-only and can be disabled), so check rather than assume; if missing, say so in \`unverified\` and continue from the code. An unanswered question presented as an answered one is worse than no search.\n\n${(research.discipline || []).map((d) => `- ${d}`).join('\n')}\n\nThe test is not whether a search would be useful. It is whether the answer is OUTSIDE this repository. Most of the time it is not.\n`
     : '';
 
   const applicable = (protocol.when_applicable || []).filter((f) => !a.handoff.includes(f));
@@ -626,11 +626,15 @@ export function doctor({ root, readYaml, registry }) {
       }
       const why = String(research.granted[id] || '').trim();
       if (why.length < 40) {
-        fail.push(`external research: "${id}" is granted without a stated reason. A capability with a bill attached needs one.`);
+        // The reason requirement survives the tools becoming free. Cost was never the
+        // real justification -- an agent that CAN search will search instead of reading
+        // the file in front of it, and a grant with no stated reason cannot be audited
+        // for that. Rewording rather than removing.
+        fail.push(`external research: "${id}" is granted without a stated reason. A grant nobody can audit is not a grant, it is a default.`);
       }
     }
     if (!(research.discipline || []).length) {
-      fail.push('external research: no discipline declared — an unbounded web search is not a capability, it is a cost centre');
+      fail.push('external research: no discipline declared — an unbounded web search is not a capability, it is an untrusted-content ingestion channel');
     }
     // The grant is meant to be narrow. If it ever covers most of the roster it has
     // stopped being a grant, and the failure it prevents (searching instead of reading)

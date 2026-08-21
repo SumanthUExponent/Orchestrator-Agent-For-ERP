@@ -10,10 +10,20 @@ Date: 2026-08-21 · Claude Code 2.1.238 · repo at `aed3a27`
 
 ## 0. Methodology, and one downgrade I have to declare
 
-**§12 asked for Perplexity MCP first. It is not configured on this machine.** `health`
-reports `external research: no provider found`. So broad discovery ran on WebSearch with
-mandatory Tier-1 verification instead of on Perplexity. That is a real methodology
-downgrade and it is stated here rather than papered over.
+**§12 asked for Perplexity MCP first. It was not configured, so discovery ran on the
+built-in `WebSearch` and `WebFetch` instead.**
+
+I originally recorded that as a methodology downgrade. **That was wrong, and it has been
+corrected in the system as well as here.** Every Tier-1 verification in this document —
+16 arXiv IDs, the OpenHands pivot via `gh api`, the MCP spec pages, the Letta and
+Anthropic docs — was done on those same free built-in tools. Perplexity would have been
+faster at *discovery*; it would not have changed a single verified claim. What the missing
+provider actually cost was breadth, and the gap list at §7b says where.
+
+The registry now names `WebSearch` + `WebFetch` as the research capability, and `health`
+reports it as available rather than failing on an absent paid provider. It had been
+reporting a red check throughout this research for a capability the system was actively
+using.
 
 Six parallel research streams were dispatched, chosen because each has a different source
 base and a different failure mode. **All six returned.** Each was told to separate VERIFIED
