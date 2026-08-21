@@ -64,7 +64,7 @@ export const PROBES = [
     why: 'A known-answer fixture. If the grader cannot find six planted violations it cannot find a real one.',
     grade(ws) {
       const f = path.join(ws, 'tests', 'fixtures', 'scripts', 'violating_server_script.py');
-      if (!fs.existsSync(f)) return { pass: false, detail: 'fixture missing' };
+      if (!fs.existsSync(f)) return { unrunnable: true, detail: 'fixture absent from this location' };
       const body = fs.readFileSync(f, 'utf8');
       const found = SAFE_EXEC_VIOLATIONS.filter((v) => v.re.test(body)).map((v) => v.id);
       const missed = SAFE_EXEC_VIOLATIONS.filter((v) => !v.re.test(body)).map((v) => v.id);
@@ -80,7 +80,7 @@ export const PROBES = [
     why: 'The false-positive direction. A checker that flags compliant code is one people learn to ignore, which is worse than none.',
     grade(ws) {
       const f = path.join(ws, 'tests', 'fixtures', 'scripts', 'clean_server_script.py');
-      if (!fs.existsSync(f)) return { pass: false, detail: 'fixture missing' };
+      if (!fs.existsSync(f)) return { unrunnable: true, detail: 'fixture absent from this location' };
       const body = fs.readFileSync(f, 'utf8');
       const wrong = SAFE_EXEC_VIOLATIONS.filter((v) => v.re.test(body)).map((v) => v.id);
       return { pass: wrong.length === 0, detail: wrong.length ? `false positives: ${wrong.join(', ')}` : 'clean, correctly' };
@@ -113,7 +113,7 @@ export const PROBES = [
     why: 'The baseline the "add a field" dispatch probe measures against. If the fixture is already broken, that probe cannot mean anything.',
     grade(ws) {
       const f = path.join(ws, 'tests', 'fixtures', 'demo_app', 'doctype', 'widget', 'widget.json');
-      if (!fs.existsSync(f)) return { pass: false, detail: 'fixture missing' };
+      if (!fs.existsSync(f)) return { unrunnable: true, detail: 'fixture absent from this location' };
       let d;
       try {
         d = JSON.parse(fs.readFileSync(f, 'utf8'));
@@ -182,10 +182,21 @@ export function render({ root, deps, only }) {
   console.log('These grade the RESULT, not the plan. Every other instrument in this repo');
   console.log('passes identically whether the swarm writes good code or bad.\n');
 
-  console.log(`MODEL-FREE (${free.length}) — run right now, no dispatch needed\n`);
-  for (const r of free) {
+  const runnable = free.filter((r) => !r.unrunnable);
+  const absent = free.filter((r) => r.unrunnable);
+
+  console.log(`MODEL-FREE (${runnable.length} runnable of ${free.length}) — no dispatch needed\n`);
+  for (const r of runnable) {
     console.log(`  ${r.pass ? '✓' : '✗'} ${r.id}`);
     console.log(`      ${r.detail}`);
+  }
+  if (absent.length) {
+    // Reporting these as FAILURES is the confidently-wrong answer: it looks like real
+    // defects. Found by running the installed copy, which ships scripts/ and registry/
+    // but not tests/fixtures/ -- three probes reported failure when nothing was wrong.
+    console.log(`\n  UNRUNNABLE HERE (${absent.length}) — not failures, and not passes:\n`);
+    for (const r of absent) console.log(`  ? ${r.id}\n      ${r.detail}`);
+    console.log('\n  These need tests/fixtures/, which exists in the repo. Run them from a clone.');
   }
 
   if (disp.length) {
@@ -206,8 +217,8 @@ export function render({ root, deps, only }) {
     return 1;
   }
 
-  const freeFail = free.filter((r) => !r.pass);
-  console.log(`\n  model-free: ${free.length - freeFail.length}/${free.length} pass`);
+  const freeFail = runnable.filter((r) => !r.pass);
+  console.log(`\n  model-free: ${runnable.length - freeFail.length}/${runnable.length} pass${absent.length ? `, ${absent.length} unrunnable here` : ''}`);
   if (freeFail.length) {
     console.log('\nVERDICT: BLOCKED — a model-free outcome probe failed. These have known answers,');
     console.log('  so a failure is a real defect in the thing being graded or in the grader.');
