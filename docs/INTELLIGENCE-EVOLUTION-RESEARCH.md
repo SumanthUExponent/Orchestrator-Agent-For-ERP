@@ -44,7 +44,27 @@ like* a finding.
 
 Five findings reorder the whole plan.
 
-**1. The headline: no shipping multi-agent framework routes on historical performance.**
+**0. THE HEADLINE, and it arrived last: the state-of-the-art open scaffold on SWE-bench
+Verified is a 100-line agent plus a page of YAML.**
+
+`OpenAutoCoder/live-swe-agent` scores **396/500 = 79.2%** with Claude Opus 4.5. Its repo
+contains four things — `LICENSE`, `README.md`, `assets/`, `config/` — and **no
+implementation** (verified: `language: NONE`, 452★). It is ~150 lines of YAML on top of
+`mini-swe-agent`, the 100-line bash-only agent with no tool-calling API, no persistent
+shell, and a completely linear history.
+
+It comes from `OpenAutoCoder` — **the same org as Agentless**, whose best-ever score was
+254/500 = 50.8% and which has been frozen since 2024-12-22. First author Chunqiu Steven
+Xia is the Agentless first author. The self-evolution mechanism is two prompt edits telling
+the model it may write its own throwaway tools. That delta over plain mini-swe-agent is
+worth **+2.0 points at $0.68/issue**.
+
+So the anti-complexity thesis was right and the anti-*agent* framing was the wrong hill.
+**What deserved deleting was scaffolding — indexes, graphs, search trees, phase machinery,
+orchestration layers. What deserved keeping was the loop with a shell in it.** Every
+elaborate pipeline in this research was beaten by roughly 28 points by a config file.
+
+**1. No shipping multi-agent framework routes on historical performance.**
 Ten frameworks surveyed — LangGraph, CrewAI, AutoGen/Microsoft Agent Framework, OpenAI
 Agents SDK, Google ADK, PydanticAI, smolagents, Letta, Mastra, LlamaIndex Workflows.
 Routing in all ten is one of exactly three things: static code, a single LLM guess at the
@@ -800,3 +820,156 @@ memories (**no source found — that design is my own, untested**).
 **Corrected during research:** subagents *do* inherit CLAUDE.md and MCP servers · they
 *can* preload and invoke skills · they run *concurrently*, contrary to one stream's report
 · my own arXiv checker failed closed and nearly produced a false fabrication finding.
+
+---
+
+## 14. Coding agents, the second pass — and what the field deleted
+
+### The repudiation tally is now five
+
+| Project | Status |
+|---|---|
+| **OpenHands** | Pivoted to TypeScript control plane; `openhands-aci` **archived** |
+| **Roo Code** | **Archived** 2026-05-15 |
+| **Letta** | OSS server source **removed from `main`** 2026-08-16 |
+| **Continue** | **Dead** — read-only, final v2.0.0, acqui-hired by Cursor |
+| **Amazon Q Developer CLI** | **Superseded** by closed-source Kiro CLI, security fixes only |
+| **AutoCodeRover** | **Acquired by Sonar**; licence swapped to source-available non-compete; successor closed |
+| **Agentless** | Frozen 2024-12-22; authors moved to an *agent* |
+| **Trae-agent** | Maintainership stalled — 26 merged PRs Sept 2025 → 1 in Feb 2026 → none since; **64 open**; README still claims active development |
+| **Goose** | **Donated**, not repudiated — moved to the Agentic AI Foundation (Linux Foundation) |
+
+**Metadata trap worth internalising:** `pushed_at` lies. Continue reports `pushed_at:
+2026-08-20` while its last `main` commit is 2026-07-21 and the repo is read-only. Check
+`default_branch`, last-commit-on-main, and **merged-PR cadence**.
+
+### Agentless, and the statistic that should govern every verification design
+
+Its own published number, about its own best mechanism: of 300 generated reproduction
+tests, **213 reproduced the issue but only 94 correctly verified a fix — 31.0%.** A
+generated test is roughly a coin flip *conditioned on it already reproducing.*
+
+Its selection ablation is the other essential table:
+
+| Stage | Fixes on Lite | Δ cost |
+|---|---|---|
+| Majority voting only | 77 (25.67%) | — |
+| + regression tests | 81 (27.00%) | +$0.01 |
+| **+ reproduction tests** | **96 (32.00%)** | **+$0.25** |
+| Oracle over all 40 samples | 126 (42.0%) | — |
+
+**Every point of Agentless's advantage over plain sampling came from running code.** And
+the sampling curve is brutal: 1 sample → 80 fixes, 40 samples → 96, oracle → 126. You pay
+40× for 16 fixes, because *selection*, not generation, is the bottleneck.
+
+One more finding that inverts intuition: the **skeleton** representation (function bodies
+replaced by a placeholder) beat whole files on ground-truth coverage — **58.33% vs
+53.67% at $0.02 vs $0.15**. Compression was 7.5× cheaper *and* more accurate. Truncation
+is not a tax; at the right altitude it removes distractors.
+
+### The best single prompt found in the entire research
+
+AutoCodeRover's reviewer (`app/agents/agent_reviewer.py`):
+
+> *"Engineer A has written a reproduction test for the issue. Engineer B has written a
+> patch for the issue. Your task is to decide whether the created patch resolves the issue.
+> **NOTE: both the test and the patch may be wrong.**"*
+
+It returns **two independent verdicts with two independent pieces of advice**
+(`patch_decision`/`patch_analysis`/`patch_advice`, `test_decision`/`test_analysis`/
+`test_advice`), and the extractor **rejects a `NO` that arrives without advice.**
+
+That is the correct structural answer to false-done, and it follows directly from the 31%
+statistic: **a green test is two claims** — the patch works, *and* the test measures the
+right thing. Every other system conflates them.
+
+### Six answers to "model an unfamiliar codebase", and the field's verdict
+
+| System | Representation | Persistence | Language reach |
+|---|---|---|---|
+| Agentless | `tree` → libcst skeleton → raw code | none | **Python only** |
+| AutoCodeRover | 4 Python-`ast` indices, inheritance-resolving | in-memory, `@cache`d, never invalidated | Python only |
+| moatless | tree-sitter block tree + Voyage vectors | pre-built stores | Python-centric |
+| RepoGraph | **name-keyed** def/ref graph | pickle | Python only |
+| Trae "CKG" | SQLite `functions`+`classes`, **no edge table** | **snapshot-hash keyed, with eviction** | 6 languages |
+| Goose `analyze` | tree-sitter AST + bounded BFS | **none — rebuilt every call** | 10 languages |
+| **Zed** | **the language server** | LSP's own | anything with an LSP |
+| Codex / gemini-cli / opencode | none | none | all |
+
+**Two teams built the best index in the field and dismantled it, both in September 2025.**
+Zed deleted `semantic_index` (PR #37780, titled *"Remove unused"*); Continue deprecated
+`@Codebase` after two years of LanceDB + FTS5 + tree-sitter with cross-branch artifact
+sharing. **Every production CLI now ships zero embedding index for its agent.**
+
+And the graphs mostly are not graphs. RepoGraph keys nodes on **bare identifiers** and
+creates edges by **name-equality cross-join** with no scope or import resolution — every
+`run`/`get`/`build` collapses into one node — and its parser is preceded by source
+rewriting (`code.replace("print ", "yield ")`) to force Python 2 files through. Goose's
+`resolve_callee` has the identical bare-name flaw. Trae's "Code Knowledge Graph" has no
+edges at all. Payoff for the whole category: **+2 to +2.7 points**, Python-only.
+
+**This is the most direct finding against the Graphify integration shipped earlier.** The
+adapter is honest about staleness and relation coverage, and it is still structural
+machinery whose measured value elsewhere is +2 points. The two credible alternatives that
+*survived* are not indexes: **ask the language server**, or **spend context instead of
+building infrastructure**.
+
+### Not one of the six production CLIs gates on tests
+
+Codex, gemini-cli, opencode, Continue, Zed, Amazon Q — none has a default
+"run the tests before finishing." *"Did the change actually work"* is the field's largest
+unautomated gap, and it is the gap JARVIS's loop driver was built to close.
+
+---
+
+## 15. Final scorecard against §26's self-critique
+
+| Question | Honest answer |
+|---|---|
+| Researched deeply enough? | Six streams, ~800k subagent tokens, 40+ primary sources. Yes. |
+| Relied on stars? | No — and stars actively misled: the 84k-star repo had pivoted, the 24k-star repo was archived. |
+| Inspected primary sources? | Yes, including source files by path. |
+| Patterns rather than products? | Yes — and five of the products studied are dead. |
+| Distinguished hype from evidence? | Yes: "code knowledge graph" = two SQLite tables with no edges. |
+| Identified what NOT to adopt? | Ten items, with reasons. |
+| Accounted for Claude Code's real architecture? | Yes, and it corrected three of my assumptions. |
+| Solved context isolation? | **No.** Identified the `skills:` preload fix; not built. |
+| Solved agent coordination? | **No.** Found that nobody has. |
+| Solved memory? | **No.** Designed keyed supersession; not built. |
+| Solved evaluation? | **Partly.** Confirmed flip-gating is sound, found five real weaknesses. |
+| Solved self-improvement safely? | **Partly.** The inert-proposal shape is right; capacity cap and held-out set are missing. |
+| Solved observability? | **No.** Have a field list; `config_version` absent. |
+| Solved security? | **No.** Trifecta audit designed, not built. |
+| Established a benchmark? | **No — and this is the honest failure.** Tier 0 exists. Tiers 1 and 2 do not. |
+| Preserved existing strengths? | Yes. §28 honoured; nothing modified. |
+| Avoided unnecessary complexity? | **This is the open question.** See below. |
+
+### What a world-class architect would criticise, and I now agree with
+
+**That 46 role-based agents is unvalidated, and the evidence points the other way.**
+
+- Magentic-One reached SOTA-competitive with **five** agents, and its measured 31% came
+  from **ledgers**, not headcount.
+- Microsoft argues explicitly *against* role-based decomposition: *"role-based patterns may
+  require multiple agents to have redundant capabilities."*
+- Anthropic, against their own commercial interest: *"most coding tasks involve fewer truly
+  parallelizable tasks than research."*
+- The SOTA open scaffold is **100 lines plus YAML**.
+- Multi-agent costs **~15× a chat**, and *"token usage by itself explains 80% of the
+  variance."*
+
+The defensible core is small: **parallel read-only fan-out**, **model tiering**, **human
+gates on irreversible actions**, and **a registry that removes routing ambiguity**. On
+that last point the definitively-say test found a real failure — `jarvis-deep`'s
+distinguishing condition is *"when the work needs no mid-flight human decision"*, a
+property of the future, not of the request.
+
+And `doctor`'s duplicate check compares normalised `owns` strings for **exact equality** —
+it would catch a copy-paste and nothing else. My own audit was weaker than the criticism
+of it.
+
+**The conclusion I did not expect to write:** the highest-value next move is probably not
+to add anything. It is to (a) fix the P0 refusals, which are all cheap, (b) build Tier 1
+of the benchmark so outcome claims become possible at all, and then (c) **test whether the
+roster should shrink.** Every piece of external evidence says ledgers beat headcount.
+Nothing in this research supports 46.
