@@ -99,6 +99,7 @@ describe('staleness is announced, not assumed', () => {
     execFileSync('git', ['config', 'user.email', 't@t'], { cwd: d, stdio: 'ignore' });
     execFileSync('git', ['config', 'user.name', 't'], { cwd: d, stdio: 'ignore' });
     fs.writeFileSync(path.join(d, 'a.txt'), 'one');
+    fs.writeFileSync(path.join(d, 'base.py'), 'one');
     execFileSync('git', ['add', '-A'], { cwd: d, stdio: 'ignore' });
     execFileSync('git', ['commit', '-qm', 'one'], { cwd: d, stdio: 'ignore' });
     return d;
@@ -116,10 +117,15 @@ describe('staleness is announced, not assumed', () => {
   test('a graph built at an older commit is STALE and says how far behind', () => {
     const d = repoWithCommit();
     const old = git(d, ['rev-parse', 'HEAD']);
-    fs.writeFileSync(path.join(d, 'a.txt'), 'two');
-    execFileSync('git', ['commit', '-aqm', 'two'], { cwd: d, stdio: 'ignore' });
+    // Must edit a file the graph actually references. The first version of this test
+    // touched an unrelated a.txt, which the content-aware check correctly reclassified as
+    // current-by-content -- the test was asserting a coarser rule than the one that
+    // matters, and the new behaviour caught it.
+    fs.writeFileSync(path.join(d, 'base.py'), 'changed');
+    execFileSync('git', ['add', '-A'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-qm', 'two'], { cwd: d, stdio: 'ignore' });
     const g = G.load(writeGraph(d, { builtAt: old, links: EDGES }));
-    assert.equal(g.freshness.state, 'stale');
+    assert.equal(g.freshness.state, 'stale', g.freshness.detail);
     assert.equal(g.freshness.behind, '1');
     const note = G.freshnessNote(g);
     assert.match(note, /STALE GRAPH/);
@@ -286,5 +292,55 @@ describe('malformed input degrades rather than throwing', () => {
     const dep = G.dependents(gg, 'base');
     assert.equal(dep.length, 1);
     assert.equal(dep[0].node, undefined, 'a dangling id should resolve to no node, not throw');
+  });
+});
+
+describe('staleness is content-aware, so the warning keeps its force', () => {
+  const git = (d, args) => execFileSync('git', args, { cwd: d, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  const repo = () => {
+    const d = fresh();
+    for (const a of [['init','-q'],['config','user.email','t@t'],['config','user.name','t']]) {
+      execFileSync('git', a, { cwd: d, stdio: 'ignore' });
+    }
+    fs.writeFileSync(path.join(d, 'base.py'), 'one');
+    fs.writeFileSync(path.join(d, 'notes.md'), 'one');
+    execFileSync('git', ['add', '-A'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-qm', 'one'], { cwd: d, stdio: 'ignore' });
+    return d;
+  };
+
+  test('a commit touching NO graphed source is current by content', () => {
+    // `graphify update` skips rewriting the graph when topology is unchanged, so a
+    // docs-only commit leaves built_at_commit behind while the graph is still accurate.
+    // Reporting that as STALE is crying wolf, and a warning that fires when nothing is
+    // wrong is one people learn to scroll past.
+    const d = repo();
+    const old = git(d, ['rev-parse', 'HEAD']);
+    fs.writeFileSync(path.join(d, 'notes.md'), 'two');
+    execFileSync('git', ['commit', '-aqm', 'docs only'], { cwd: d, stdio: 'ignore' });
+    const g = G.load(writeGraph(d, { builtAt: old, links: EDGES }));
+    assert.equal(g.freshness.state, 'current-by-content', g.freshness.detail);
+    const note = G.freshnessNote(g);
+    assert.ok(!/STALE GRAPH/.test(note), 'cried wolf on a docs-only commit');
+    assert.match(note, /commit moved on, none of the code/);
+  });
+
+  test('a commit touching a graphed source IS stale, and says how many', () => {
+    const d = repo();
+    const old = git(d, ['rev-parse', 'HEAD']);
+    fs.writeFileSync(path.join(d, 'base.py'), 'two');
+    execFileSync('git', ['commit', '-aqm', 'code'], { cwd: d, stdio: 'ignore' });
+    const g = G.load(writeGraph(d, { builtAt: old, links: EDGES }));
+    assert.equal(g.freshness.state, 'stale');
+    assert.match(g.freshness.detail, /1 graphed source file/, 'a count is more useful than a commit gap');
+    assert.match(G.freshnessNote(g), /STALE GRAPH/);
+  });
+
+  test('when git cannot answer, the verdict defaults to STALE', () => {
+    // The direction that warns is the safe one. A graph in a non-repo has no HEAD at all,
+    // which is UNKNOWN; this covers the case where a commit exists and diff fails.
+    const g = G.load(writeGraph(fresh(), { builtAt: 'deadbeef'.repeat(5), links: EDGES }));
+    assert.ok(['stale', 'unknown'].includes(g.freshness.state), g.freshness.state);
+    assert.ok(!/is current —/.test(G.freshnessNote(g)), 'an uncheckable graph was called current');
   });
 });
