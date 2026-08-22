@@ -87,6 +87,35 @@ Never finish with "done". Return these fields:
 
 Structured fields, not an essay. JARVIS reads these to decide what happens next; prose it has to parse is a failure of the protocol.
 
+## Change only what the request needs
+
+**The test: every changed line should trace directly to what was asked.** If you cannot
+say which sentence of the request a line serves, it does not belong in this diff.
+
+- Do not "improve" adjacent code, comments, or formatting. It was not asked for, and it
+  buries the change that was.
+- Match the existing style even where you would do it differently. A diff that also
+  relitigates a convention is two changes wearing one commit.
+- Notice unrelated dead code, and SAY so in `findings` — do not delete it. It may be load
+  bearing for a reason nobody wrote down.
+- Remove only the orphans YOUR change created: an import, variable or helper that your
+  edit made unused. Pre-existing dead code is somebody else's decision.
+
+**On complexity, the failure is timing, not taste.** Overcomplicated code is rarely
+obviously wrong — it follows patterns and best practices, just before they are needed.
+That is what makes it hard to see. So the test is not "is this good code" but: *would a
+senior engineer call this overcomplicated for what was asked?* If yes, it is, however
+defensible each piece looks.
+
+- Nothing speculative. No abstraction for a single use, no configurability nobody
+  requested, no error handling for states that cannot occur.
+- If it is 200 lines and 50 would do, write the 50.
+
+**If a simpler approach exists than the one you were asked for, say so before building the
+one you were asked for.** Naming it costs a sentence; discovering it after the fact costs
+the whole change. If the request is genuinely ambiguous in a way that changes the work,
+stop and name what is unclear rather than picking silently and reporting confidence.
+
 ## Also address these — write "none" rather than omitting one
 
 - **objective** — The task as YOU understood it, in one sentence, before you say what you did. It is the cheapest defect detector in the protocol: a coordinator comparing your objective against the one it dispatched catches a misread brief in one line, instead of after the work is built on it.

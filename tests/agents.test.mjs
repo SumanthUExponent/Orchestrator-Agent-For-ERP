@@ -637,3 +637,75 @@ describe('a review verdict must carry external evidence', () => {
     assert.deepEqual(missing, [], 'validation agents not told to cite evidence');
   });
 });
+
+describe('surgical-change discipline reaches writers, and only writers', () => {
+  // A probe of the roster found ZERO agents told anything about adjacent code, drive-by
+  // refactoring, matching existing style, or leaving pre-existing dead code alone. Agents
+  // were told what they OWN and never told what to LEAVE.
+  const writers = FILES.filter((f) => /^tools:.*(Write|Edit)/m.test(read(f)));
+  const readers = FILES.filter((f) => !/^tools:.*(Write|Edit)/m.test(read(f)));
+
+  test('the split is non-trivial — otherwise both assertions below are vacuous', () => {
+    assert.ok(writers.length >= 10, `only ${writers.length} writers found`);
+    assert.ok(readers.length >= 10, `only ${readers.length} readers found`);
+  });
+
+  test('every writer gets the traceability test', () => {
+    const missing = writers.filter((f) => !read(f).includes('trace directly to what was asked'));
+    assert.deepEqual(missing, [], 'writers not told to keep the diff traceable');
+  });
+
+  test('every writer is told what to LEAVE, not just what it owns', () => {
+    for (const f of writers) {
+      const b = read(f);
+      assert.match(b, /do not delete it/i, `${f} not told to leave unrelated dead code`);
+      assert.match(b, /Match the existing style/, `${f} not told to match existing style`);
+      assert.match(b, /orphans YOUR change created/, `${f} not told which cleanup is its own`);
+    }
+  });
+
+  test('the complexity rule is framed as TIMING, not taste', () => {
+    // The source's real insight: overcomplicated code is rarely obviously wrong -- it
+    // follows patterns, just before they are needed. That is why "would a senior engineer
+    // call this overcomplicated" works as a test where "is this good code" does not.
+    for (const f of writers.slice(0, 3)) {
+      const b = read(f);
+      assert.match(b, /the failure is timing, not taste/i, `${f} frames complexity as taste`);
+      assert.match(b, /senior engineer/, `${f} lacks the applicable test`);
+    }
+  });
+
+  test('writers are told to name a simpler approach BEFORE building the asked-for one', () => {
+    for (const f of writers.slice(0, 3)) {
+      assert.match(read(f), /say so before building/, `${f} not told to push back`);
+    }
+  });
+
+  test('readers are NOT given it — a reviewer that edits nothing needs no edit rules', () => {
+    // The prime directive: do not make JARVIS bigger to make it look smarter.
+    const overshared = readers.filter((f) => read(f).includes('trace directly to what was asked'));
+    assert.deepEqual(overshared, [], 'read-only agents were given edit discipline they cannot use');
+  });
+});
+
+describe('declared checks reach the agent that declares them', () => {
+  test('every agent with checks: in the registry is shown them', () => {
+    // `checks` was loaded into the agent object and rendered NOWHERE. code-reviewer
+    // declares "unrequested abstraction" as one of its four checks and was never told.
+    // Fifth instance in this repo of a field declared in the registry and conveyed to
+    // nobody -- a check an agent is not shown is a comment.
+    const y = fs.readFileSync(path.join(ROOT, 'registry', 'agents.yaml'), 'utf8');
+    const declared = [...y.matchAll(/^  ([a-z][a-z0-9-]+):\n(?:    .*\n)*?    checks:\s*(\[.*?\]|\n(?:      - .*\n)+)/gm)];
+    assert.ok(declared.length >= 2, `only ${declared.length} agents declare checks; this test would be thin`);
+    for (const [, id, raw] of declared) {
+      const items = raw.trim().startsWith('[')
+        ? raw.trim().slice(1, -1).split(',').map((x) => x.trim())
+        : raw.split('\n').map((l) => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean);
+      const body = read(`${id}.md`);
+      assert.match(body, /What you specifically check for/, `${id} has checks but no checks section`);
+      for (const item of items) {
+        assert.ok(body.includes(item), `${id} declares check "${item}" and is never shown it`);
+      }
+    }
+  });
+});

@@ -132,6 +132,26 @@ export const PROBES = [
     },
   },
   {
+    id: 'surgical-change-leaves-style-alone',
+    kind: 'model-free',
+    why: 'Makes the surgical-change rule executable rather than only instructed. A style drift the grader cannot see is a rule nobody is held to.',
+    grade(ws) {
+      const f = path.join(ws, 'tests', 'fixtures', 'demo_app', 'doctype', 'widget', 'widget.json');
+      if (!fs.existsSync(f)) return { unrunnable: true, detail: 'fixture absent from this location' };
+      const raw = fs.readFileSync(f, 'utf8');
+      const problems = [];
+      // The fixture is 2-space indented with double quotes. A drive-by reformat is the
+      // most common surgical-change violation and it is mechanically detectable.
+      if (/^\t/m.test(raw)) problems.push('tabs introduced into a space-indented file');
+      if (/^ {4}"/m.test(raw) && !/^ {2}"/m.test(raw)) problems.push('indent width changed');
+      if (/'[a-z_]+':/.test(raw)) problems.push('single quotes introduced into a JSON file');
+      // Trailing whitespace and CRLF are the other two silent reformat tells.
+      if (/[ \t]+$/m.test(raw)) problems.push('trailing whitespace added');
+      if (raw.includes('\r\n')) problems.push('line endings changed to CRLF');
+      return { pass: problems.length === 0, detail: problems.length ? problems.join('; ') : 'style unchanged' };
+    },
+  },
+  {
     id: 'add-a-field-to-a-doctype',
     kind: 'dispatch',
     task: 'Add a required Data field `vendor_ref` labelled "Vendor Reference" to the Widget DocType at tests/fixtures/demo_app/doctype/widget/widget.json. Change nothing else.',
@@ -153,6 +173,13 @@ export const PROBES = [
       // "Change nothing else" is part of the task, so scope creep is a failure.
       if (!(d.fields || []).some((x) => x.fieldname === 'widget_code')) problems.push('removed widget_code');
       if (!(d.fields || []).some((x) => x.fieldname === 'description')) problems.push('removed description');
+      // Reordering the pre-existing fields is scope creep too: it makes the diff larger
+      // than the request and buries the one line that mattered.
+      const order = (d.fields || []).map((x) => x.fieldname).filter((n) => n !== 'vendor_ref');
+      if (order.join(',') !== 'widget_code,description') problems.push(`reordered existing fields to ${order.join(',')}`);
+      // Silently rewriting an untouched field is the subtlest violation of all.
+      const wc = (d.fields || []).find((x) => x.fieldname === 'widget_code');
+      if (wc && (wc.fieldtype !== 'Data' || !wc.reqd || !wc.unique)) problems.push('altered widget_code, which the task did not mention');
       return { pass: problems.length === 0, detail: problems.length ? problems.join('; ') : 'field added, nothing else touched' };
     },
   },

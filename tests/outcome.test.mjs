@@ -135,3 +135,50 @@ describe('the add-a-field grader discriminates', () => {
     assert.equal(gradeAddField(base()).pass, false);
   });
 });
+
+describe('surgical-change probes make the rule executable', () => {
+  const styleProbe = (raw) => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-style-'));
+    fs.mkdirSync(path.join(d, ...DT.slice(0, -1)), { recursive: true });
+    fs.writeFileSync(path.join(d, ...DT), raw);
+    try {
+      return run({ root: d }).find((p) => p.id === 'surgical-change-leaves-style-alone');
+    } finally {
+      fs.rmSync(d, { recursive: true, force: true });
+    }
+  };
+  const clean = () => fs.readFileSync(path.join(ROOT, ...DT), 'utf8');
+
+  test('the real fixture passes — otherwise every case below is meaningless', () => {
+    assert.equal(styleProbe(clean()).pass, true, styleProbe(clean()).detail);
+  });
+
+  test('a drive-by reformat is caught', () => {
+    for (const [name, mutate] of [
+      ['tabs', (t) => t.replace(/^ {2}/gm, '\t')],
+      ['trailing whitespace', (t) => t.replace(/,\n/g, ',  \n')],
+      ['CRLF', (t) => t.replace(/\n/g, '\r\n')],
+    ]) {
+      const r = styleProbe(mutate(clean()));
+      assert.equal(r.pass, false, `${name} was not detected`);
+    }
+  });
+
+  test('reordering pre-existing fields is scope creep, and fails', () => {
+    // Reordering makes the diff larger than the request and buries the line that mattered.
+    const d = base();
+    d.fields.reverse();
+    d.fields.push({ fieldname: 'vendor_ref', fieldtype: 'Data', label: 'Vendor Reference', reqd: 1 });
+    const r = gradeAddField(d);
+    assert.equal(r.pass, false);
+    assert.match(r.detail, /reordered/);
+  });
+
+  test('silently altering an untouched field fails — the subtlest violation', () => {
+    const d = withField();
+    d.fields.find((f) => f.fieldname === 'widget_code').unique = 0;
+    const r = gradeAddField(d);
+    assert.equal(r.pass, false);
+    assert.match(r.detail, /altered widget_code/);
+  });
+});

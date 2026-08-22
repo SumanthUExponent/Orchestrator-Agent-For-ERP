@@ -187,6 +187,61 @@ function agentMarkdown(a, protocol, gates, resources, research) {
     ? `\n## You may look outside this repository\n\n${String(grant).replace(/\s+/g, ' ').trim()}\n\nTools: ${(research.tools || []).map((t) => `\`${t}\``).join(', ')} — built in, free, nothing to configure. They can still be ABSENT (WebSearch is US-only and can be disabled), so check rather than assume; if missing, say so in \`unverified\` and continue from the code. An unanswered question presented as an answered one is worse than no search.\n\n${(research.discipline || []).map((d) => `- ${d}`).join('\n')}\n\nThe test is not whether a search would be useful. It is whether the answer is OUTSIDE this repository. Most of the time it is not.\n`
     : '';
 
+  // Surgical-change discipline, for agents that can WRITE.
+  //
+  // The gap this closes was total: a probe of the roster found zero agents told anything
+  // about adjacent code, drive-by refactoring, matching existing style, or leaving
+  // pre-existing dead code alone. Agents were told what they OWN and never told what to
+  // LEAVE.
+  //
+  // Scoped to writers because a read-only reviewer edits nothing, and telling it not to
+  // reformat is the prompt bloat the prime directive forbids.
+  //
+  // The framing on complexity is the source's real insight and is worth stating exactly:
+  // overcomplicated code is usually not obviously wrong -- it follows patterns and best
+  // practices. The defect is TIMING. That is why "would a senior engineer call this
+  // overcomplicated" works as a test where "is this good code" does not.
+  const canWrite = a.tools.includes('Write') || a.tools.includes('Edit');
+  const surgicalDoc = canWrite
+    ? `\n## Change only what the request needs
+
+**The test: every changed line should trace directly to what was asked.** If you cannot
+say which sentence of the request a line serves, it does not belong in this diff.
+
+- Do not "improve" adjacent code, comments, or formatting. It was not asked for, and it
+  buries the change that was.
+- Match the existing style even where you would do it differently. A diff that also
+  relitigates a convention is two changes wearing one commit.
+- Notice unrelated dead code, and SAY so in \`findings\` — do not delete it. It may be load
+  bearing for a reason nobody wrote down.
+- Remove only the orphans YOUR change created: an import, variable or helper that your
+  edit made unused. Pre-existing dead code is somebody else's decision.
+
+**On complexity, the failure is timing, not taste.** Overcomplicated code is rarely
+obviously wrong — it follows patterns and best practices, just before they are needed.
+That is what makes it hard to see. So the test is not "is this good code" but: *would a
+senior engineer call this overcomplicated for what was asked?* If yes, it is, however
+defensible each piece looks.
+
+- Nothing speculative. No abstraction for a single use, no configurability nobody
+  requested, no error handling for states that cannot occur.
+- If it is 200 lines and 50 would do, write the 50.
+
+**If a simpler approach exists than the one you were asked for, say so before building the
+one you were asked for.** Naming it costs a sentence; discovering it after the fact costs
+the whole change. If the request is genuinely ambiguous in a way that changes the work,
+stop and name what is unclear rather than picking silently and reporting confidence.
+`
+    : '';
+
+  // `checks` was loaded into the agent object (`checks: a.checks || []`) and rendered
+  // NOWHERE. code-reviewer declares "unrequested abstraction" as one of its four checks
+  // and was never told about it -- the fifth instance in this repo of a field declared in
+  // the registry and conveyed to nobody. A check an agent is not shown is a comment.
+  const checksDoc = (a.checks || []).length
+    ? `\n## What you specifically check for\n\n${a.checks.map((c) => `- ${c}`).join('\n')}\n\nThese are yours by declaration, not by inference. Missing one is a failure of this role,\nnot an oversight.\n`
+    : '';
+
   const applicable = (protocol.when_applicable || []).filter((f) => !a.handoff.includes(f));
   const applicableDoc = applicable.length
     ? `\n## Also address these — write "none" rather than omitting one\n\n${applicable
@@ -247,7 +302,7 @@ Never finish with "done". Return these fields:
 ${handoffDoc}
 
 Structured fields, not an essay. JARVIS reads these to decide what happens next; prose it has to parse is a failure of the protocol.
-${applicableDoc}${researchDoc}
+${surgicalDoc}${checksDoc}${applicableDoc}${researchDoc}
 ## Your first line: STATUS
 
 Begin your handoff with one word.
