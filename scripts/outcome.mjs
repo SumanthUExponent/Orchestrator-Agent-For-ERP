@@ -41,6 +41,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+/**
+ * The one marker that means "this probe did not execute".
+ *
+ * A prose regex cannot tell the two apart: "vendor_ref absent" is a genuine FINDING and
+ * "fixture absent" is an INABILITY, and a test looking for /absent/ flagged the first as
+ * the second. So inability gets an unmistakable prefix rather than a phrasing a reader --
+ * or a test -- has to interpret.
+ */
+export const CANNOT_RUN = 'CANNOT RUN HERE:';
+
 /** safe_exec forms that must be flagged. Each is a real restriction from CLAUDE.md. */
 const SAFE_EXEC_VIOLATIONS = [
   { id: 'import', re: /^\s*import\s+\w/m, why: 'no import in safe_exec' },
@@ -64,7 +74,7 @@ export const PROBES = [
     why: 'A known-answer fixture. If the grader cannot find six planted violations it cannot find a real one.',
     grade(ws) {
       const f = path.join(ws, 'tests', 'fixtures', 'scripts', 'violating_server_script.py');
-      if (!fs.existsSync(f)) return { unrunnable: true, detail: 'fixture absent from this location' };
+      if (!fs.existsSync(f)) return { unrunnable: true, detail: 'CANNOT RUN HERE: fixture not present at this path' };
       const body = fs.readFileSync(f, 'utf8');
       const found = SAFE_EXEC_VIOLATIONS.filter((v) => v.re.test(body)).map((v) => v.id);
       const missed = SAFE_EXEC_VIOLATIONS.filter((v) => !v.re.test(body)).map((v) => v.id);
@@ -80,7 +90,7 @@ export const PROBES = [
     why: 'The false-positive direction. A checker that flags compliant code is one people learn to ignore, which is worse than none.',
     grade(ws) {
       const f = path.join(ws, 'tests', 'fixtures', 'scripts', 'clean_server_script.py');
-      if (!fs.existsSync(f)) return { unrunnable: true, detail: 'fixture absent from this location' };
+      if (!fs.existsSync(f)) return { unrunnable: true, detail: 'CANNOT RUN HERE: fixture not present at this path' };
       const body = fs.readFileSync(f, 'utf8');
       const wrong = SAFE_EXEC_VIOLATIONS.filter((v) => v.re.test(body)).map((v) => v.id);
       return { pass: wrong.length === 0, detail: wrong.length ? `false positives: ${wrong.join(', ')}` : 'clean, correctly' };
@@ -91,7 +101,13 @@ export const PROBES = [
     kind: 'model-free',
     why: 'Needs no model at all: gate matching is deterministic. The loudest thing the system does must not go quiet.',
     grade(ws, deps) {
-      if (!deps || !deps.matchGates || !deps.gates) return { pass: false, detail: 'gate matcher unavailable' };
+      // UNRUNNABLE, not failing. Found by actually running the probe set without deps:
+      // it reported a FAILURE for a probe that never executed. Same false-failure pattern
+      // as the missing-fixture case, one layer over -- I fixed it there and missed it here,
+      // which is why "run the thing" outranks "read the thing" as a check.
+      if (!deps || !deps.matchGates || !deps.gates) {
+        return { unrunnable: true, detail: 'CANNOT RUN HERE: gate matcher not supplied' };
+      }
       const cases = [
         ['drop the audit table and rebuild it', true],
         ['deploy the retrofit module to production', true],
@@ -113,7 +129,7 @@ export const PROBES = [
     why: 'The baseline the "add a field" dispatch probe measures against. If the fixture is already broken, that probe cannot mean anything.',
     grade(ws) {
       const f = path.join(ws, 'tests', 'fixtures', 'demo_app', 'doctype', 'widget', 'widget.json');
-      if (!fs.existsSync(f)) return { unrunnable: true, detail: 'fixture absent from this location' };
+      if (!fs.existsSync(f)) return { unrunnable: true, detail: 'CANNOT RUN HERE: fixture not present at this path' };
       let d;
       try {
         d = JSON.parse(fs.readFileSync(f, 'utf8'));
@@ -137,7 +153,7 @@ export const PROBES = [
     why: 'Makes the surgical-change rule executable rather than only instructed. A style drift the grader cannot see is a rule nobody is held to.',
     grade(ws) {
       const f = path.join(ws, 'tests', 'fixtures', 'demo_app', 'doctype', 'widget', 'widget.json');
-      if (!fs.existsSync(f)) return { unrunnable: true, detail: 'fixture absent from this location' };
+      if (!fs.existsSync(f)) return { unrunnable: true, detail: 'CANNOT RUN HERE: fixture not present at this path' };
       const raw = fs.readFileSync(f, 'utf8');
       const problems = [];
       // The fixture is 2-space indented with double quotes. A drive-by reformat is the

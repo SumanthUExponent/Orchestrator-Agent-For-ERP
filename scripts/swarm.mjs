@@ -549,6 +549,22 @@ export function doctor({ root, readYaml, registry }) {
   const agentIds = new Set(agents.map((a) => a.id));
   const fail = [];
   const warn = [];
+  // Informational: true, worth saying, and not a problem. Kept out of WARNINGS so the
+  // warning list stays things that need doing.
+  const info = [];
+  // Where an agent actually runs. A claim resolvable here is loadable at runtime even
+  // though it cannot be preloaded into portable frontmatter.
+  const installedSkills = (() => {
+    try {
+      const d = process.env.JARVIS_SKILLS_DIR || process.env.CLAUDE_SKILLS_DIR || path.join(os.homedir(), '.claude', 'skills');
+      if (!fs.existsSync(d)) return new Set();
+      return new Set(
+        fs.readdirSync(d, { withFileTypes: true })
+          .filter((e) => e.isDirectory() && fs.existsSync(path.join(d, e.name, 'SKILL.md')))
+          .map((e) => e.name)
+      );
+    } catch { return new Set(); }
+  })();
 
   for (const a of agents) {
     if (!a.owns) fail.push(`agent theatre: "${a.id}" declares no measurable responsibility (owns is empty)`);
@@ -572,11 +588,23 @@ export function doctor({ root, readYaml, registry }) {
       if (a.skills.length) warn.push(`control plane: "${a.id}" loads skills (${a.skills.join(', ')}) — control agents should carry no domain expertise`);
     }
 
-    // skills an agent claims must exist somewhere we can see
+    // Skills an agent claims must exist somewhere. Three states, not two.
+    //
+    // This used to report every non-repo claim as "may be installed externally" -- true,
+    // vague, and identical for a skill sitting in ~/.claude/skills and one that exists
+    // nowhere at all. Fourteen resolvable claims buried one dead reference
+    // (`frontend-development`), and a warning that cannot tell those apart trains its
+    // reader to skim all fifteen.
     for (const s of a.skills) {
-      const inRegistry = skillIds.has(s);
-      const onDisk = fs.existsSync(path.join(root, 'skills', s, 'SKILL.md'));
-      if (!inRegistry && !onDisk) warn.push(`"${a.id}" claims skill "${s}" which is not in this repo (may be installed externally)`);
+      if (skillIds.has(s) || fs.existsSync(path.join(root, 'skills', s, 'SKILL.md'))) continue;
+      if (installedSkills.has(s)) {
+        // Resolvable where the agent actually runs. Not a defect -- but not preloaded
+        // either, because the committed frontmatter has to stay portable. The agent is
+        // told to load it in prose and can invoke it via the Skill tool.
+        info.push(`"${a.id}" claims skill "${s}" — not in this repo, installed on this machine. Loaded on request, not preloaded.`);
+      } else {
+        fail.push(`dead skill claim: "${a.id}" claims skill "${s}", which is in neither this repo NOR this machine. Nothing can load it, so the instruction to load it first is unfollowable.`);
+      }
     }
     for (const dep of a.requires) if (!agentIds.has(dep)) fail.push(`broken dependency: "${a.id}" requires unknown agent "${dep}"`);
     for (const c of a.conflicts_with) {
@@ -903,6 +931,11 @@ export function doctor({ root, readYaml, registry }) {
     !fail.some((f) => f.startsWith('conflict reconciliation')),
     `Conflict reconciliation: ${(rc.procedure || []).length} steps, ${(rc.tiebreak_precedence || []).length} tiebreak, ${(rc.halt_to_human || []).length} escalations`
   ));
+
+  if (info.length) {
+    console.log(`\nINFORMATIONAL (${info.length}) — true, and nothing to do about it`);
+    info.forEach((i) => console.log('  · ' + i));
+  }
 
   if (fail.length) {
     console.log('\nFAILURES');

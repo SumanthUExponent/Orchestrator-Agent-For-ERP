@@ -203,12 +203,17 @@ agents:
       leads on contract and error semantics, backend leads on the logic behind it.
 
   frontend:
+    # `frontend-development` was removed from this list: it existed in neither the repo nor
+    # any install, so "load it first" was an unfollowable instruction. doctor reported it
+    # identically to fourteen claims that DO resolve on this machine, which is how it sat
+    # here unnoticed -- a warning that cannot tell a dead reference from a working one
+    # trains its reader to skim the whole list.
     role: User-facing surfaces
     mode: active
     model: sonnet
     tools: [Read, Grep, Glob, Bash, Edit, Write]
     writes: ui-code
-    skills: [frappe-ui-page, frappe-web-page, frappe-web-forms, frappe-desk-customization, frontend-development]
+    skills: [frappe-ui-page, frappe-web-page, frappe-web-forms, frappe-desk-customization]
     uses_design_system: true
     owns: >
       Implementing interfaces — pages, forms, views and

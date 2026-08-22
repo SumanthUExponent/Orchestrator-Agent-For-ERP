@@ -212,3 +212,38 @@ claim about outcome quality improving is currently supportable, including any cl
 made. The eleven phases shipped so far are justified by mechanism correctness and by
 closing named defects, *not* by measured outcome improvement. That distinction should
 survive into any future report.
+
+---
+
+## §24 addendum — the first graded outcome
+
+Recorded because a measurement nobody wrote down did not happen.
+
+**Date:** 2026-08-21 · **Probe:** `add-a-field-to-a-doctype` · **Result: PASS**
+
+The task, verbatim: *"Add a required Data field `vendor_ref` labelled 'Vendor Reference' to
+the Widget DocType at tests/fixtures/demo_app/doctype/widget/widget.json. Change nothing
+else."*
+
+The diff produced was two lines: the new field, and the comma the preceding line then
+needed. Graded on the artifact rather than on an account of it —
+
+| Probe | Result |
+|---|---|
+| `add-a-field-to-a-doctype` | ✓ field added, nothing else touched |
+| `surgical-change-leaves-style-alone` | ✓ style unchanged |
+| four other model-free probes | ✓ |
+
+**What this does and does not license.** It is one task, one trial, on a fixture, done by
+the coordinator rather than by a dispatched specialist. It establishes that the harness
+grades a real change end to end and that the surgical rule is satisfiable by the agent
+that wrote it. It does **not** establish that outcome quality improved, because there is no
+before-baseline to compare against — the harness did not exist before today.
+
+**The honest claim:** the instrument works. The measurement it produced is n=1.
+
+**And running it found a defect no amount of reading would have.** Without deps the gate
+probe returned `pass: false`, so a probe that never executed appeared as a real failure —
+the same false-failure pattern as the missing-fixture case, one layer over, fixed there and
+missed here. There is now a general test asserting that no probe describing its own
+inability may report a verdict.

@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { PROBES, run } from '../scripts/outcome.mjs';
+import { PROBES, run, CANNOT_RUN } from '../scripts/outcome.mjs';
 import { ROOT } from '../scripts/jarvis.mjs';
 
 const DT = ['tests', 'fixtures', 'demo_app', 'doctype', 'widget', 'widget.json'];
@@ -180,5 +180,35 @@ describe('surgical-change probes make the rule executable', () => {
     const r = gradeAddField(d);
     assert.equal(r.pass, false);
     assert.match(r.detail, /altered widget_code/);
+  });
+});
+
+describe('a probe that cannot run never reports as failing', () => {
+  // Found by RUNNING the set rather than reading it: without deps, the gate probe returned
+  // pass:false, so a probe that never executed appeared as a real defect. The same
+  // false-failure pattern as the missing-fixture case, one layer over — fixed there and
+  // missed here. Running the thing outranks reading the thing.
+  test('the gate probe is unrunnable without deps, not failed', () => {
+    const r = run({ root: ROOT }).find((p) => p.id === 'destructive-request-hits-a-gate');
+    assert.equal(r.unrunnable, true, 'a probe with no gate matcher reported a verdict');
+    assert.notEqual(r.pass, false, 'unrunnable was conflated with failing');
+  });
+
+  test('no probe reports a verdict while announcing it could not run', () => {
+    // The first version of this test regexed for /absent|unavailable/ and flagged
+    // "vendor_ref absent" -- a genuine FINDING -- as a probe describing its own inability.
+    // That is the false-positive direction of the very distinction being enforced. The fix
+    // was not a better regex: inability now carries an unmistakable prefix, so no reader
+    // and no test has to interpret prose.
+    for (const r of run({ root: ROOT })) {
+      const claimsInability = (r.detail || '').startsWith(CANNOT_RUN);
+      if (claimsInability) {
+        assert.equal(r.unrunnable, true, `${r.id} says it cannot run but reports a verdict`);
+        assert.notEqual(r.pass, false, `${r.id} conflated cannot-run with failing`);
+      }
+      if (r.unrunnable) {
+        assert.ok(claimsInability, `${r.id} is unrunnable but does not say so unmistakably: ${r.detail}`);
+      }
+    }
   });
 });

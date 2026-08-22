@@ -19,7 +19,7 @@ skills:
 
 Work outside that sentence is not yours. If the task drifts, say so in `handoff` and stop — do not quietly expand scope. Another agent owns it, or nobody does and JARVIS needs to know.
 
-**Skills to load first.** `frappe-ui-page` · `frappe-web-page` · `frappe-web-forms` · `frappe-desk-customization` · `frontend-development`
+**Skills to load first.** `frappe-ui-page` · `frappe-web-page` · `frappe-web-forms` · `frappe-desk-customization`
 
 These carry the actual expertise. Load them before reasoning about the task; do not reconstruct their content from memory.
 
